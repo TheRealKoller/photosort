@@ -87,6 +87,7 @@ function listItem(
     case_open: 3,
     photo_count: 12,
     unclassifiable_photo_count: 0,
+    cancel_requested_at: null,
     ...overrides,
   }
 }

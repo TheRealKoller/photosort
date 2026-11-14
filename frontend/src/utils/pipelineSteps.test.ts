@@ -142,6 +142,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
             suggestions_found: 0,
             error_message: null,
             gate_confirmed_at: null,
+            cancel_requested_at: null,
           },
         }),
       )
@@ -167,6 +168,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           suggestions_found: 3,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:06:00Z',
+          cancel_requested_at: null,
         },
       }),
     )
@@ -194,6 +196,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           suggestions_found: suggestionsFound,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
       }),
     )
@@ -214,6 +217,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           suggestions_found: 3,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:06:00Z',
+          cancel_requested_at: null,
         },
       }),
     )
@@ -235,6 +239,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           suggestions_found: 0,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
       }),
     )
@@ -259,6 +264,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           suggestions_found: 0,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
       }),
     )
@@ -273,6 +279,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
       const states = computeStepStates(
         project({
           last_criterion_scoring_run: {
+            id: 1,
             status: 'success',
             started_at: '2026-07-20T10:00:00Z',
             finished_at: '2026-07-20T10:05:00Z',
@@ -289,6 +296,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
             persons_photos_total: null,
             persons_photos_processed: null,
             mode: null,
+            cancel_requested_at: null,
             eye_photos_total: null,
             eye_photos_processed: null,
           },
@@ -339,6 +347,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           suggestions_found: 3,
           error_message: null,
           gate_confirmed_at: null,
+          cancel_requested_at: null,
         },
       },
       expected: 'ausschuss',
@@ -357,6 +366,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           suggestions_found: 0,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
       },
       expected: 'kriterien',
@@ -375,6 +385,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           suggestions_found: 3,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:06:00Z',
+          cancel_requested_at: null,
         },
       },
       expected: 'kriterien',
@@ -394,8 +405,10 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           suggestions_found: 0,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
         last_criterion_scoring_run: {
+          id: 1,
           status: 'success',
           started_at: '2026-07-20T10:06:00Z',
           finished_at: '2026-07-20T10:07:00Z',
@@ -412,6 +425,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           persons_photos_total: null,
           persons_photos_processed: null,
           mode: null,
+          cancel_requested_at: null,
           eye_photos_total: null,
           eye_photos_processed: null,
         },
@@ -432,8 +446,10 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           suggestions_found: 0,
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
+          cancel_requested_at: null,
         },
         last_criterion_scoring_run: {
+          id: 1,
           status: 'success',
           started_at: '2026-07-20T10:06:00Z',
           finished_at: '2026-07-20T10:07:00Z',
@@ -450,6 +466,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           persons_photos_total: null,
           persons_photos_processed: null,
           mode: null,
+          cancel_requested_at: null,
           eye_photos_total: null,
           eye_photos_processed: null,
         },
@@ -515,9 +532,9 @@ describe('stepProgress', () => {
  * deriveProjectStand - die Stand-Zeile der Projektkarte (Spec 0375, Akzeptanzkriterien A4/A6/S1).
  *
  * DIE WORTLAUT-TABELLE STEHT AUF DER AUSGABESEITE, NICHT AUF DER EINGABESEITE. Der Test rechnet
- * den ENDLICHEN Eingaberaum vollstaendig durch (256 Kombinationen), sammelt die beobachteten
+ * den ENDLICHEN Eingaberaum vollstaendig durch (864 Kombinationen), sammelt die beobachteten
  * Ergebnisse als Tripel `(kind, stepId, runStatus)` und vergleicht die MENGE gegen die Tabelle -
- * in beiden Richtungen. Nur das faengt ein vierzehntes Verhalten, eine unerreichbar gewordene
+ * in beiden Richtungen. Nur das faengt ein weiteres Verhalten, eine unerreichbar gewordene
  * Zeile und eine zu zwei Zeilen kollabierte Unterscheidung.
  *
  * Den Anzeigetext bildet er auf seine Definition ZURUECK (Nachschlagen in PIPELINE_STEPS), statt
@@ -535,7 +552,8 @@ function descriptorOf(stand: ProjectStand): Descriptor {
 }
 
 /**
- * Die zwoelf Zeilen der Wortlaut-Tabelle aus dem Abschnitt UI/UX der Spec 0375.
+ * Die achtzehn Zeilen der Wortlaut-Tabelle aus dem Abschnitt UI/UX der Spec 0375, ergaenzt um
+ * „wartet" und „abgebrochen" (Spec 0641).
  *
  * `erreichbar: false` bei Randfall B ist kein Schlupfloch, sondern die Buchfuehrung ueber einen
  * BEWUSST vorweggenommenen Zustand: `kuratierung.isDone` ist ohne Abschlusssignal im Datenmodell
@@ -547,11 +565,17 @@ const WORTLAUT_TABELLE: readonly { descriptor: Descriptor; erreichbar: boolean }
   { descriptor: 'hinweis|scan|-', erreichbar: true }, // Randfall A: Noch nicht gescannt
   { descriptor: 'lauf|scan|running', erreichbar: true },
   { descriptor: 'lauf|scan|failed', erreichbar: true },
+  { descriptor: 'lauf|scan|queued', erreichbar: true },
+  { descriptor: 'lauf|scan|cancelled', erreichbar: true },
   { descriptor: 'lauf|ausschuss|running', erreichbar: true },
   { descriptor: 'lauf|ausschuss|failed', erreichbar: true },
+  { descriptor: 'lauf|ausschuss|queued', erreichbar: true },
+  { descriptor: 'lauf|ausschuss|cancelled', erreichbar: true },
   { descriptor: 'weiter|ausschuss|-', erreichbar: true },
   { descriptor: 'lauf|kriterien|running', erreichbar: true },
   { descriptor: 'lauf|kriterien|failed', erreichbar: true },
+  { descriptor: 'lauf|kriterien|queued', erreichbar: true },
+  { descriptor: 'lauf|kriterien|cancelled', erreichbar: true },
   { descriptor: 'weiter|kriterien|-', erreichbar: true },
   { descriptor: 'weiter|kuratierung|-', erreichbar: true },
   { descriptor: 'hinweis|ausschuss|-', erreichbar: true }, // Randfall C: Klassifizierung aus
@@ -561,8 +585,8 @@ const WORTLAUT_TABELLE: readonly { descriptor: Descriptor; erreichbar: boolean }
 describe('deriveProjectStand', () => {
   const projects = enumerateProjects()
 
-  it('rechnet den Eingaberaum vollstaendig durch (256 Kombinationen)', () => {
-    expect(projects).toHaveLength(256)
+  it('rechnet den Eingaberaum vollstaendig durch (864 Kombinationen)', () => {
+    expect(projects).toHaveLength(864)
   })
 
   it('beobachtet ueber dem ganzen Eingaberaum GENAU die erreichbaren Zeilen der Tabelle', () => {

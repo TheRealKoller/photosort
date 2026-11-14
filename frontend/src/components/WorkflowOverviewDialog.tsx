@@ -84,6 +84,8 @@ function OverviewEntry({
           {OVERVIEW_STATE_WORDS[item.state]}
         </span>
         {item.run === 'running' && <StatusTag status="running" label="läuft…" />}
+        {item.run === 'queued' && <StatusTag status="queued" label="wartet" />}
+        {item.run === 'cancelled' && <StatusTag status="cancelled" label="abgebrochen" />}
         {item.run === 'failed' && <StatusTag status="failed" label="fehlgeschlagen" />}
       </div>
 

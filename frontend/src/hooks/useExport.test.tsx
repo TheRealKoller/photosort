@@ -33,6 +33,7 @@ beforeEach(() => {
     exported_count: 3,
     failed_count: 0,
     error_message: null,
+    cancel_requested_at: null,
     failed_photos: [],
   })
   vi.mocked(useProjects.useProjectQuery).mockReturnValue({

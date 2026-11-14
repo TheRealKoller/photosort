@@ -65,6 +65,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     suggestions_found: 0,
     error_message: null,
     gate_confirmed_at: '2026-07-20T10:05:00Z',
+    cancel_requested_at: null,
     ...overrides,
   }
 }
@@ -73,6 +74,7 @@ function classificationRun(
   overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:06:00Z',
     finished_at: null,
@@ -89,6 +91,7 @@ function classificationRun(
     persons_photos_total: null,
     persons_photos_processed: null,
     mode: null,
+    cancel_requested_at: null,
     eye_photos_total: null,
     eye_photos_processed: null,
     ...overrides,

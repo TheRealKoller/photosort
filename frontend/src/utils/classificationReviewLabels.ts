@@ -168,6 +168,8 @@ export const REVIEW_DETAIL_TEXTS = {
   exportContents:
     'Die Datei enthält keine Bilddaten, keine Dateinamen, keine Orte und keine Namen - je Fall nur die Fotonummer, den Zweck, beide Rohwerte und das Urteil.',
   exportBlockedRunning: 'Der Export ist erst nach Abschluss der Prüfung möglich.',
+  // Spec 0641: Ein Abbruch ist kein Fehlschlag - der Satz nennt den Grund ohne Schuldzuweisung.
+  exportBlockedCancelled: 'Eine abgebrochene Prüfung lässt sich nicht exportieren.',
   exportBlockedFailed: 'Eine fehlgeschlagene Prüfung lässt sich nicht exportieren.',
   exportError: 'Der Export konnte nicht geladen werden.',
 } as const
@@ -192,6 +194,20 @@ export function reviewPhaseText(
 ): string {
   const step = phase === null ? 'Prüfung läuft' : PHASE_LABELS[phase]
   return `${step}… ${processed} von ${photoCount} Fotos`
+}
+
+/**
+ * Der Stand eines abgebrochenen Laufs: die letzte bekannte Phase mit ihrem Zaehlerstand. Der
+ * Abbruch selbst steht schon im Statuswort daneben - der Satz ergaenzt nur, WO er passierte.
+ */
+export function reviewCancelledText(
+  phase: ClassificationReviewPhase | null,
+  processed: number,
+  photoCount: number,
+): string {
+  return phase === null
+    ? `Abgebrochen bei ${processed} von ${photoCount} Fotos`
+    : `Abgebrochen bei: ${PHASE_LABELS[phase]}, ${processed} von ${photoCount} Fotos`
 }
 
 /** Die Beschriftung des Fotowechslers; `position` ist die laufende Nummer der Pruefmenge. */
@@ -295,8 +311,16 @@ function yesNo(value: boolean): string {
 export function reviewListStand(
   review: Pick<ClassificationReviewListItemOut, 'status' | 'case_count' | 'case_open'>,
 ): { tone: ScanStatusLabel; label: string } {
+  // Spec 0641: „wartet" und „abgebrochen" sind weder Erfolg noch Fehlschlag - neutraler Ton,
+  // das Wort traegt die Aussage.
+  if (review.status === 'queued') {
+    return { tone: 'never', label: 'wartet' }
+  }
   if (review.status === 'running') {
     return { tone: 'running', label: 'läuft…' }
+  }
+  if (review.status === 'cancelled') {
+    return { tone: 'never', label: 'abgebrochen' }
   }
   if (review.status === 'failed') {
     return { tone: 'failed', label: 'fehlgeschlagen' }

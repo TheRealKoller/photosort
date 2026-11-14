@@ -15,6 +15,7 @@ import { Button } from '../../components/ui/button'
 import { Progress } from '../../components/ui/progress'
 import { Skeleton } from '../../components/ui/skeleton'
 import { useAusschussEntryQuery, useAusschussQuery } from '../../hooks/useAusschuss'
+import { useCancelOperation } from '../../hooks/useOperations'
 import { useDuplicateDecisionMutation } from '../../hooks/useDuplicates'
 import { useConfirmAusschussGateMutation, useTriggerScoreMutation } from '../../hooks/useProjects'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
@@ -31,6 +32,13 @@ import {
 import type { JustifiedTile } from '../../utils/justifiedRows'
 import { ausschussStepPath, duplicateComparePath } from '../../utils/projectRoutes'
 import { deriveStepAction } from '../../utils/stepActions'
+import {
+  CANCEL_TEXTS,
+  cancelRequestedText,
+  cancelledAtText,
+  cancelledText,
+  waitingText,
+} from '../../utils/operationTexts'
 import { AUSSCHUSS_NOTHING_SORTED_TEXT } from '../../utils/stepActionTexts'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
@@ -130,10 +138,14 @@ export function AusschussStepPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const scoreMutation = useTriggerScoreMutation(project.id)
   const confirmMutation = useConfirmAusschussGateMutation(project.id)
+  const cancelMutation = useCancelOperation(project.id)
   const navigate = useNavigate()
 
   const scoringRun = project.last_scoring_run ?? null
   const scoringStatus = scoringRun?.status ?? null
+  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
+  const scoringRunId = scoringRun?.id ?? null
+  const isCancelRequested = scoringRun?.cancel_requested_at != null
   const scoringStartedAt = scoringRun?.started_at ?? null
   const [awaitingScoreConfirmation, setAwaitingScoreConfirmation] = useTriggerConfirmation(
     scoringStatus,
@@ -185,7 +197,7 @@ export function AusschussStepPage() {
   }, [entries, containerWidth])
 
   const isTriggerPending = scoreMutation.isPending || awaitingScoreConfirmation
-  const isScoreBusy = isTriggerPending || scoringStatus === 'running'
+  const isScoreBusy = isTriggerPending || scoringStatus === 'running' || scoringStatus === 'queued'
   const { action, rerun } = deriveStepAction('ausschuss', project, { openCount, isTriggerPending })
 
   function handleTriggerScore(): void {
@@ -196,6 +208,12 @@ export function AusschussStepPage() {
     scoreMutation.mutate(undefined, {
       onError: () => setAwaitingScoreConfirmation(false),
     })
+  }
+
+  function handleCancelScoring(): void {
+    if (scoringRunId !== null) {
+      cancelMutation.mutate({ kind: 'ausschuss', runId: scoringRunId })
+    }
   }
 
   /* Gewechselt wird erst nach dem Neuladen des Projekts: Mit dem alten Stand
@@ -259,11 +277,16 @@ export function AusschussStepPage() {
   let statusText: string
   switch (action.kind) {
     case 'start':
-      statusText = 'Noch nicht vorgeschlagen'
+      statusText =
+        scoringStatus === 'cancelled' ? cancelledText('ausschuss') : 'Noch nicht vorgeschlagen'
+      break
+    case 'queued':
+      statusText = isCancelRequested ? cancelRequestedText('ausschuss') : waitingText('ausschuss')
       break
     case 'running':
-      statusText =
-        scoringStatus === 'running'
+      statusText = isCancelRequested
+        ? cancelRequestedText('ausschuss')
+        : scoringStatus === 'running'
           ? `Ausschuss läuft… ${scoringAnnouncedDecile}% verarbeitet`
           : 'Ausschuss läuft…'
       break
@@ -489,16 +512,32 @@ export function AusschussStepPage() {
         </Alert>
       )}
 
+      {cancelMutation.isError && (
+        <Alert onRetry={handleCancelScoring} retryLabel={CANCEL_TEXTS.retry}>
+          {CANCEL_TEXTS.failed}
+        </Alert>
+      )}
+
       <StepActionBar
         action={action}
         status={
           <>
-            <StatusDot status={action.kind === 'running' ? 'running' : scoringStatus} />
+            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+                Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
+            <StatusDot
+              status={
+                action.kind === 'running'
+                  ? 'running'
+                  : action.kind === 'queued'
+                    ? null
+                    : scoringStatus
+              }
+            />
             {statusText}
           </>
         }
         detail={
-          scoringStatus === 'running' && (
+          scoringStatus === 'running' ? (
             <div className="flex w-full max-w-sm flex-col gap-2">
               <p className="text-sm text-text">
                 {photosProcessed} von {photosTotal} Fotos verarbeitet
@@ -509,10 +548,22 @@ export function AusschussStepPage() {
                 <Progress aria-hidden="true" />
               )}
             </div>
-          )
+          ) : scoringStatus === 'cancelled' && photosTotal > 0 ? (
+            // Eingefrorener Stand, keine Restdauer (Spec 0641).
+            <div className="flex w-full max-w-sm flex-col gap-2">
+              <p className="text-sm text-text">
+                {cancelledAtText(photosProcessed, photosTotal, 'Fotos')}
+              </p>
+              <Progress aria-hidden="true" value={photosProcessed} max={photosTotal} />
+            </div>
+          ) : null
         }
         onAction={action.kind === 'confirm' ? handleConfirm : handleTriggerScore}
         busy={action.kind === 'confirm' && confirmMutation.isPending}
+        onCancel={handleCancelScoring}
+        cancelRequested={isCancelRequested}
+        cancelPending={cancelMutation.isPending}
+        operation="ausschuss"
       />
     </section>
   )

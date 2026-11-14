@@ -197,6 +197,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     suggestions_found: 0,
     error_message: null,
     gate_confirmed_at: null,
+    cancel_requested_at: null,
     ...overrides,
   }
 }

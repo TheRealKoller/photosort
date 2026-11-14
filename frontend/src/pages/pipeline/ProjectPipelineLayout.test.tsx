@@ -58,6 +58,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
 
 function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
+    id: 1,
     status: 'success',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: '2026-07-20T10:01:00Z',
@@ -68,6 +69,7 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
     photos_removed: 0,
     files_skipped: 0,
     error_message: null,
+    cancel_requested_at: null,
     ...overrides,
   }
 }
@@ -83,6 +85,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     suggestions_found: 0,
     error_message: null,
     gate_confirmed_at: '2026-07-20T10:01:30Z',
+    cancel_requested_at: null,
     ...overrides,
   }
 }
@@ -91,6 +94,7 @@ function criterionScoringRun(
   overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
+    id: 1,
     status: 'success',
     started_at: '2026-07-20T10:02:00Z',
     finished_at: '2026-07-20T10:03:00Z',
@@ -107,6 +111,7 @@ function criterionScoringRun(
     persons_photos_total: null,
     persons_photos_processed: null,
     mode: null,
+    cancel_requested_at: null,
     eye_photos_total: null,
     eye_photos_processed: null,
     ...overrides,

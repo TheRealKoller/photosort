@@ -47,26 +47,40 @@ export function projectFixture(overrides: Partial<ProjectOut> = {}): ProjectOut 
   }
 }
 
-const RUN_STATES: readonly (ScanStatus | null)[] = [null, 'running', 'success', 'failed']
+const RUN_STATES: readonly (ScanStatus | null)[] = [
+  null,
+  'queued',
+  'running',
+  'success',
+  'failed',
+  'cancelled',
+]
 
 export function scanSummary(status: ScanStatus): ProjectOut['last_scan'] {
-  return { status } as ProjectOut['last_scan']
+  return { status, id: 1, cancel_requested_at: null } as ProjectOut['last_scan']
 }
 
 export function scoringRunSummary(
   status: ScanStatus,
   gateConfirmedAt: string | null,
 ): ProjectOut['last_scoring_run'] {
-  return { status, gate_confirmed_at: gateConfirmedAt } as ProjectOut['last_scoring_run']
+  return {
+    status,
+    id: 1,
+    gate_confirmed_at: gateConfirmedAt,
+    cancel_requested_at: null,
+  } as ProjectOut['last_scoring_run']
 }
 
 export function criterionRunSummary(status: ScanStatus): ProjectOut['last_criterion_scoring_run'] {
-  return { status } as ProjectOut['last_criterion_scoring_run']
+  return { status, id: 1, cancel_requested_at: null } as ProjectOut['last_criterion_scoring_run']
 }
 
 /**
- * Der vollständig aufgezählte Eingaberaum: 4 Scan-Zustände x 4 Ausschuss-Zustände x 2
- * Gate-Zustände x 4 Kriterien-Zustände x 2 Feature-Flag-Zustände = 256 Projekte.
+ * Der vollständig aufgezählte Eingaberaum: 6 Scan-Zustände x 6 Ausschuss-Zustände x 2
+ * Gate-Zustände x 6 Kriterien-Zustände x 2 Feature-Flag-Zustände = 1296 Projekte. Neu seit
+ * Spec 0641: `queued` und `cancelled` sind eigene Zustände, keine Variante von `running` bzw.
+ * `failed`.
  */
 export function enumerateProjects(): ProjectOut[] {
   const projects: ProjectOut[] = []
@@ -101,7 +115,7 @@ export const SONDERWORTLAUTE: Readonly<Record<string, StepId>> = {
   [STAND_KLASSIFIZIERUNG_ABGESCHALTET]: 'ausschuss',
 }
 
-const SUFFIXES = [' läuft…', ' fehlgeschlagen'] as const
+const SUFFIXES = [' läuft…', ' fehlgeschlagen', ' wartet', ' abgebrochen'] as const
 
 /**
  * Bildet den erzeugten TEXT auf seine Definition zurück. Wirft, sobald ein Text weder aus

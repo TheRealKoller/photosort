@@ -12,10 +12,11 @@ describe('deriveScanStatus', () => {
     expect(deriveScanStatus(projectWith(null))).toBe('never')
   })
 
-  it.each(['running', 'success', 'failed'] as const)(
+  it.each(['queued', 'running', 'success', 'failed', 'cancelled'] as const)(
     'returns "%s" when the last scan has that status',
     (status) => {
       const project = projectWith({
+        id: 1,
         status,
         started_at: '2026-07-20T10:00:00Z',
         finished_at: null,
@@ -26,6 +27,7 @@ describe('deriveScanStatus', () => {
         photos_removed: 0,
         files_skipped: 0,
         error_message: null,
+        cancel_requested_at: null,
       })
 
       expect(deriveScanStatus(project)).toBe(status)

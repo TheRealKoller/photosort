@@ -123,7 +123,13 @@ export function getBlockedReason(id: StepId, project: ProjectOut): string {
 export type ProjectStand =
   | { kind: 'weiter'; stepLabel: string }
   | { kind: 'hinweis'; label: string }
-  | { kind: 'lauf'; status: 'running' | 'failed'; label: string }
+  | {
+      kind: 'lauf'
+      // `queued`/`cancelled` (Spec 0641) tragen den neutralen Ton; nur das Wort unterscheidet sie
+      // von „läuft…"/„fehlgeschlagen".
+      status: 'running' | 'queued' | 'failed' | 'cancelled'
+      label: string
+    }
   | { kind: 'fertig' }
 
 /**
@@ -217,8 +223,14 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
   switch (runStatusOfStep(project, frontierId)) {
     case 'running':
       return { kind: 'lauf', status: 'running', label: `${stepLabel} läuft…` }
+    case 'queued':
+      return { kind: 'lauf', status: 'queued', label: `${stepLabel} wartet` }
     case 'failed':
       return { kind: 'lauf', status: 'failed', label: `${stepLabel} fehlgeschlagen` }
+    // Ohne Ergebnis beendet (Spec 0641): kein Fehlschlag, kein „bereit" - der Schritt ist weder
+    // erledigt noch gescheitert und die Zeile nennt genau das.
+    case 'cancelled':
+      return { kind: 'lauf', status: 'cancelled', label: `${stepLabel} abgebrochen` }
     // `success` bedeutet am Frontier-Schritt „noch kein Ergebnis, das ihn abschliesst" und
     // liefert damit denselben Wortlaut wie ein Schritt ohne Lauf. Seit Spec 0525 ist das der
     // Regelfall des Ausschuss-Schritts: Ein erfolgreicher ERKENNUNGSlauf schliesst ihn nicht mehr
@@ -242,9 +254,9 @@ export interface WorkflowOverviewEntry {
   /** `isDone` aus `computeStepStates`, durchgereicht für die Marke: Haken vor Schloss wie in der
    * Schrittleiste. An den Stationen immer `false`. */
   isDone: boolean
-  /** Der Lauf dieses Schritts, unabhängig vom Zustand - nur `running` und `failed` werden
-   * gezeigt. */
-  run: 'running' | 'failed' | null
+  /** Der Lauf dieses Schritts, unabhängig vom Zustand - `running`, `queued`, `failed` und
+   * `cancelled` werden gezeigt (Spec 0641). */
+  run: 'running' | 'queued' | 'failed' | 'cancelled' | null
   /** Wortgleich mit dem Sperrgrund der Schrittleiste, nur bei `gesperrt`/`abgeschaltet`. */
   blockedReason: string | null
   to: string
@@ -287,7 +299,13 @@ export function deriveWorkflowOverview(project: ProjectOut): WorkflowOverviewEnt
       id: step.id,
       state,
       isDone: step.isDone,
-      run: runStatus === 'running' || runStatus === 'failed' ? runStatus : null,
+      run:
+        runStatus === 'running' ||
+        runStatus === 'queued' ||
+        runStatus === 'failed' ||
+        runStatus === 'cancelled'
+          ? runStatus
+          : null,
       blockedReason:
         state === 'gesperrt' || state === 'abgeschaltet'
           ? getBlockedReason(step.id, project)

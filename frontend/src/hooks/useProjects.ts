@@ -19,7 +19,8 @@ import {
   type CreateProjectPayload,
   type ModelChoicePayload,
 } from '../api/projects'
-import type { ClassificationWay, ProjectOut } from '../api/types'
+import { operationsQueryKey } from '../api/operations'
+import type { ClassificationWay, ProjectOut, ScanStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 
@@ -30,14 +31,17 @@ export function useProjectsQuery() {
 }
 
 /**
- * Pollt, solange der letzte Scan, der letzte Scoring-Lauf ODER der letzte Kriterien-Scoring-Lauf
- * laeuft (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - dritte
- * Anwendung desselben granularen Live-Fortschritt-Polling-Musters.
+ * Pollt, solange einer der vier dokumentierten Laeufe LAEUFT ODER WARTET (`running`/`queued`,
+ * Spec 0641), und stoppt automatisch, sobald alle fertig sind - dritte Anwendung desselben
+ * granularen Live-Fortschritt-Polling-Musters.
  *
- * Die vierte Bedingung (`last_remote_category_classification_run`) ist mit dem Feld ersatzlos
- * entfallen und wird NICHT ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des
- * GESAMTEN verketteten Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte
- * Bedingung deckt sie mit ab.
+ * `queued` ist ein eigener, sichtbarer Zustand: ohne ihn bliebe die Seite bis zum ersten
+ * Worker-Takt auf dem alten Stand stehen, obwohl der Auftrag schon angenommen ist.
+ *
+ * Die vierte fruehere Bedingung (`last_remote_category_classification_run`) ist mit dem Feld
+ * ersatzlos entfallen und wird NICHT ersetzt - sie war redundant. Der Klassifizierungslauf ist
+ * waehrend des GESAMTEN verketteten Durchlaufs `running`, also auch waehrend seiner Remote-Phase;
+ * die dritte Bedingung deckt sie mit ab.
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -45,11 +49,13 @@ export function useProjectQuery(id: number) {
     queryFn: () => getProject(id),
     refetchInterval: (query) => {
       const data = query.state.data as ProjectOut | undefined
+      const isActive = (status: ScanStatus | undefined): boolean =>
+        status === 'running' || status === 'queued'
       const isRunning =
-        data?.last_scan?.status === 'running' ||
-        data?.last_scoring_run?.status === 'running' ||
-        data?.last_criterion_scoring_run?.status === 'running' ||
-        data?.last_export_run?.status === 'running'
+        isActive(data?.last_scan?.status) ||
+        isActive(data?.last_scoring_run?.status) ||
+        isActive(data?.last_criterion_scoring_run?.status) ||
+        isActive(data?.last_export_run?.status)
       return isRunning ? POLL_INTERVAL_MS : false
     },
   })
@@ -95,6 +101,9 @@ export function useTriggerScanMutation(id: number) {
     mutationFn: () => triggerScan(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      // Spec 0641: Die Projektleiste nennt den angenommenen Vorgang sofort, nicht erst beim
+      // naechsten Abruf.
+      void queryClient.invalidateQueries({ queryKey: operationsQueryKey(id) })
     },
   })
 }
@@ -105,6 +114,7 @@ export function useTriggerScoreMutation(id: number) {
     mutationFn: () => triggerScore(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: operationsQueryKey(id) })
     },
   })
 }

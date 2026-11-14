@@ -6,7 +6,10 @@ import type { ExportRunSummary } from '../api/types'
 import { ExportSection } from './ExportSection'
 import { useExport } from '../hooks/useExport'
 
+const cancelMock = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false, isError: false }))
+
 vi.mock('../hooks/useExport', () => ({ useExport: vi.fn() }))
+vi.mock('../hooks/useOperations', () => ({ useCancelOperation: () => cancelMock }))
 
 const mockedUseExport = vi.mocked(useExport)
 
@@ -21,6 +24,7 @@ function run(overrides: Partial<ExportRunSummary> = {}): ExportRunSummary {
     exported_count: 3,
     failed_count: 0,
     error_message: null,
+    cancel_requested_at: null,
     ...overrides,
   }
 }

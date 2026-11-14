@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 
+import type { OperationKind } from '../api/types'
+import { useCancelRequestFocus } from '../hooks/useCancelRequestFocus'
 import type { StepAction } from '../utils/stepActions'
+import { OperationCancelButton } from './OperationCancelButton'
 import { Button } from './ui/button'
 
 interface StepActionBarProps {
@@ -17,6 +20,14 @@ interface StepActionBarProps {
   disabled?: boolean
   /** Laufende Anfrage der Abschluss-Aktion. */
   busy?: boolean
+  /** Bittet um den Abbruch des laufenden Vorgangs (Spec 0641). Fehlt ohne eigenen Lauf. */
+  onCancel?: () => void
+  /** Der Abbruch ist angefordert - Knopf gesperrt, Fokus auf der Statuszeile. */
+  cancelRequested?: boolean
+  /** Die Abbruch-Anfrage laeuft gerade. */
+  cancelPending?: boolean
+  /** Welcher Vorgang hier laeuft - traegt den zugaenglichen Namen des Abbruch-Knopfs. */
+  operation?: OperationKind
 }
 
 const ACTION_CLASSES = 'h-11 w-full shrink-0 sm:h-8 sm:w-auto'
@@ -38,7 +49,12 @@ export function StepActionBar({
   onAction,
   disabled = false,
   busy = false,
+  onCancel,
+  cancelRequested = false,
+  cancelPending = false,
+  operation,
 }: StepActionBarProps) {
+  const statusRef = useCancelRequestFocus<HTMLParagraphElement>(cancelRequested)
   let control: ReactNode
   switch (action.kind) {
     case 'start':
@@ -52,6 +68,14 @@ export function StepActionBar({
           disabled={disabled}
           busy={busy}
         >
+          {action.label}
+        </Button>
+      )
+      break
+    // „wartet" (Spec 0641): gesperrt, aber OHNE Ladezeichen - es laeuft noch nichts.
+    case 'queued':
+      control = (
+        <Button type="button" className={ACTION_CLASSES} disabled>
           {action.label}
         </Button>
       )
@@ -85,12 +109,34 @@ export function StepActionBar({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="flex min-w-0 flex-col gap-2">
-          <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <p
+            ref={statusRef}
+            tabIndex={-1}
+            aria-live="polite"
+            className="flex items-center gap-2 text-sm text-text"
+          >
             {status}
           </p>
           {detail}
         </div>
-        {control}
+        {/* Abbruch steht beim Fortschritt seines Vorgangs: rechts daneben ab `sm`, am Telefon
+            darunter (gap-3, damit die 44-px-Trefferflaechen nicht ueberlappen). Die Zeile bleibt
+            auch ohne Abbruch-Knopf dieselbe: eine wechselnde Verschachtelung haengte den
+            Hauptknopf bei jedem Zustandswechsel neu ein. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {control}
+          {(action.kind === 'running' || action.kind === 'queued') &&
+            onCancel !== undefined &&
+            operation !== undefined && (
+              <OperationCancelButton
+                operation={operation}
+                cancelRequested={cancelRequested}
+                pending={cancelPending}
+                onCancel={onCancel}
+                className="w-full sm:w-auto"
+              />
+            )}
+        </div>
       </div>
     </div>
   )

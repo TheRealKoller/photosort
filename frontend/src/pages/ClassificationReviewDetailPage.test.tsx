@@ -126,6 +126,7 @@ function detailOut(
     unclassifiable_photo_count: 0,
     finished_at: '2026-11-07T11:00:00',
     error_message: null,
+    cancel_requested_at: null,
     sides: { a: EYE, b: CLOUD },
     counts_by_purpose: {
       motifs: { unit: 'photo', compared: 3, matching: 1, deviating: 2, presented: 2 },

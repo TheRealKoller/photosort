@@ -54,6 +54,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
 
 function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -64,6 +65,7 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
     photos_removed: 0,
     files_skipped: 0,
     error_message: null,
+    cancel_requested_at: null,
     ...overrides,
   }
 }
