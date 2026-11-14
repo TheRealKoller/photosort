@@ -62,9 +62,9 @@ describe('deriveWorkflowOverview: Einträge', () => {
   })
 })
 
-describe('deriveWorkflowOverview: Gleichlauf über 256 Lagen', () => {
+describe('deriveWorkflowOverview: Gleichlauf über 864 Lagen', () => {
   it('rechnet den Eingaberaum vollständig durch', () => {
-    expect(projects).toHaveLength(256)
+    expect(projects).toHaveLength(864)
   })
 
   it('zeigt höchstens einen Eintrag als "aktuell"', () => {

@@ -1,6 +1,10 @@
 import type { ProjectOut } from '../api/types'
 
-export type ScanStatusLabel = 'never' | 'running' | 'success' | 'failed'
+/**
+ * Die Wortlaute der Statusmarke. `queued`/`cancelled` (Spec 0641) sind KEINE Fehler: beide
+ * tragen den neutralen Ton `never`, nur das Wort daneben unterscheidet sie.
+ */
+export type ScanStatusLabel = 'never' | 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
 
 /** Leitet den Scan-Kurzstatus einer Projektkarte/-detailseite aus `last_scan` ab. */
 export function deriveScanStatus(project: Pick<ProjectOut, 'last_scan'>): ScanStatusLabel {

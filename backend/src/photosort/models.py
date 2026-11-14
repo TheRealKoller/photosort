@@ -23,9 +23,14 @@ from photosort.db import Base
 
 
 class ScanStatus(enum.StrEnum):
+    """`QUEUED` heisst eingereiht, aber vom Worker noch nicht uebernommen; `CANCELLED` ist der
+    Endzustand eines Nutzer-Abbruchs - weder erfolgreich noch fehlgeschlagen."""
+
+    QUEUED = "queued"
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class ExportRunStatus(enum.StrEnum):
@@ -34,9 +39,11 @@ class ExportRunStatus(enum.StrEnum):
     Semantik (Teilfehler enden `success`), ein geteilter Vorrat machte die beiden an jeder
     Lesestelle verwechselbar."""
 
+    QUEUED = "queued"
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class CategoryMethod(enum.StrEnum):
@@ -393,6 +400,9 @@ class ScanRun(Base):
     # sofort als Stillstand. Periodisch zwischen-committet
     # (worker.py::_maybe_commit_progress_checkpoint), gelesen von worker.py::reap_stalled_runs.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch des Nutzers (`NULL` = keiner). Der Worker liest ihn an seinen Pruefpunkten
+    # frisch und beendet den Lauf dort als `CANCELLED` (worker.py::_finish_cancelled).
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # default=None (nicht 0) - unterscheidet "Enumerationsphase noch nicht abgeschlossen,
     # Gesamtzahl unbekannt" von "Projekt enthält 0 Dateien". Überall mit `is not None` statt
     # truthy zu prüfen. Wird nach Abschluss von Phase 1 (worker.py::run_project_scan) einmalig
@@ -479,6 +489,8 @@ class ScoringRun(Base):
     suggestions_found: Mapped[int] = mapped_column(default=0, server_default="0")
     # Fortschritts-Watchdog, analog ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch, analog ScanRun.cancel_requested_at.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # Ausschuss-Gate: projektweit, ohne user_id-Bezug wie alle Run-Tabellen - nur Rating ist
     # personenbezogen. None = Gate noch nicht bestätigt. Gesetzt über POST
     # /confirm-ausschuss-gate oder automatisch von run_project_scoring, wenn
@@ -626,6 +638,8 @@ class CriterionScoringRun(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Fortschritts-Watchdog, analog ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch, analog ScanRun.cancel_requested_at.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # Diese Zeile ist der Run-Datensatz des GESAMTEN Klassifizierungslaufs, nicht nur seiner
     # Kriterien-Phase: angelegt von worker.py::run_classification, bevor die erste Phase startet,
     # nie von run_criterion_scoring selbst. Sonst zeigte `last_criterion_scoring_run` während der
@@ -1042,6 +1056,9 @@ class RemoteCategoryClassificationRun(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Fortschritts-Watchdog, analog ScanRun.last_progress_at.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch, analog ScanRun.cancel_requested_at. Die API setzt ihn zusammen mit dem des
+    # zugehoerigen Klassifizierungslaufs.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
 
     # Die IST-Kosten-Buchführung des Remote-Kategorie-Anteils dieses Laufs. Kein Präfix - dieser
     # Lauf hat genau einen Zweck. Nullable-Semantik, Zählweise von `api_calls` und das Einfrieren
@@ -1575,6 +1592,8 @@ class ExportRun(Base):
     # ein frisch angelegter Lauf sofort als Stillstand. Periodisch zwischen-committet
     # (worker.py::run_export), gelesen von worker.py::reap_stalled_runs.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch, analog ScanRun.cancel_requested_at.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="export_runs")
     photos: Mapped[list[ExportPhoto]] = relationship(
@@ -2072,6 +2091,8 @@ class ClassificationReview(Base):
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
     # Fortschritts-Watchdog, analog den uebrigen Lauf-Tabellen.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Abbruchwunsch, analog ScanRun.cancel_requested_at.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # Ausschliesslich ein fester deutscher Satz aus der geschlossenen Menge in
     # classification_review.py - nie `str(exc)` eines fremden Systems (S7).
     error_message: Mapped[str | None] = mapped_column(default=None)

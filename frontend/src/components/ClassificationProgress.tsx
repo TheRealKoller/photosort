@@ -31,6 +31,9 @@ const STATE_LABELS: Record<ClassificationStepState, string> = {
   running: 'läuft',
   done: 'erledigt',
   skipped: 'übersprungen',
+  // Spec 0641: Der unterbrochene Teilschritt und alles danach - beide ohne Farbe und ohne Puls.
+  cancelled: 'abgebrochen',
+  not_started: 'nicht begonnen',
 }
 
 interface ClassificationProgressProps {
@@ -121,9 +124,10 @@ function EtaLine({
   )
 }
 
-/** `null` = kein anzeigbarer Fortschrittswert (ausstehend, übersprungen, oder ohne Gesamtzahl). */
+/** `null` = kein anzeigbarer Fortschrittswert (nicht begonnen, ausstehend, übersprungen, oder
+ * ohne Gesamtzahl). `cancelled` BEHAELT seinen letzten Wert - er ist der eingefrorene Stand. */
 function progressValue(step: ClassificationStep): string | null {
-  if (step.state === 'pending' || step.state === 'skipped') {
+  if (step.state === 'pending' || step.state === 'skipped' || step.state === 'not_started') {
     return null
   }
   if (step.total === null || step.processed === null) {

@@ -422,16 +422,26 @@ class TestProviderForVisionModel:
         Geprueft ueber den AST statt ueber den Rohtext: die Modul-Kommentare NENNEN
         `photosort.config` ausdruecklich (als Verbot), eine Textsuche wuerde daran haengenbleiben
         und damit die Dokumentation der Regel bestrafen.
-        """
-        tree = ast.parse(Path(cloud_vision.__file__).read_text(encoding="utf-8"))
-        imported: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                imported.add(node.module)
 
-        assert not any(name.startswith("photosort") for name in imported), imported
+        Einzige erlaubte Abhaengigkeit im eigenen Baum ist `photosort.run_cancel` (das
+        Abbruch-Token der unterbrechbaren Wartezeiten) - und das darf selbst nichts aus
+        `photosort.*` importieren, sonst waere der Zyklus ueber einen Umweg wieder offen.
+        """
+        allowed = {"photosort.run_cancel"}
+        for module_path, permitted in (
+            (Path(cloud_vision.__file__), allowed),
+            (Path(cloud_vision.__file__).with_name("run_cancel.py"), set()),
+        ):
+            tree = ast.parse(module_path.read_text(encoding="utf-8"))
+            imported: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                    imported.add(node.module)
+
+            own = {name for name in imported if name.startswith("photosort")}
+            assert own <= permitted, (module_path.name, own)
 
 
 # ---------------------------------------------------------------------------

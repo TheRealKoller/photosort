@@ -45,6 +45,7 @@ from photosort.demo_state import (
     LARGE_COLLECTION_PHOTO_COUNT,
     LARGE_PROJECT_NAME,
     LONG_AUSSCHUSS_PROJECT_NAME,
+    OPERATIONS_PROJECT_NAME,
     RATED_PROJECT_NAME,
     DemoStateError,
     assert_safe_to_seed,
@@ -65,6 +66,7 @@ from photosort.face_analysis import MODEL_KEY
 from photosort.feedback_log import load_diagnosis
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
+    ClassificationPhase,
     ClassificationReview,
     ClassificationReviewCase,
     ClassificationReviewPurpose,
@@ -122,6 +124,7 @@ from photosort.thumbnails import (
     thumbnail_path,
 )
 from tests.import_closure import import_closure, module_file
+from tests.phase_binding import assert_phase_binding
 from tests.time_offset_invariant import assert_time_offset_invariant
 
 
@@ -231,7 +234,7 @@ class TestCheckOpencloudTarget:
 class TestDemoProjectSpecs:
     """Reine Zustandsbeschreibung - ohne DB, ohne Dateisystem."""
 
-    def test_all_six_states_are_described_and_carry_the_demo_prefix(self) -> None:
+    def test_all_seven_states_are_described_and_carry_the_demo_prefix(self) -> None:
         specs = demo_project_specs()
         assert [spec.name for spec in specs] == [
             EMPTY_PROJECT_NAME,
@@ -240,6 +243,7 @@ class TestDemoProjectSpecs:
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
             LONG_AUSSCHUSS_PROJECT_NAME,
+            OPERATIONS_PROJECT_NAME,
         ]
         assert all(is_demo_project_name(spec.name) for spec in specs)
 
@@ -552,11 +556,11 @@ class TestAssertSafeToSeed:
             )
 
 
-class TestRebuildDemoStateProducesTheSixStates:
-    """Die sechs Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
+class TestRebuildDemoStateProducesTheSevenStates:
+    """Die sieben Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
     Implementierung."""
 
-    async def test_creates_exactly_the_six_demo_projects(
+    async def test_creates_exactly_the_seven_demo_projects(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
@@ -570,7 +574,87 @@ class TestRebuildDemoStateProducesTheSixStates:
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
             LONG_AUSSCHUSS_PROJECT_NAME,
+            OPERATIONS_PROJECT_NAME,
         ]
+
+    async def test_the_operations_project_shows_a_waiting_scan_as_its_latest_run(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0641, Architektur Punkt 8: Ohne einen wartenden Lauf sind „{Schritt} wartet",
+        der Abbrechen-Knopf eines wartenden Vorgangs und „Alle abbrechen" im Pruefstack nicht
+        erreichbar. Er muss der JUENGSTE Lauf seiner Art sein (die Anzeige liest nur ihn) und
+        darf noch keinen Abbruchwunsch tragen - sonst waere „Alle abbrechen" gesperrt."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, OPERATIONS_PROJECT_NAME)
+        latest = (
+            (
+                await db_session.execute(
+                    select(ScanRun)
+                    .where(ScanRun.project_id == project.id)
+                    .order_by(ScanRun.started_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+        assert latest is not None
+        assert latest.status == ScanStatus.QUEUED
+        assert latest.cancel_requested_at is None
+        assert latest.finished_at is None
+        assert latest.error_message is None
+
+    async def test_the_operations_project_shows_a_cancelled_classification(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0641: Ein abgebrochener Lauf traegt Merker, Endzeit, seine letzte `phase` und
+        einen eingefrorenen Teilstand - und KEINE Fehlermeldung (er ist kein Fehler). Erreichbar
+        ist er nur hinter einem bestaetigten Ausschuss."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, OPERATIONS_PROJECT_NAME)
+        runs = (
+            (
+                await db_session.execute(
+                    select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert len(runs) == 1
+        run = runs[0]
+        assert run.status == ScanStatus.CANCELLED
+        assert run.cancel_requested_at is not None
+        assert run.finished_at is not None
+        assert run.cancel_requested_at <= run.finished_at
+        assert run.error_message is None
+        assert run.phase is ClassificationPhase.CRITERIA
+        assert_phase_binding(run)
+        assert 0 < run.photos_processed < run.photos_total
+        scoring_run = await db_session.get(ScoringRun, run.scoring_run_id)
+        assert scoring_run is not None
+        assert scoring_run.status == ScanStatus.SUCCESS
+        assert scoring_run.gate_confirmed_at is not None
+
+    async def test_no_other_demo_project_carries_a_waiting_or_cancelled_run(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Ein wartender Lauf sperrt die Ausloeser seines Schritts und blendet die
+        Vorgangsleiste ein. Die uebrigen Projekte tragen die e2e-Faelle und muessen frei
+        bleiben."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        operations = await _project(db_session, OPERATIONS_PROJECT_NAME)
+        special = (ScanStatus.QUEUED, ScanStatus.CANCELLED)
+        for model in (ScanRun, ScoringRun, CriterionScoringRun, ClassificationReview):
+            rows = (
+                await db_session.execute(
+                    select(model.project_id).where(
+                        model.status.in_(special), model.project_id != operations.id
+                    )
+                )
+            ).all()
+            assert rows == [], model.__name__
 
     async def test_the_long_ausschuss_fills_more_than_one_page_and_stays_unconfirmed(
         self, db_session: AsyncSession, tmp_path: Path
@@ -1251,6 +1335,7 @@ class TestRebuildDemoStateAtProductionSize:
             + sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
             + demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE
             + demo_state.LONG_AUSSCHUSS_PHOTO_COUNT
+            + demo_state.OPERATIONS_PHOTO_COUNT
         )
 
 
@@ -1360,9 +1445,10 @@ class TestMainSucceeds:
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
             LONG_AUSSCHUSS_PROJECT_NAME,
+            OPERATIONS_PROJECT_NAME,
         ):
             assert name in captured.out
-        assert _read_counts(url)["projects"] == 6
+        assert _read_counts(url)["projects"] == 7
 
     def test_second_run_leaves_the_same_number_of_projects(
         self,
@@ -1395,7 +1481,7 @@ class TestMainSucceeds:
         _write_rows(url, cache_dir, [f"{DEMO_PROJECT_PREFIX}Rest aus einem alten Lauf"])
 
         assert main(["--cache-dir", str(cache_dir)], database_url=url) == 0
-        assert _read_counts(url)["projects"] == 6
+        assert _read_counts(url)["projects"] == 7
         capsys.readouterr()
 
 

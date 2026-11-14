@@ -8,13 +8,13 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, exists, select, tuple_, update
+from sqlalchemy import CursorResult, and_, delete, exists, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -196,6 +196,7 @@ from photosort.remote_classification import (
     build_category_classification_client,
     resolve_canonical_label,
 )
+from photosort.run_cancel import RunCancelled, cancel_requested, watch_cancel_requests
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     ClusterCandidate,
@@ -476,9 +477,17 @@ async def _fail_run(
     ),
     error_message: str,
 ) -> None:
-    """Gemeinsame "Lauf auf FAILED setzen"-Logik für die run_*-Funktionen. KEIN Kontrollfluss
-    (kein raise/return) hier drin - der bleibt an jeder Call-Site sichtbar."""
+    """Gemeinsame "Lauf auf FAILED setzen"-Logik für die run_*-Funktionen. Kein raise hier drin -
+    der Kontrollfluss des Laufs bleibt an jeder Call-Site sichtbar.
+
+    Ist ein Abbruch angefordert, endet der Lauf stattdessen `CANCELLED`: der Wunsch des Nutzers
+    schlaegt jeden Fehler, der danach auftritt, einschliesslich Timeout und Worker-Shutdown. Der
+    Merker wird nach dem Rollback frisch gelesen, nie aus dem geladenen Objekt."""
     await session.rollback()
+    await session.refresh(run)
+    if run.cancel_requested_at is not None:
+        await _finish_cancelled(session, run)
+        return
     run.status = ScanStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
@@ -504,6 +513,112 @@ async def _fail_run(
     # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
     # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
     await session.refresh(run)
+
+
+async def _finish_cancelled(
+    session: AsyncSession,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+        | ExportRun
+    ),
+) -> None:
+    """Der Abbruch-Endzustand eines Laufs. Nicht Committetes wird verworfen; was bis zum letzten
+    Commit geschrieben wurde, bleibt - Zaehler, Teilergebnisse und `phase` (der Teilschritt, in dem
+    der Lauf endete). Ein bereits beendeter Lauf bleibt unberuehrt: ein Endzustand wird nie
+    ueberschrieben."""
+    await session.rollback()
+    await session.refresh(run)
+    # Spec 0641 S7: EIN bedingtes UPDATE statt "lesen, pruefen, zuweisen". Der Watchdog
+    # (reap_stalled_runs -> _fail_if_stalled) schliesst dieselbe Zeile ueber _fail_run ab; mit
+    # einem ORM-Schreibvorgang entschied die Commit-Reihenfolge, und ein abgebrochener Lauf
+    # konnte nachtraeglich als `failed` erscheinen. Hier gewinnt, wer den Endzustand zuerst
+    # schreibt: `cancelled` und `failed` sind beide keine aktiven Zustaende, die Bedingung trifft
+    # nach dem ersten Abschluss keine Zeile mehr. `phase` bleibt ausgespart - der Teilschritt
+    # gehoert dem abgebrochenen Lauf.
+    if isinstance(run, ExportRun):
+        model: type[
+            ScanRun
+            | ScoringRun
+            | CriterionScoringRun
+            | RemoteCategoryClassificationRun
+            | ClassificationReview
+            | ExportRun
+        ] = ExportRun
+        active: tuple[ExportRunStatus | ScanStatus, ...] = (
+            ExportRunStatus.QUEUED,
+            ExportRunStatus.RUNNING,
+        )
+        cancelled: ExportRunStatus | ScanStatus = ExportRunStatus.CANCELLED
+    else:
+        model = type(run)
+        active = (ScanStatus.QUEUED, ScanStatus.RUNNING)
+        cancelled = ScanStatus.CANCELLED
+    await session.execute(
+        update(model)
+        .where(model.id == run.id, model.status.in_(active))
+        .values(status=cancelled, error_message=None, finished_at=_now_utc())
+    )
+    await session.commit()
+    await session.refresh(run)
+
+
+async def _take_over_queued_run[
+    RunT: (
+        ScanRun,
+        ScoringRun,
+        CriterionScoringRun,
+        ClassificationReview,
+        ExportRun,
+    )
+](session: AsyncSession, model: type[RunT], run_id: int) -> RunT | None:
+    """Uebernimmt einen von der API angelegten, wartenden Lauf: `QUEUED` -> `RUNNING` in EINER
+    bedingten Anweisung. Wurde der Lauf in der Warteschlange abgebrochen (oder gibt es ihn nicht),
+    trifft sie keine Zeile - dann `None`, und der Job endet ohne jede Arbeit. Die Bedingung macht
+    das Rennen zwischen Abbruch und Jobstart atomar."""
+    if model is ExportRun:
+        queued: ExportRunStatus | ScanStatus = ExportRunStatus.QUEUED
+        running: ExportRunStatus | ScanStatus = ExportRunStatus.RUNNING
+    else:
+        queued, running = ScanStatus.QUEUED, ScanStatus.RUNNING
+    result = await session.execute(
+        update(model)
+        .where(model.id == run_id, model.status == queued, model.cancel_requested_at.is_(None))
+        .values(status=running, last_progress_at=_now_utc())
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    if cast("CursorResult[Any]", result).rowcount != 1:
+        return None
+    return await session.get(model, run_id, populate_existing=True)
+
+
+async def _raise_if_cancel_requested(
+    session: AsyncSession,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+    ),
+) -> None:
+    """Pruefpunkt eines Laufs: ist ein Abbruch angefordert, endet die Arbeit hier mit
+    `RunCancelled`. Steht nur an Commit-Raendern - was davor committet wurde, bleibt erhalten."""
+    if await cancel_requested(session, run):
+        raise RunCancelled
+
+
+async def _finish_if_cancel_requested(session: AsyncSession, run: Any) -> bool:
+    """Pruefpunkt an einer Phasengrenze: fordert der Lauf den Abbruch an, wird er hier beendet und
+    die Phasenfolge endet. `True` heisst "der Lauf ist zu Ende"."""
+    if not await cancel_requested(session, run):
+        return False
+    await _finish_cancelled(session, run)
+    return True
 
 
 async def _generate_thumbnails(
@@ -967,6 +1082,7 @@ async def _catch_up_aspect_ratios(
     )
     filled = 0
     for start in range(0, len(rows), ASPECT_RATIO_CATCH_UP_BATCH_SIZE):
+        await _raise_if_cancel_requested(session, run)
         block = list(rows[start : start + ASPECT_RATIO_CATCH_UP_BATCH_SIZE])
         ratios = await asyncio.to_thread(_read_cached_aspect_ratios, cache_dir, block)
         for photo_id, ratio in ratios:
@@ -985,11 +1101,25 @@ async def run_project_scan(
     project: Project,
     drive_name: str | None,
     cache_dir: Path,
-) -> ScanRun:
-    scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
-    session.add(scan_run)
-    await session.commit()
-    await session.refresh(scan_run)
+    *,
+    run_id: int | None = None,
+) -> ScanRun | None:
+    """Der Scan-Lauf. Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf und
+    endet ohne jede Arbeit (None), wenn der in der Warteschlange abgebrochen wurde; ohne `run_id`
+    legt er die Zeile selbst an.
+
+    Ein Abbruchwunsch wird vor jedem Block gelesen. Was bis dahin committet ist - Fotos,
+    Vorschaubilder, Zaehler -, bleibt; verschwundene Fotos werden dann NICHT entfernt und der
+    Bild-Cache nicht aufgeraeumt, weil der Lauf den Ordnerbaum nicht vollstaendig gesehen hat."""
+    if run_id is not None:
+        scan_run = await _take_over_queued_run(session, ScanRun, run_id)
+        if scan_run is None:
+            return None
+    else:
+        scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(scan_run)
+        await session.commit()
+        await session.refresh(scan_run)
 
     try:
         # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs
@@ -1023,6 +1153,7 @@ async def run_project_scan(
         await session.commit()
 
         # Phase 2a (Klassifikation, reine Funktion) - siehe _classify_scan_entries.
+        await _raise_if_cancel_requested(session, scan_run)
         classification = _classify_scan_entries(entries, existing_photos)
 
         files_found = 0
@@ -1050,6 +1181,7 @@ async def run_project_scan(
         # benutzt.
         camera_cache: dict[tuple[str, str], ProjectCamera] = {}
         for start in range(0, len(work_items), concurrency):
+            await _raise_if_cancel_requested(session, scan_run)
             block = work_items[start : start + concurrency]
             added, updated = await _process_scan_block(
                 session, client, drive.webdav_url, cache_dir, project.id, block, camera_cache
@@ -1061,6 +1193,9 @@ async def run_project_scan(
             scan_run.last_progress_at = _now_utc()
             await session.commit()
 
+        # Letzter Pruefpunkt VOR dem Entfernen: ein Abbruch nach dem letzten Block endet
+        # ebenfalls `cancelled`, und ein abgebrochener Lauf entfernt nichts.
+        await _raise_if_cancel_requested(session, scan_run)
         removed_paths = set(existing_photos) - classification.seen_paths
         for path in removed_paths:
             await session.delete(existing_photos[path])
@@ -1073,6 +1208,9 @@ async def run_project_scan(
         scan_run.photos_removed = len(removed_paths)
         scan_run.files_skipped = files_skipped
         await session.commit()
+    except RunCancelled:
+        await _finish_cancelled(session, scan_run)
+        return scan_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs: ein arq job_timeout-Ablauf, ein geplanter
         # Worker-Shutdown und ein künftiger Job.abort() lösen alle denselben
@@ -1114,7 +1252,9 @@ async def run_project_scan(
     return scan_run
 
 
-async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
+async def scan_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -1129,8 +1269,9 @@ async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
                 project,
                 settings.opencloud_drive_name or None,
                 cache_dir=Path(settings.photo_cache_dir),
+                run_id=run_id,
             )
-        return scan_run.id
+        return scan_run.id if scan_run is not None else None
 
 
 # Der feste Wurzelordner des Exports - eine Modulkonstante, KEIN Env-Parameter. Er begrenzt den
@@ -1199,8 +1340,13 @@ def _export_overlaps_scan_root(opencloud_path: str) -> bool:
 
 
 async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
-    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum."""
+    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum,
+    mit demselben Vorrang eines angeforderten Abbruchs."""
     await session.rollback()
+    await session.refresh(run)
+    if run.cancel_requested_at is not None:
+        await _finish_cancelled(session, run)
+        return
     run.status = ExportRunStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
@@ -1209,22 +1355,38 @@ async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message:
 
 
 async def run_export(
-    session: AsyncSession, client: ExportClient, project: Project
+    session: AsyncSession,
+    client: ExportClient,
+    project: Project,
+    *,
+    run_id: int | None = None,
 ) -> ExportRun | None:
     """Der Export-Lauf: Menge ableiten -> Lauf + Schnappschuss -> MKCOL Wurzel/Unterordner -> je
     Foto COPY. Ein leeres Projekt erzeugt KEINEN Lauf (None).
 
+    Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf; wurde der in der
+    Warteschlange abgebrochen, endet er ohne jede Arbeit (None). Ohne `run_id` (ein vor dem
+    Wartezustand eingereihter Job) legt er die Zeile selbst an.
+
     Einzelfehler je `COPY` schreiben in die Schnappschusszeile (`export_photos.error`) und lassen
     den Lauf weiterlaufen - er endet trotz Teilfehlern `success`. Nur ein fataler Fehler
-    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed` (ADR 0136 Punkt 3)."""
-    included = await included_photos(session, project.id)
-    if not included:
-        return None
-
-    run = ExportRun(project_id=project.id, status=ExportRunStatus.RUNNING)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
+    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed` (ADR 0136 Punkt 3).
+    Ein Abbruchwunsch wird vor jedem COPY gelesen: der Ordner und die bereits kopierten Fotos
+    bleiben auf OpenCloud, der Lauf endet `cancelled`."""
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, ExportRun, run_id)
+        if taken_over is None:
+            return None
+        run = taken_over
+        included = await included_photos(session, project.id)
+    else:
+        included = await included_photos(session, project.id)
+        if not included:
+            return None
+        run = ExportRun(project_id=project.id, status=ExportRunStatus.RUNNING)
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
 
     # Der Zeitstempel wird HIER genommen - im nacheinander arbeitenden Worker -, damit zwei Laeufe
     # nicht in derselben Mikrosekunde beginnen (ADR 0136 Punkt 2: ein erneuter Export erzeugt immer
@@ -1278,6 +1440,8 @@ async def run_export(
             await client.mkcol(webdav_url, f"{target_path}/{folder}")
 
         for index, entry in enumerate(included):
+            if await cancel_requested(session, run):
+                break
             try:
                 # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
                 # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
@@ -1296,6 +1460,12 @@ async def run_export(
             if (index + 1) % EXPORT_COMMIT_BATCH_SIZE == 0:
                 await session.commit()
 
+        if await cancel_requested(session, run):
+            # Der bis hierher erzielte Stand wird committet, BEVOR _finish_cancelled zurueckrollt -
+            # Zielpfad und Kopierzahl bleiben sichtbar, damit der Ordner auffindbar ist.
+            await session.commit()
+            await _finish_cancelled(session, run)
+            return run
         run.status = ExportRunStatus.SUCCESS
         run.finished_at = _now_utc()
         await session.commit()
@@ -1318,7 +1488,9 @@ async def run_export(
     return run
 
 
-async def export_project(ctx: dict[str, Any], project_id: int) -> int | None:
+async def export_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -1327,7 +1499,7 @@ async def export_project(ctx: dict[str, Any], project_id: int) -> int | None:
         async with OpenCloudClient(
             settings.opencloud_base_url, settings.opencloud_username, settings.opencloud_app_token
         ) as client:
-            run = await run_export(session, client, project)
+            run = await run_export(session, client, project, run_id=run_id)
         return run.id if run is not None else None
 
 
@@ -1371,7 +1543,9 @@ async def run_project_scoring(
     session: AsyncSession,
     project: Project,
     cache_dir: Path,
-) -> ScoringRun:
+    *,
+    run_id: int | None = None,
+) -> ScoringRun | None:
     """Scort alle Fotos eines Projekts neu (kein inkrementelles Scoring) auf Basis der bereits vom
     Scan gecachten display-Variante - kein erneuter OpenCloud-Download.
 
@@ -1379,12 +1553,25 @@ async def run_project_scoring(
     PhotoScore upserten, photos_processed periodisch committen -> projektweite
     Duplikat-/Cluster-Erkennung -> suggested_status setzen -> ScoringRun auf success/failed
     setzen. Ranking-Grundlage ist die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
+
+    Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf (None, wenn der in der
+    Warteschlange abgebrochen wurde). Ein Abbruchwunsch wird vor jedem Commit-Batch und vor dem
+    Clustering gelesen: die geschriebenen `PhotoScore`-Zeilen bleiben, Clustering, automatische
+    Entscheidung, Vorschlagszahl und Gate entfallen - ein abgebrochener Lauf bestaetigt den
+    Ausschuss nie.
     """
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
-    session.add(scoring_run)
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, ScoringRun, run_id)
+        if taken_over is None:
+            return None
+        scoring_run = taken_over
+    else:
+        scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(scoring_run)
     # Ein neuer Lauf beginnt ohne automatische Entscheidung (ADR 0146 Punkt 3): Der Merker ist
     # eine Aussage UEBER DIESEN Lauf, keine Historie. Der projektweite Reset laeuft in derselben
-    # Anweisung wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt.
+    # Anweisung wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt. Er
+    # steht hinter der Uebernahme: ein in der Warteschlange abgebrochener Lauf setzt nichts zurueck.
     await session.execute(
         update(PhotoScore)
         .where(PhotoScore.photo_id.in_(select(Photo.id).where(Photo.project_id == project.id)))
@@ -1421,6 +1608,8 @@ async def run_project_scoring(
         computed: dict[int, PhotoMetrics] = {}
         processed = 0
         for photo in photos:
+            if processed % SCORE_COMMIT_BATCH_SIZE == 0:
+                await _raise_if_cancel_requested(session, scoring_run)
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             metrics = _compute_photo_metrics(path) if path.is_file() else None
             # Bekannte, akzeptierte Lücke: wird die display-Cache-Datei eines
@@ -1456,6 +1645,8 @@ async def run_project_scoring(
 
         scoring_run.photos_processed = processed
         await session.commit()
+        # Letzter Pruefpunkt vor dem Clustering: danach ist der Lauf in einem Zug fertig.
+        await _raise_if_cancel_requested(session, scoring_run)
 
         # Um die Koordinate erweitert - KEIN zusaetzlicher Query, die `photos` liegen an dieser
         # Stelle bereits vollstaendig vor.
@@ -1579,6 +1770,9 @@ async def run_project_scoring(
             scoring_run.gate_confirmed_at = _now_utc()
         await session.commit()
         return scoring_run
+    except RunCancelled:
+        await _finish_cancelled(session, scoring_run)
+        return scoring_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan oben.
         await _fail_run(
@@ -1594,16 +1788,18 @@ async def run_project_scoring(
         return scoring_run
 
 
-async def score_project(ctx: dict[str, Any], project_id: int) -> int:
+async def score_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise ValueError(f"Project {project_id} not found")
 
         scoring_run = await run_project_scoring(
-            session, project, cache_dir=Path(settings.photo_cache_dir)
+            session, project, cache_dir=Path(settings.photo_cache_dir), run_id=run_id
         )
-        return scoring_run.id
+        return scoring_run.id if scoring_run is not None else None
 
 
 class CriterionScoringGuardError(Exception):
@@ -3260,6 +3456,9 @@ async def run_criterion_scoring(
         area_fractions_by_photo_id: dict[int, dict[str, float]] = {}
         processed = 0
         for photo, score in rows:
+            if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
+                # Pruefpunkt je Batch: was bis hier committet ist, bleibt; der Rest entfaellt.
+                await _raise_if_cancel_requested(session, run)
             values: dict[str, float] = {}
 
             sharpness_value = normalize_sharpness(score.sharpness)
@@ -3471,6 +3670,7 @@ async def run_criterion_scoring(
                         ]
 
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
+                        await _raise_if_cancel_requested(session, run)
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
                             *[
@@ -3490,7 +3690,15 @@ async def run_criterion_scoring(
                         for result in results:
                             if isinstance(result, asyncio.CancelledError):
                                 raise result
+                        landmark_handled = 0
+                        landmark_cancelled = False
                         for photo_id, result in zip(block_ids, results, strict=True):
+                            if isinstance(result, RunCancelled):
+                                # Der Abbruch hat die Wartezeit dieses Aufrufs beendet: weder
+                                # Aufruf noch Fehlschlag, und der Block beginnt nichts Neues mehr.
+                                landmark_cancelled = True
+                                break
+                            landmark_handled += 1
                             if isinstance(result, BaseException):
                                 # Best-effort: ein einzelner fehlgeschlagener Cloud-Aufruf
                                 # (Timeout, 4xx/5xx, fehlender Cache-Eintrag) laesst fuer dieses
@@ -3602,11 +3810,13 @@ async def run_criterion_scoring(
                         # kostenpflichtig beim Anbieter an, waehrend die Oberflaeche
                         # "fehlgeschlagen" sagt, und die Kostenerfassung des `finally` schreibt
                         # ihren Betrag auf eine bereits als gescheitert ausgewiesene Zeile.
-                        landmark_processed += len(block_ids)
+                        landmark_processed += landmark_handled
                         run.landmark_photos_processed = landmark_processed
                         run.landmark_failed_calls = landmark_failures
                         run.last_progress_at = _now_utc()
                         await session.commit()
+                        if landmark_cancelled:
+                            raise RunCancelled
                 finally:
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
@@ -3677,6 +3887,9 @@ async def run_criterion_scoring(
         # Landmark-Phase und braucht deshalb einen eigenen Namen: sonst bliebe `phase` hier auf
         # `landmark` bei 100 % Fortschritt stehen ("haengt oder laeuft?") oder muesste auf
         # `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
+        # Pruefpunkt vor der Rangfolge: ein Abbruch nach dem letzten Kriterium ueberspringt
+        # Rangfolge, Personenangabe und Auswahlvorschlag - der Lauf bleibt ein Teilstand.
+        await _raise_if_cancel_requested(session, run)
         _set_phase(run, ClassificationPhase.RANKING)
         await session.commit()
 
@@ -3710,6 +3923,9 @@ async def run_criterion_scoring(
         run.finished_at = _now_utc()
         await session.commit()
         return run
+    except RunCancelled:
+        await _finish_cancelled(session, run)
+        return run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan/run_project_scoring oben.
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
@@ -3727,6 +3943,7 @@ async def run_classification(
     scoring_run_id: int,
     cache_dir: Path,
     *,
+    run_id: int | None = None,
     mode: ClassificationMode | None = None,
     use_cloud: bool | None = None,
     estimated_cost_usd: float | None = None,
@@ -3744,7 +3961,8 @@ async def run_classification(
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
     build_eye_client: Callable[[], EyeClientLike] = build_eye_client,
-) -> CriterionScoringRun:
+    session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
+) -> CriterionScoringRun | None:
     """Der EINE, verkettete Klassifizierungslauf:
 
         Phase "remote_categories" (nur bei mode=cloud und aktiver Cloud-Nutzung)
@@ -3794,6 +4012,11 @@ async def run_classification(
     `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle der beiden
     Taetigkeiten. Sie werden unveraendert an die jeweilige Phase weitergereicht; `None` heisst
     "Job aus der Zeit vor dem Update" und laesst die Phase die Installationsvorgabe aufloesen.
+
+    Mit `run_id` uebernimmt der Lauf die von der API angelegte, wartende Zeile (None, wenn sie in
+    der Warteschlange abgebrochen wurde). `session_factory` speist den Abbruch-Beobachter, der die
+    Wartezeiten der Cloud-Drosselung unterbricht; sie ist injizierbar, damit ein Test denselben
+    Datenbestand beobachtet.
     """
     if mode is None:
         mode = ClassificationMode.CLOUD if use_cloud else ClassificationMode.LOCAL
@@ -3808,14 +4031,20 @@ async def run_classification(
         mode is ClassificationMode.EYE and project.cloud_vision_detection_enabled
     )
 
-    run = await _start_criterion_scoring_run(
-        session,
-        project,
-        scoring_run_id,
-        cloud_requested=cloud_requested,
-        estimated_cost_usd=estimated_cost_usd,
-        mode=mode,
-    )
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, CriterionScoringRun, run_id)
+        if taken_over is None:
+            return None
+        run = taken_over
+    else:
+        run = await _start_criterion_scoring_run(
+            session,
+            project,
+            scoring_run_id,
+            cloud_requested=cloud_requested,
+            estimated_cost_usd=estimated_cost_usd,
+            mode=mode,
+        )
     # Die ERSTE Phase geht ueber denselben Weg wie jede spaetere, statt als
     # Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
     # Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
@@ -3830,6 +4059,10 @@ async def run_classification(
         initial_phase = ClassificationPhase.CRITERIA
     _set_phase(run, initial_phase)
     await session.commit()
+    # Phasengrenzen sind Pruefpunkte: ein Abbruch zwischen zwei Phasen beginnt die naechste nicht
+    # mehr. Innerhalb einer Phase pruefen deren Bloecke selbst.
+    if await _finish_if_cancel_requested(session, run):
+        return run
 
     if cloud_active:
         # Die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem ersten Cloud-Aufruf
@@ -3845,16 +4078,17 @@ async def run_classification(
         await session.commit()
 
         try:
-            remote_run = await run_remote_category_classification(
-                session,
-                project,
-                cache_dir,
-                build_client=build_category_client,
-                build_embedder=build_embedder,
-                run=remote_run,
-                parent_run=run,
-                model=category_model,
-            )
+            async with watch_cancel_requests(session_factory, CriterionScoringRun, run.id):
+                remote_run = await run_remote_category_classification(
+                    session,
+                    project,
+                    cache_dir,
+                    build_client=build_category_client,
+                    build_embedder=build_embedder,
+                    run=remote_run,
+                    parent_run=run,
+                    model=category_model,
+                )
         except asyncio.CancelledError:
             # Schicht 1 des Fortschritts-Watchdogs: run_remote_category_classification faellt seine
             # EIGENE Zeile bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
@@ -3862,6 +4096,11 @@ async def run_classification(
             # Cron-Tick auf RUNNING stehen.
             await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
+        if remote_run.status == ScanStatus.CANCELLED:
+            # Die Remote-Phase hat den Abbruchwunsch bemerkt und ihren Teilstand committet; dieser
+            # Lauf endet mit, statt in die Kriterien-Phase zu starten.
+            await _finish_cancelled(session, run)
+            return run
         if remote_run.status == ScanStatus.FAILED:
             # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired -
             # anders als ein commit() (die Session laeuft mit expire_on_commit=False, siehe
@@ -3877,6 +4116,9 @@ async def run_classification(
             )
             await session.commit()
 
+    if await _finish_if_cancel_requested(session, run):
+        return run
+
     if mode is ClassificationMode.EYE:
         # Die Eye-Phase liegt VOR der Kriterien-Phase, damit Rangfolge, Events und
         # Auswahlvorschlag desselben Laufs den WIRKSAMEN Vektor lesen. Ein Fehlschlag beendet den
@@ -3884,6 +4126,9 @@ async def run_classification(
         # nichts (die Phase committet ihre Ergebnisse erst am Ende).
         try:
             await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
+        except RunCancelled:
+            await _finish_cancelled(session, run)
+            return run
         except asyncio.CancelledError:
             await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
@@ -3895,26 +4140,29 @@ async def run_classification(
             )
             return run
 
-    return await run_criterion_scoring(
-        session,
-        project,
-        scoring_run_id,
-        cache_dir,
-        build_detector,
-        build_animal_detector,
-        build_classifier,
-        build_aesthetics,
-        build_landmarker,
-        build_landmark_client,
-        build_embedder=build_embedder,
-        run=run,
-        # Die Landmark-Phase haengt an der Cloud-FREIGABE, nicht am Weg: bei mode=eye MIT
-        # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
-        # ohne Einwilligung nie.
-        use_cloud=cloud_requested,
-        landmark_model=landmark_model,
-        build_face_analyzer=build_face_analyzer,
-    )
+    if await _finish_if_cancel_requested(session, run):
+        return run
+    async with watch_cancel_requests(session_factory, CriterionScoringRun, run.id):
+        return await run_criterion_scoring(
+            session,
+            project,
+            scoring_run_id,
+            cache_dir,
+            build_detector,
+            build_animal_detector,
+            build_classifier,
+            build_aesthetics,
+            build_landmarker,
+            build_landmark_client,
+            build_embedder=build_embedder,
+            run=run,
+            # Die Landmark-Phase haengt an der Cloud-FREIGABE, nicht am Weg: bei mode=eye MIT
+            # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
+            # ohne Einwilligung nie.
+            use_cloud=cloud_requested,
+            landmark_model=landmark_model,
+            build_face_analyzer=build_face_analyzer,
+        )
 
 
 async def classify(
@@ -3924,10 +4172,11 @@ async def classify(
     use_cloud: bool | None,
     estimated_cost_usd: float | None = None,
     *,
+    run_id: int | None = None,
     mode: str | None = None,
     category_model: str | None = None,
     landmark_model: str | None = None,
-) -> int:
+) -> int | None:
     """Der einzige Klassifizierungs-Job.
 
     `estimated_cost_usd` ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist
@@ -3943,7 +4192,11 @@ async def classify(
     (Job aus der Zeit vor dem Update), loest der Job selbst ueber `resolve_model_choice` auf -
     derselbe Weg wie im Ausloeser, kein Rueckfall auf einen geratenen Wert. Ein nicht mehr
     waehlbares Modell wirft dort `UnknownModelChoiceError` und laesst den Lauf sichtbar
-    scheitern (ADR 0143 Punkt 2)."""
+    scheitern (ADR 0143 Punkt 2).
+
+    `run_id` ist die von der API angelegte, wartende Zeile; ohne sie (Altjob) legt der Lauf sie
+    selbst an. Ist die Zeile in der Warteschlange abgebrochen worden, endet der Job ohne jede
+    Arbeit."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -3975,6 +4228,7 @@ async def classify(
             project,
             scoring_run_id,
             cache_dir=Path(settings.photo_cache_dir),
+            run_id=run_id,
             # `mode` ist die genauere Aussage: liegt er vor, wird `use_cloud` NICHT mitgegeben -
             # sonst meldete der Widerspruchs-Check einen Konflikt, den nur die Ableitung erzeugt.
             mode=ClassificationMode(mode) if mode is not None else None,
@@ -3983,7 +4237,7 @@ async def classify(
             category_model=category_model,
             landmark_model=landmark_model,
         )
-        return run.id
+        return run.id if run is not None else None
 
 
 async def _classify_photo_for_remote_category(
@@ -4184,6 +4438,7 @@ async def run_remote_category_classification(
             concurrency = settings.remote_category_classification_concurrency
             processed = 0
             for start in range(0, len(candidates), concurrency):
+                await _raise_if_cancel_requested(session, run)
                 block = candidates[start : start + concurrency]
                 results = await asyncio.gather(
                     *[
@@ -4197,7 +4452,16 @@ async def run_remote_category_classification(
                     if isinstance(result, asyncio.CancelledError):
                         raise result
 
+                handled = 0
+                cancelled = False
                 for photo, result in zip(block, results, strict=True):
+                    if isinstance(result, RunCancelled):
+                        # Der Abbruch hat die Wartezeit dieses Aufrufs beendet: das Element ist
+                        # weder Ergebnis noch Fehlschlag, und der Block beginnt nichts Neues mehr.
+                        # Was vor ihm fertig wurde, wird unten noch committet.
+                        cancelled = True
+                        break
+                    handled += 1
                     if isinstance(result, BaseException):
                         # Best-effort: ein einzelner fehlgeschlagener Cloud-Aufruf laesst fuer
                         # dieses Foto keine Zeile entstehen, das Foto bleibt beim naechsten Lauf
@@ -4322,7 +4586,7 @@ async def run_remote_category_classification(
                         session, photo.id, CloudVisionPhase.REMOTE_CATEGORY
                     )
 
-                processed += len(block)
+                processed += handled
                 run.photos_processed = processed
                 # Der Live-Zähler wird am Block-Commit-Punkt mitgeschrieben - am Blockende, nie
                 # beim Betreten des Blocks (sonst stuende nach einem Abbruch mitten im Block ein
@@ -4337,6 +4601,8 @@ async def run_remote_category_classification(
                 if parent_run is not None:
                     parent_run.last_progress_at = progress_at
                 await session.commit()
+                if cancelled:
+                    raise RunCancelled
         finally:
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
@@ -4367,6 +4633,9 @@ async def run_remote_category_classification(
         run.finished_at = _now_utc()
         await session.commit()
         return run
+    except RunCancelled:
+        await _finish_cancelled(session, run)
+        return run
     except asyncio.CancelledError:
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
@@ -4387,6 +4656,29 @@ JOB_TIMEOUT_SECONDS = 86400
 # ist, gilt als haengend, unabhaengig von seiner Gesamtlaufzeit (bindende Stakeholder-Anforderung:
 # "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
 STALL_THRESHOLD = timedelta(minutes=15)
+
+# Wartende Laeufe haben keinen Fortschritt, an dem man sie messen koennte: ihre `last_progress_at`
+# steht auf dem Anlegezeitpunkt. Sie gelten deshalb erst nach der Job-Obergrenze als haengend -
+# ein Job, der so lange nicht begonnen hat, kommt nicht mehr.
+QUEUED_STALL_THRESHOLD = timedelta(seconds=JOB_TIMEOUT_SECONDS)
+
+
+def _stalled_run_filter(
+    status_column: Any,
+    progress_column: Any,
+    running_status: Any,
+    queued_status: Any,
+    *,
+    running_threshold: datetime,
+    queued_threshold: datetime,
+) -> Any:
+    """Eine Zeile gilt als haengend, wenn ein laufender Lauf den Fortschritts-Schwellwert reisst
+    oder ein wartender den Warte-Schwellwert. Beide Bedingungen stehen in EINER Abfrage, damit
+    die sechs Bloecke des Watchdogs gleich bleiben."""
+    return or_(
+        and_(status_column == running_status, progress_column < running_threshold),
+        and_(status_column == queued_status, progress_column < queued_threshold),
+    )
 
 
 def _stall_message() -> str:
@@ -4443,20 +4735,30 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
+    Jeder Block erfasst laufende Zeilen ueber STALL_THRESHOLD und wartende ueber
+    QUEUED_STALL_THRESHOLD; ein gesetzter Abbruchwunsch gewinnt in beiden Faellen und endet
+    `CANCELLED` (siehe _fail_run).
     Die sechs Tabellen werden bewusst nacheinander in sechs eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
     ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ClassificationReview/ExportRun
     bleiben sechs eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
+    queued_threshold = _now_utc() - QUEUED_STALL_THRESHOLD
     async with session_factory() as session:
         try:
             stalled_scan_runs = (
                 (
                     await session.execute(
                         select(ScanRun).where(
-                            ScanRun.status == ScanStatus.RUNNING,
-                            ScanRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ScanRun.status,
+                                ScanRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4482,8 +4784,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ScoringRun).where(
-                            ScoringRun.status == ScanStatus.RUNNING,
-                            ScoringRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ScoringRun.status,
+                                ScoringRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4502,8 +4810,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(CriterionScoringRun).where(
-                            CriterionScoringRun.status == ScanStatus.RUNNING,
-                            CriterionScoringRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                CriterionScoringRun.status,
+                                CriterionScoringRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4522,8 +4836,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(RemoteCategoryClassificationRun).where(
-                            RemoteCategoryClassificationRun.status == ScanStatus.RUNNING,
-                            RemoteCategoryClassificationRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                RemoteCategoryClassificationRun.status,
+                                RemoteCategoryClassificationRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4542,8 +4862,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ClassificationReview).where(
-                            ClassificationReview.status == ScanStatus.RUNNING,
-                            ClassificationReview.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ClassificationReview.status,
+                                ClassificationReview.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4562,8 +4888,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ExportRun).where(
-                            ExportRun.status == ExportRunStatus.RUNNING,
-                            ExportRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ExportRun.status,
+                                ExportRun.last_progress_at,
+                                ExportRunStatus.RUNNING,
+                                ExportRunStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )

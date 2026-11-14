@@ -10,6 +10,7 @@ import type {
 import { ClassificationReviewCase } from '../components/ClassificationReviewCase'
 import { ClassificationReviewOverview } from '../components/ClassificationReviewOverview'
 import { EyeAttribution } from '../components/EyeAttribution'
+import { OperationCancelButton } from '../components/OperationCancelButton'
 import { PhotoImage } from '../components/PhotoImage'
 import { StatusTag } from '../components/StatusTag'
 import { Alert } from '../components/ui/alert'
@@ -20,6 +21,8 @@ import {
   useExportClassificationReviewMutation,
   useSetClassificationReviewVerdictMutation,
 } from '../hooks/useClassificationReviews'
+import { useCancelRequestFocus } from '../hooks/useCancelRequestFocus'
+import { useCancelOperation } from '../hooks/useOperations'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import {
   CLASSIFICATION_REVIEW_TITLE,
@@ -27,6 +30,7 @@ import {
   noPhotosComparedText,
   photoPositionLabel,
   REVIEW_DETAIL_TEXTS,
+  reviewCancelledText,
   reviewListStand,
   reviewPhaseText,
   reviewProgressText,
@@ -38,6 +42,7 @@ import {
   VERDICT_KEYS,
   VERDICT_ORDER,
 } from '../utils/classificationReviewLabels'
+import { CANCEL_TEXTS, cancelRequestedText, waitingText } from '../utils/operationTexts'
 import { isTextInputFocused } from '../utils/textInputFocus'
 
 const SIDE_LETTERS = ['a', 'b'] as const
@@ -76,14 +81,21 @@ export function ClassificationReviewDetailPage() {
   const review = reviewQuery.data
   // Waehrend des Laufs gibt es noch keine Faelle; eine fehlgeschlagene Pruefung zeigt die bis
   // dahin geschriebenen (gesperrt).
+  // Ein WARTENDER Lauf (queued) hat ebenfalls noch keine Faelle (Spec 0641).
   const casesQuery = useClassificationReviewCasesQuery(
     projectId,
     reviewId,
-    review !== undefined && review.status !== 'running',
+    review !== undefined && review.status !== 'running' && review.status !== 'queued',
   )
   const motifsQuery = useMotifsQuery()
   const verdictMutation = useSetClassificationReviewVerdictMutation(projectId, reviewId)
   const exportMutation = useExportClassificationReviewMutation(projectId, reviewId)
+  const cancelMutation = useCancelOperation(projectId)
+
+  // Spec 0641: Der Abbruch adressiert GENAU diese Pruefung.
+  function handleCancelReview(): void {
+    cancelMutation.mutate({ kind: 'review', runId: reviewId })
+  }
 
   const motifs = motifsQuery.data?.items ?? []
   const cases = casesQuery.data?.cases ?? []
@@ -250,7 +262,13 @@ export function ClassificationReviewDetailPage() {
       <header className="flex flex-col gap-4">
         <h1 className="text-xl sm:text-2xl">{CLASSIFICATION_REVIEW_TITLE}</h1>
         <ReviewOrigins review={reviewData} />
-        <ReviewStand review={reviewData} caseTotal={caseTotal} />
+        <ReviewStand
+          review={reviewData}
+          caseTotal={caseTotal}
+          onCancel={handleCancelReview}
+          cancelPending={cancelMutation.isPending}
+          cancelFocusToken={cancelMutation.data ?? null}
+        />
         {reviewData.status === 'failed' && (
           <Alert>{reviewData.error_message ?? REVIEW_DETAIL_TEXTS.failedFallback}</Alert>
         )}
@@ -342,11 +360,18 @@ export function ClassificationReviewDetailPage() {
             {REVIEW_DETAIL_TEXTS.exportButton}
           </Button>
         </div>
+        {cancelMutation.isError && (
+          <Alert onRetry={handleCancelReview} retryLabel={CANCEL_TEXTS.retry}>
+            {CANCEL_TEXTS.failed}
+          </Alert>
+        )}
         {reviewData.status !== 'success' && (
           <p className="text-sm text-text">
-            {reviewData.status === 'running'
+            {reviewData.status === 'running' || reviewData.status === 'queued'
               ? REVIEW_DETAIL_TEXTS.exportBlockedRunning
-              : REVIEW_DETAIL_TEXTS.exportBlockedFailed}
+              : reviewData.status === 'cancelled'
+                ? REVIEW_DETAIL_TEXTS.exportBlockedCancelled
+                : REVIEW_DETAIL_TEXTS.exportBlockedFailed}
           </p>
         )}
         <p id="review-export-contents" className="text-sm text-text">
@@ -398,9 +423,16 @@ function ReviewOrigins({ review }: { review: ClassificationReviewDetailOut }) {
 function ReviewStand({
   review,
   caseTotal,
+  onCancel,
+  cancelPending,
+  cancelFocusToken,
 }: {
   review: ClassificationReviewDetailOut
   caseTotal: number
+  onCancel: () => void
+  cancelPending: boolean
+  /** Die Antwort der EIGENEN erfolgreichen Abbruch-Anfrage - nur sie bewegt den Fokus. */
+  cancelFocusToken: unknown
 }) {
   const open = review.verdict_counts.open
   // "stimmen auf allen Fotos ueberein" ist eine Aussage UEBER verglichene Fotos. Ohne ein einziges
@@ -411,15 +443,44 @@ function ReviewStand({
     0,
   )
   const nothingCompared = review.status === 'success' && caseTotal === 0 && compared === 0
+  const isCancelRequested = review.cancel_requested_at != null
+  const statusRef = useCancelRequestFocus<HTMLDivElement>(cancelFocusToken)
   return (
-    <div aria-live="polite" className="flex flex-col gap-1 text-sm text-text">
-      {review.status === 'running' && (
+    <div
+      ref={statusRef}
+      tabIndex={-1}
+      aria-live="polite"
+      className="flex flex-col gap-1 text-sm text-text"
+    >
+      {(review.status === 'running' || review.status === 'queued') && (
         <p className="flex flex-wrap items-center gap-2">
           <StatusTag
-            status="running"
-            label={reviewListStand({ status: 'running', case_count: 0, case_open: 0 }).label}
+            status={review.status}
+            label={reviewListStand({ status: review.status, case_count: 0, case_open: 0 }).label}
           />
-          <span>{reviewPhaseText(review.phase, review.photos_processed, review.photo_count)}</span>
+          <span>
+            {review.status === 'queued'
+              ? isCancelRequested
+                ? cancelRequestedText('review')
+                : waitingText('review')
+              : isCancelRequested
+                ? cancelRequestedText('review')
+                : reviewPhaseText(review.phase, review.photos_processed, review.photo_count)}
+          </span>
+          <OperationCancelButton
+            operation="review"
+            cancelRequested={isCancelRequested}
+            pending={cancelPending}
+            onCancel={onCancel}
+          />
+        </p>
+      )}
+      {review.status === 'cancelled' && (
+        <p className="flex flex-wrap items-center gap-2">
+          <StatusTag status="cancelled" label="abgebrochen" />
+          <span>
+            {reviewCancelledText(review.phase, review.photos_processed, review.photo_count)}
+          </span>
         </p>
       )}
       {review.status === 'success' && caseTotal > 0 && <p>{reviewProgressText(open, caseTotal)}</p>}

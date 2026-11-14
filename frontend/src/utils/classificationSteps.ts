@@ -16,7 +16,14 @@ import type { EtaKind } from './classificationEta'
  */
 
 export type ClassificationStepId = ClassificationPhase
-export type ClassificationStepState = 'pending' | 'running' | 'done' | 'skipped'
+
+/**
+ * `cancelled` und `not_started` (Spec 0641) gibt es NUR bei einem abgebrochenen Lauf: der
+ * unterbrochene Teilschritt und alles danach sind nicht "ausstehend" - es wird nichts mehr
+ * daraus.
+ */
+export type ClassificationStepState =
+  'pending' | 'running' | 'done' | 'skipped' | 'cancelled' | 'not_started'
 
 export interface ClassificationStep {
   id: ClassificationStepId
@@ -75,7 +82,11 @@ function isCloudStep(id: ClassificationStepId): id is keyof typeof CLOUD_PURPOSE
 }
 
 export function deriveClassificationSteps(run: CriterionScoringRunSummary): ClassificationStep[] {
-  const isFinished = run.status !== 'running'
+  // `queued` ist NICHT beendet (Spec 0641): ein wartender Lauf hat noch keinen Teilschritt
+  // begonnen, seine Bilanz gibt es nicht.
+  const isFinished = run.status !== 'running' && run.status !== 'queued'
+  const isQueued = run.status === 'queued'
+  const isCancelled = run.status === 'cancelled'
   // `phase === null` heisst "läuft nicht mehr". Der Zeiger steht dann hinter dem letzten Schritt,
   // alle liegen davor und gelten als erledigt. Für einen GESCHEITERTEN Lauf ist das eine
   // Vereinfachung - wo genau er gescheitert ist, sagt die Zeile nicht -, und sie ist folgenlos:
@@ -91,7 +102,14 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
   // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
   // Reihenfolge dieses Bundles fehlt.
   const phaseIndex = run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
-  const currentIndex = phaseIndex === -1 ? CLASSIFICATION_STEP_ORDER.length : phaseIndex
+  const currentIndex = isQueued
+    ? 0
+    : phaseIndex === -1
+      ? CLASSIFICATION_STEP_ORDER.length
+      : phaseIndex
+  // Ohne bekannte Phase gibt es bei einem Abbruch keinen unterbrochenen Teilschritt - dann
+  // behauptet die Liste fuer keinen, er sei gelaufen.
+  const positionUnknown = isCancelled && phaseIndex === -1
 
   const steps: ClassificationStep[] = []
 
@@ -132,6 +150,9 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
       index,
       currentIndex,
       isFinished,
+      isQueued,
+      isCancelled,
+      positionUnknown,
       isCloudStep: isCloudStep(id),
       cloud,
     })
@@ -167,7 +188,9 @@ function etaOf(
   isFinished: boolean,
   run: CriterionScoringRunSummary,
 ): { etaKind: EtaKind | null; etaSeconds: number | null } {
-  if (isFinished || state !== 'running') {
+  // Spec 0641: Ab dem angeforderten Abbruch entfaellt die Restdauer sofort - der Lauf endet am
+  // naechsten Pruefpunkt, eine Schaetzung bis zum Phasenende waere falsch.
+  if (isFinished || state !== 'running' || run.cancel_requested_at != null) {
     return { etaKind: null, etaSeconds: null }
   }
   if (id === 'ranking') {
@@ -185,28 +208,42 @@ function deriveState({
   index,
   currentIndex,
   isFinished,
+  isQueued,
+  isCancelled,
+  positionUnknown,
   isCloudStep: isCloud,
   cloud,
 }: {
   index: number
   currentIndex: number
   isFinished: boolean
+  isQueued: boolean
+  isCancelled: boolean
+  positionUnknown: boolean
   isCloudStep: boolean
   cloud: CloudPhaseSummaryOut | null
 }): ClassificationStepState {
+  // Ein wartender Lauf hat noch nichts begonnen - alle Teilschritte stehen aus.
+  if (isQueued) {
+    return 'pending'
+  }
   // "Übersprungen" ist ausschliesslich eine Aussage über einen BEENDETEN Lauf: der Teilschritt war
   // angefordert, hat aber keine Spur hinterlassen - ein Altlauf ohne Bilanz oder eine zwischen
   // Auslösen und Start entzogene Einwilligung. Während des Laufs fehlt der Eintrag schlicht noch.
-  if (isCloud && isFinished && cloud === null) {
+  // Ein abgebrochener Lauf hat den Teilschritt nicht uebersprungen, sondern nicht mehr erreicht.
+  if (isCloud && isFinished && cloud === null && !isCancelled) {
     return 'skipped'
+  }
+  if (isCancelled && positionUnknown) {
+    return 'not_started'
   }
   if (index < currentIndex) {
     return 'done'
   }
   if (index === currentIndex) {
-    return 'running'
+    return isCancelled ? 'cancelled' : 'running'
   }
-  return 'pending'
+  return isCancelled ? 'not_started' : 'pending'
 }
 
 function progressOf(

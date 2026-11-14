@@ -46,6 +46,7 @@ function criterionScoringRun(
   overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
+    id: 1,
     status: 'success',
     started_at: '2026-07-20T10:06:00Z',
     finished_at: '2026-07-20T10:07:00Z',
@@ -62,6 +63,7 @@ function criterionScoringRun(
     persons_photos_total: null,
     persons_photos_processed: null,
     mode: null,
+    cancel_requested_at: null,
     eye_photos_total: null,
     eye_photos_processed: null,
     ...overrides,

@@ -15,7 +15,7 @@
 import { expect, type Page } from '@playwright/test'
 
 /**
- * Die sechs Demo-Projekte, benannt nach ihrer PRUEFRELEVANTEN Eigenschaft. Muss zu den Konstanten
+ * Die sieben Demo-Projekte, benannt nach ihrer PRUEFRELEVANTEN Eigenschaft. Muss zu den Konstanten
  * in `demo_state.py` passen; ein Auseinanderlaufen faellt sofort als fehlender Projektlink auf.
  */
 export const DEMO_PROJECTS = {
@@ -31,6 +31,8 @@ export const DEMO_PROJECTS = {
   duplicates: 'Demo — Duplikate',
   /** Unbestaetigter Ausschuss ueber mehr als eine Seite der Uebersicht ("Mehr laden"). */
   longAusschuss: 'Demo — Langer Ausschuss',
+  /** Ein WARTENDER Scan und ein ABGEBROCHENER Klassifizierungslauf (Spec 0641). */
+  operations: 'Demo — Vorgänge',
 } as const
 
 /**

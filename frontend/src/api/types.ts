@@ -1,6 +1,10 @@
-export type ScanStatus = 'running' | 'success' | 'failed'
+// `queued` = angenommen, aber noch nicht begonnen (Spec 0641) - die Oberflaeche nennt ihn
+// "wartet". `cancelled` = ohne Ergebnis beendet: weder Teilerfolg noch Fehler, nie ein Alert.
+export type ScanStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
 
 export interface ScanSummary {
+  // Adressiert einen Abbruch GENAU dieses Laufs (POST .../operations/scan/{run_id}/cancel).
+  id: number
   status: ScanStatus
   started_at: string
   finished_at: string | null
@@ -13,6 +17,8 @@ export interface ScanSummary {
   photos_removed: number
   files_skipped: number
   error_message: string | null
+  // Gesetzt, sobald ein Abbruch angefordert ist, der Lauf aber noch laeuft.
+  cancel_requested_at: string | null
 }
 
 export interface ScoringRunSummary {
@@ -28,6 +34,7 @@ export interface ScoringRunSummary {
   error_message: string | null
   // Ausschuss-Gate: null = noch nicht bestätigt.
   gate_confirmed_at: string | null
+  cancel_requested_at: string | null
 }
 
 // Die Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
@@ -85,6 +92,7 @@ export interface CloudPhaseSummaryOut {
 // Rangfolge-Pool je Partition, und welche Fotos davon im Vorschlag stehen, sagt
 // `selection_position` an der Rangzeile.
 export interface CriterionScoringRunSummary {
+  id: number
   status: ScanStatus
   started_at: string
   finished_at: string | null
@@ -139,6 +147,7 @@ export interface CriterionScoringRunSummary {
   // der Teilschritt wird nach Laufende dann ausgeblendet.
   eye_photos_total: number | null
   eye_photos_processed: number | null
+  cancel_requested_at: string | null
 }
 
 /**
@@ -155,6 +164,7 @@ export interface ExportRunSummary {
   exported_count: number
   failed_count: number
   error_message: string | null
+  cancel_requested_at: string | null
 }
 
 /** Ein fehlgeschlagenes Foto eines Export-Laufs, wie es der Detailendpunkt meldet. */
@@ -174,7 +184,42 @@ export interface ExportRunDetailOut {
   exported_count: number
   failed_count: number
   error_message: string | null
+  cancel_requested_at: string | null
   failed_photos: ExportPhotoErrorOut[]
+}
+
+/**
+ * Die Vorgaenge eines Projekts, die einzeln oder gesammelt abgebrochen werden koennen
+ * (Spec 0641). `kind` ist derselbe Wortschatz wie im Abbruch-Pfad - ein zweites Vokabular
+ * zwischen Abfrage und Anfrage waere eine stille Fehlerquelle.
+ */
+export type OperationKind = 'scan' | 'ausschuss' | 'classification' | 'export' | 'review'
+
+/** Ein laufender oder wartender Vorgang samt dem Lauf, den ein Abbruch adressiert. */
+export interface OperationOut {
+  kind: OperationKind
+  run_id: number
+  /** Anzeigename aus denselben Wortlauten wie die Schritte (utils/stepActionTexts.ts). */
+  label: string
+  status: 'queued' | 'running'
+  /** Ein Abbruch ist bereits angefordert - der Knopf bleibt gesperrt, bis der Lauf endet. */
+  cancel_requested: boolean
+}
+
+export interface OperationsOut {
+  operations: OperationOut[]
+}
+
+/** `already_finished` heisst: es war nichts mehr abzubrechen, kein Fehler. */
+export interface CancelOperationOut {
+  kind: OperationKind
+  run_id: number
+  status: ScanStatus
+  outcome: 'cancel_requested' | 'already_finished'
+}
+
+export interface CancelAllOperationsOut {
+  cancelled: CancelOperationOut[]
 }
 
 /** Die Anzahl der Endauswahl-Fotos vor dem Auslösen (server-autoritativ). */
@@ -1474,6 +1519,7 @@ export interface ClassificationReviewListItemOut {
   created_at: string
   created_by: ClassificationReviewUserOut
   status: ScanStatus
+  cancel_requested_at: string | null
   phase: ClassificationReviewPhase | null
   sides: ClassificationReviewSidesOut
   /** Pruefmenge und die Fotos ohne Ergebnis auf beiden Seiten. Beide Zahlen traegt die Zeile,
@@ -1490,6 +1536,7 @@ export interface ClassificationReviewDetailOut {
   created_at: string
   created_by: ClassificationReviewUserOut
   status: ScanStatus
+  cancel_requested_at: string | null
   phase: ClassificationReviewPhase | null
   sample_size: number
   seed: number

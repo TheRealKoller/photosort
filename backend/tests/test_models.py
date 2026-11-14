@@ -2334,7 +2334,10 @@ async def test_event_place_name_is_nullable_and_defaults_to_none(
 # servermessung-spanne-im-frontend-keine-gesamtrestzeit.md Punkt 1: `phase` und
 # `phase_started_at` werden AUSSCHLIESSLICH GEMEINSAM gesetzt, ueber genau eine Funktion.
 _ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"_set_phase"})
-_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker.py"})
+# Spec 0641 freigegeben: `demo_state.py` schreibt einen FABRIZIERTEN Endzustand (abgebrochener
+# Lauf) - beide Spalten zusammen im Konstruktor, kein Uebergang und kein `_set_phase`; ein
+# zweiter Schreiber im laufenden Betrieb bleibt damit weiterhin ausgeschlossen.
+_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker.py", "demo_state.py"})
 
 _PHASE = "phase"
 _PHASE_STARTED_AT = "phase_started_at"
@@ -2525,10 +2528,10 @@ def test_the_one_phase_writer_sets_both_columns() -> None:
     assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE_STARTED_AT)
 
 
-def test_exactly_the_one_known_module_writes_a_phase_field() -> None:
+def test_exactly_the_known_modules_write_a_phase_field() -> None:
     """PAKETWEIT, nicht nur modulintern: Ohne diese Pruefung wanderte die Schreibstelle nach
-    `api/projects.py` oder `demo_state.py` ab, und der Funktionswaechter oben bliebe gruen, weil
-    er nur `worker.py` liest.
+    `api/projects.py` ab, und der Funktionswaechter oben bliebe gruen, weil er nur `worker.py`
+    liest.
 
     Der Suchraum wird GEMESSEN (`rglob`), nicht gelistet - eine neu hinzukommende Datei ist sonst
     von Anfang an unsichtbar."""
@@ -2541,7 +2544,7 @@ def test_exactly_the_one_known_module_writes_a_phase_field() -> None:
 
     assert writers == set(_ALLOWED_PHASE_WRITER_MODULES), (
         "Die Menge der Module, die `CriterionScoringRun.phase`/`phase_started_at` schreiben, "
-        f"weicht von der genau einen erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_MODULES)}). Zu "
+        f"weicht von den erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_MODULES)}). Zu "
         f"viel: {sorted(writers - set(_ALLOWED_PHASE_WRITER_MODULES))}; nicht mehr gefunden: "
         f"{sorted(set(_ALLOWED_PHASE_WRITER_MODULES) - writers)}"
     )
@@ -2913,10 +2916,17 @@ class TestTheExportRunCarriesNoUserReference:
             "failed_count",
             "error_message",
             "last_progress_at",
+            "cancel_requested_at",
         }
 
-    def test_the_export_run_status_vocabulary_is_running_success_failed(self) -> None:
-        assert {status.value for status in ExportRunStatus} == {"running", "success", "failed"}
+    def test_the_export_run_status_vocabulary_includes_waiting_and_cancelled(self) -> None:
+        assert {status.value for status in ExportRunStatus} == {
+            "queued",
+            "running",
+            "success",
+            "failed",
+            "cancelled",
+        }
 
 
 async def test_an_export_run_starts_with_zero_counters(db_session: AsyncSession) -> None:

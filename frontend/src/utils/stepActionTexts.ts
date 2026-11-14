@@ -1,3 +1,4 @@
+import type { OperationKind } from '../api/types'
 import type { StepId } from './pipelineSteps'
 
 /*
@@ -73,3 +74,27 @@ export const NEXT_UNAVAILABLE_TEXT =
 
 /** Die einzige Aktion der Kuratierung. */
 export const ALBUM_OPEN_LABEL = 'Album-Entwurf öffnen'
+
+/*
+ * Spec 0641: Jeder abbrechbare Vorgang traegt EINEN Namen - er steht im Knopf, in der Statuszeile,
+ * in der Projektleiste und im Bestaetigungsdialog. Eine zweite Vokabeltabelle an den
+ * Aufrufstellen liesse „Klassifizierung" und „Kriterien" nebeneinander stehen.
+ */
+
+export const OPERATION_LABELS: Record<OperationKind, string> = {
+  scan: 'Scan',
+  ausschuss: 'Ausschuss',
+  classification: 'Klassifizierung',
+  export: 'Export',
+  review: 'Prüfung',
+}
+
+/** Die Schrittseiten tragen ihren Vorgang selbst - abgeleitet, nicht an jeder Seite neu getippt. */
+export const OPERATION_KIND_BY_STEP: Record<RunStepId, OperationKind> = {
+  scan: 'scan',
+  ausschuss: 'ausschuss',
+  kriterien: 'classification',
+}
+
+/** Der gesperrte Startknopf, solange der Lauf wartet (`queued`), ohne Ladezeichen. */
+export const QUEUED_TRIGGER_LABEL = 'Wartet auf Start…'

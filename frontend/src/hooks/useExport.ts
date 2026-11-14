@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getExportPreview, getExportRun, triggerExport } from '../api/export'
+import { operationsQueryKey } from '../api/operations'
 import type { ExportRunSummary } from '../api/types'
 import { useProjectQuery } from './useProjects'
 import { useTriggerConfirmation } from './useTriggerConfirmation'
@@ -40,6 +41,8 @@ export function useExport(projectId: number) {
     mutationFn: () => triggerExport(projectId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+      // Spec 0641: Der angenommene Vorgang steht sofort in der Projektleiste.
+      void queryClient.invalidateQueries({ queryKey: operationsQueryKey(projectId) })
     },
     onError: () => setAwaiting(false),
   })
@@ -47,8 +50,13 @@ export function useExport(projectId: number) {
   const runDetail = useQuery({
     queryKey: ['export-run', projectId, runId],
     queryFn: () => getExportRun(projectId, runId!),
-    // Der Detailendpunkt liefert die Fehlerliste erst DANACH - waehrend des Laufs gibt es keine.
-    enabled: runId !== undefined && lastRun !== null && lastRun.status !== 'running',
+    // Der Detailendpunkt liefert die Fehlerliste erst DANACH - waehrend des Laufs und solange er
+    // wartet gibt es keine. `cancelled` ist beendet und wird geladen (letzter Stand).
+    enabled:
+      runId !== undefined &&
+      lastRun !== null &&
+      lastRun.status !== 'running' &&
+      lastRun.status !== 'queued',
   })
 
   return { project, preview, trigger, lastRun, runDetail, awaiting, setAwaiting }

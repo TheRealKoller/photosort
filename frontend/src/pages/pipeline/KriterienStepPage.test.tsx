@@ -60,6 +60,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     suggestions_found: 0,
     error_message: null,
     gate_confirmed_at: '2026-07-20T10:05:00Z',
+    cancel_requested_at: null,
     ...overrides,
   }
 }

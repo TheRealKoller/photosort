@@ -81,6 +81,8 @@ from photosort.feedback_log import (
     record_motif_correction,
 )
 from photosort.models import (
+    ClassificationMode,
+    ClassificationPhase,
     ClassificationReview,
     ClassificationReviewCase,
     ClassificationReviewPurpose,
@@ -156,6 +158,7 @@ RATED_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Bewertet"
 ERROR_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Fehlerzustand"
 DUPLICATE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Duplikate"
 LONG_AUSSCHUSS_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Langer Ausschuss"
+OPERATIONS_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Vorgänge"
 
 # Umgebungsvariable + exakter Satz-Literal (M1a). Bewusst KEIN "gesetzt"/truthy-Test: `1`/`true`
 # setzt man versehentlich, einen Satz wie diesen nicht.
@@ -200,6 +203,11 @@ _DEMO_AUTO_DECIDED_GROUP_SIZE = 2
 # Aktionsleiste (`e2e/tests/step-action-bar.spec.ts`) bestuende leer.
 AUSSCHUSS_PAGE_SIZE = 60
 LONG_AUSSCHUSS_PHOTO_COUNT = AUSSCHUSS_PAGE_SIZE + 4
+
+# Spec 0641: das Projekt mit dem wartenden und dem abgebrochenen Lauf. Vier Fotos genuegen, damit
+# der eingefrorene Teilstand „2 von 4" weder 0 noch vollstaendig ist.
+OPERATIONS_PHOTO_COUNT = 4
+_OPERATIONS_PROCESSED_COUNT = 2
 
 # Hostnamen, die als "eindeutig lokal/Demo" gelten (M1c). Muster inklusive Port-Pflicht aus
 # scripts/seed-opencloud-demo.py::validate_demo_base_url - dort als Copilot-Review-Fund ergaenzt,
@@ -638,7 +646,7 @@ class DemoProjectSpec:
 def demo_project_specs(
     *, large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT
 ) -> tuple[DemoProjectSpec, ...]:
-    """Die sechs Zustaende in fester Reihenfolge.
+    """Die sieben Zustaende in fester Reihenfolge.
 
     Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default
     (Edge Case E6): die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
@@ -676,6 +684,15 @@ def demo_project_specs(
             name=LONG_AUSSCHUSS_PROJECT_NAME,
             slug="langer-ausschuss",
             photo_count=LONG_AUSSCHUSS_PHOTO_COUNT,
+        ),
+        # EIGENES Projekt fuer den wartenden und den abgebrochenen Lauf (Spec 0641): Ein wartender
+        # Lauf sperrt die Ausloeser seines Schritts und blendet die Vorgangsleiste ein. In einem
+        # der uebrigen Projekte nahme er deren Browserfaellen genau die Bedienelemente weg, die
+        # sie pruefen.
+        DemoProjectSpec(
+            name=OPERATIONS_PROJECT_NAME,
+            slug="vorgaenge",
+            photo_count=OPERATIONS_PHOTO_COUNT,
         ),
     )
 
@@ -2207,6 +2224,76 @@ async def _seed_long_ausschuss_project(
     return photos
 
 
+async def _seed_operations_project(
+    session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
+) -> list[Photo]:
+    """Zustand 7 (Spec 0641): ein WARTENDER Scan und eine ABGEBROCHENE Klassifizierung.
+
+    Der wartende Scan ist der juengste Scan-Lauf hinter einem erfolgreichen: „Scan wartet", sein
+    Abbrechen-Knopf und „Alle abbrechen" werden damit erreichbar. Er traegt KEINEN Abbruchwunsch,
+    sonst waere „Alle abbrechen" gesperrt. Der Demo-Stapel hat keinen Worker und dieser Seeder
+    reiht keinen Job ein - der Lauf bleibt also wartend, bis jemand ihn abbricht.
+
+    Die abgebrochene Klassifizierung steht hinter einem erfolgreichen, bestaetigten Ausschuss -
+    nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker.py::_finish_cancelled`
+    hinterliesse: Merker, Endzeit, die letzte `phase` samt ihrem Beginn (ADR 0116 Punkt 1), einen
+    eingefrorenen Teilstand und KEINE Fehlermeldung."""
+    project = await _create_project(session, spec)
+    photos = await _create_photos(session, project, spec, cache_dir)
+    session.add(
+        _scan_run(
+            project,
+            status=ScanStatus.SUCCESS,
+            photo_count=len(photos),
+            started_at=_BASE_SCAN_AT,
+        )
+    )
+    queued_at = _BASE_SCAN_AT + timedelta(days=2)
+    session.add(
+        ScanRun(
+            project_id=project.id,
+            status=ScanStatus.QUEUED,
+            started_at=queued_at,
+            last_progress_at=queued_at,
+        )
+    )
+    scoring_run = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        started_at=_BASE_SCORING_AT,
+        finished_at=_BASE_SCORING_AT + timedelta(minutes=2),
+        last_progress_at=_BASE_SCORING_AT + timedelta(minutes=2),
+        photos_total=len(photos),
+        photos_processed=len(photos),
+        suggestions_found=0,
+        gate_confirmed_at=_BASE_SCORING_AT + timedelta(minutes=3),
+    )
+    session.add(scoring_run)
+    await session.flush()
+    cancelled_phase_at = _BASE_SCORING_AT + timedelta(minutes=5)
+    cancel_requested_at = _BASE_SCORING_AT + timedelta(minutes=6)
+    session.add(
+        CriterionScoringRun(
+            project_id=project.id,
+            scoring_run_id=scoring_run.id,
+            status=ScanStatus.CANCELLED,
+            started_at=cancelled_phase_at,
+            finished_at=cancel_requested_at + timedelta(seconds=20),
+            last_progress_at=cancel_requested_at + timedelta(seconds=20),
+            cancel_requested_at=cancel_requested_at,
+            phase=ClassificationPhase.CRITERIA,
+            phase_started_at=cancelled_phase_at,
+            photos_total=len(photos),
+            photos_processed=_OPERATIONS_PROCESSED_COUNT,
+            error_message=None,
+            mode=ClassificationMode.LOCAL,
+            cloud_requested=False,
+        )
+    )
+    await session.flush()
+    return photos
+
+
 async def rebuild_demo_state(
     session: AsyncSession,
     cache_dir: Path,
@@ -2214,15 +2301,21 @@ async def rebuild_demo_state(
     large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT,
 ) -> DemoStateSummary:
     """Zielzustands-idempotent: entfernt zuerst ALLE eigenen Demo-Projekte (auch Reste eines
-    frueheren Laufs mit anderen Namen) und legt die sechs Zustaende danach neu an. Das Ergebnis
+    frueheren Laufs mit anderen Namen) und legt die sieben Zustaende danach neu an. Das Ergebnis
     haengt nicht vom Vorzustand ab.
 
     Enthaelt selbst KEINE Sperre - der Aufrufer (main()) wertet `assert_safe_to_seed` vor dem
     ersten Schreibzugriff vollstaendig aus."""
     await purge_demo_state(session, cache_dir)
-    empty_spec, large_spec, rated_spec, error_spec, duplicate_spec, long_spec = demo_project_specs(
-        large_collection_photo_count=large_collection_photo_count
-    )
+    (
+        empty_spec,
+        large_spec,
+        rated_spec,
+        error_spec,
+        duplicate_spec,
+        long_spec,
+        operations_spec,
+    ) = demo_project_specs(large_collection_photo_count=large_collection_photo_count)
     photos = list(await _seed_empty_project(session, empty_spec, cache_dir))
     photos += await _seed_large_collection(session, large_spec, cache_dir)
     rated_photos, rated_user_count = await _seed_rated_project(session, rated_spec, cache_dir)
@@ -2230,6 +2323,7 @@ async def rebuild_demo_state(
     photos += await _seed_error_project(session, error_spec, cache_dir)
     photos += await _seed_duplicate_project(session, duplicate_spec, cache_dir)
     photos += await _seed_long_ausschuss_project(session, long_spec, cache_dir)
+    photos += await _seed_operations_project(session, operations_spec, cache_dir)
     await session.flush()
 
     cache_file_count = (
@@ -2243,6 +2337,7 @@ async def rebuild_demo_state(
             error_spec.name,
             duplicate_spec.name,
             long_spec.name,
+            operations_spec.name,
         ),
         photo_count=len(photos),
         cache_file_count=cache_file_count,

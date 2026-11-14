@@ -74,6 +74,7 @@ from photosort.remote_classification import (
     RemoteClassification,
     build_category_classification_client,
 )
+from photosort.run_cancel import RunCancelled
 from photosort.thumbnails import variant_path
 
 # Der MIME-Typ des `display`-Bildes - dieselbe feste Angabe wie im uebrigen Cloud-Pfad.
@@ -206,6 +207,10 @@ async def _run_eye_sides(
     Rueckfall auf die Lauf-Fassung: die Pruefung endet `FAILED` (`ERROR_GENERIC`), statt eine
     Fassung zu pruefen, die niemand gewaehlt hat.
     """
+    # Zyklus wie in `execute_classification_review` unten: der Pruefpunkt steht genau einmal in
+    # `worker.py`.
+    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
+
     versions: list[tuple[str, str]] = []
     for side in sides:
         if side.eye_mapping_version is None:
@@ -216,9 +221,13 @@ async def _run_eye_sides(
     try:
         if not await client.health():
             raise EyeServiceUnavailableError("Die Eye-Auswertung ist nicht gesund.")
+        # Der Teilschritt wird MIT dem Start committet: er ist die Angabe, die ein abgebrochener
+        # Lauf behaelt, und die Speicher-Ergebnisse dieser Seite fallen mit dem Rollback weg.
+        _set_side_phase(review, sides[0])
         review.photos_processed = 0
         await session.commit()
         for index, photo in enumerate(photos, start=1):
+            await _raise_if_cancel_requested(session, review)
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             if not path.exists():
                 continue
@@ -277,15 +286,19 @@ async def _run_local_sides(
     abhaengigen Kriterien fehlen (dieselbe Best-effort-Regel wie im Kriterienlauf). Ein Foto ohne
     `display`-Datei ergibt acht Nullen - das ist eine Beurteilung und kein fehlendes Ergebnis.
     """
+    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
+
     detector = try_build(build_detector)
     animal_detector = try_build(build_animal_detector)
     scene_classifier = try_build(build_classifier)
     aesthetics_model = try_build(build_aesthetics)
     face_landmarker = try_build(build_landmarker)
+    _set_side_phase(review, sides[0])
     review.photos_processed = 0
     await session.commit()
     with_result: set[int] = set()
     for index, photo in enumerate(photos, start=1):
+        await _raise_if_cancel_requested(session, review)
         criteria = compute_content_criteria(
             cache_dir,
             photo,
@@ -340,6 +353,9 @@ async def _run_cloud_side(
 ) -> set[int]:
     """Die kostenpflichtige Seite. Der Client wird nur gebaut, wenn die Einwilligung des Projekts
     vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall (ADR 0139 Punkt 5)."""
+    # Zyklus wie oben: der Pruefpunkt steht genau einmal in `worker.py`.
+    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
+
     if not project.cloud_vision_detection_enabled:
         raise _ReviewAbort(ERROR_NO_CONSENT)
     model = side.model
@@ -355,12 +371,14 @@ async def _run_cloud_side(
     output_tokens = 0
     with_result: set[int] = set()
     review.photos_processed = 0
+    _set_side_phase(review, side)
     side.failed_calls = failed_calls
     await session.commit()
     try:
         concurrency = settings.remote_category_classification_concurrency
         processed = 0
         for start in range(0, len(photos), concurrency):
+            await _raise_if_cancel_requested(session, review)
             block = photos[start : start + concurrency]
             results = await asyncio.gather(
                 *[_classify_for_review(client, cache_dir, photo) for photo in block],
@@ -371,7 +389,15 @@ async def _run_cloud_side(
                     raise result
             _set_side_phase(review, side)
             now = _now_utc()
+            handled = 0
+            cancelled = False
             for photo, result in zip(block, results, strict=True):
+                if isinstance(result, RunCancelled):
+                    # Der Abbruch hat die Wartezeit dieses Aufrufs beendet: weder Ergebnis noch
+                    # Fehlschlag. Die Zaehler des Blocks werden unten noch committet.
+                    cancelled = True
+                    break
+                handled += 1
                 if isinstance(result, BaseException):
                     # Best-effort: kein Ergebnis, kein Fall, kein Fremdtext - nur gezaehlt.
                     failed_calls += 1
@@ -397,11 +423,13 @@ async def _run_cloud_side(
                     computed_at=now,
                 )
                 with_result.add(photo.id)
-            processed += len(block)
+            processed += handled
             review.photos_processed = processed
             side.failed_calls = failed_calls
             review.last_progress_at = _now_utc()
             await session.commit()
+            if cancelled:
+                raise RunCancelled
     finally:
         aclose = getattr(client, "aclose", None)
         if aclose is not None:
@@ -547,9 +575,11 @@ async def execute_classification_review(
     aus `worker.py` - in keinem automatisierten Test werden sie aufgerufen.
     """
     # Zyklus: worker.py importiert dieses Modul fuer `WorkerSettings.functions`. Der Gegenimport
-    # steht deshalb hier drin - und NUR fuer diese zwei reinen Helfer.
+    # steht deshalb hier drin - und nur fuer diese reinen Helfer.
     from photosort.worker import (  # noqa: PLC0415
         _compute_content_criteria,
+        _finish_cancelled,
+        _raise_if_cancel_requested,
         _try_build,
     )
 
@@ -613,6 +643,9 @@ async def execute_classification_review(
         ):
             raise _ReviewAbort(ERROR_NO_RESULTS)
 
+        # Pruefpunkt vor den Faellen: ein abgebrochener Prueflauf legt keine an, damit bleibt
+        # jedes Urteil dem erfolgreich abgeschlossenen Lauf vorbehalten.
+        await _raise_if_cancel_requested(session, review)
         review.phase = ReviewPhase.CASES
         review.last_progress_at = _now_utc()
         await session.commit()
@@ -627,6 +660,9 @@ async def execute_classification_review(
         review.finished_at = _now_utc()
         review.last_progress_at = _now_utc()
         await session.commit()
+        return review
+    except RunCancelled:
+        await _finish_cancelled(session, review)
         return review
     except asyncio.CancelledError:
         await _fail(session, review, ERROR_CANCELLED)
@@ -644,11 +680,19 @@ async def execute_classification_review(
 
 async def _fail(session: AsyncSession, review: ClassificationReview, message: str) -> None:
     """Setzt den Lauf auf `FAILED` mit einem Satz aus der geschlossenen Menge und raeumt den
-    Teilschritt. Scheitert der Commit, bleibt die urspruengliche Ursache sichtbar (derselbe
-    Grundsatz wie `worker.py::_commit_phase_costs`)."""
+    Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
+    behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
+    Ursache sichtbar (derselbe Grundsatz wie `worker.py::_commit_phase_costs`)."""
+    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in worker.py.
+    from photosort.worker import _finish_cancelled  # noqa: PLC0415
+
     assert message in ERROR_MESSAGES
     try:
         await session.rollback()
+        await session.refresh(review)
+        if review.cancel_requested_at is not None:
+            await _finish_cancelled(session, review)
+            return
         review.status = ScanStatus.FAILED
         review.phase = None
         review.error_message = message
@@ -659,14 +703,21 @@ async def _fail(session: AsyncSession, review: ClassificationReview, message: st
         await session.rollback()
 
 
-async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int:
+async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int | None:
     """Der arq-Job. `max_tries=1`: eine Pruefung wird nie automatisch wiederholt (ADR 0139
-    Punkt 6); ein Fehlschlag ist ein Endzustand mit fester Meldung."""
+    Punkt 6); ein Fehlschlag ist ein Endzustand mit fester Meldung.
+
+    Die Zeile legt die API als `QUEUED` an; hier wird sie uebernommen. Wurde sie in der
+    Warteschlange abgebrochen, endet der Job ohne jede Arbeit. Der Abbruch-Beobachter macht die
+    Wartezeiten der Cloud-Drosselung unterbrechbar."""
     from photosort.db import async_session_factory  # noqa: PLC0415
+    from photosort.run_cancel import watch_cancel_requests  # noqa: PLC0415
+    from photosort.worker import _take_over_queued_run  # noqa: PLC0415
 
     async with async_session_factory() as session:
-        review = await session.get(ClassificationReview, review_id)
+        review = await _take_over_queued_run(session, ClassificationReview, review_id)
         if review is None:
-            raise ValueError(f"Pruefung {review_id} nicht gefunden")
-        await execute_classification_review(session, review, Path(settings.photo_cache_dir))
+            return None
+        async with watch_cancel_requests(async_session_factory, ClassificationReview, review_id):
+            await execute_classification_review(session, review, Path(settings.photo_cache_dir))
         return review.id

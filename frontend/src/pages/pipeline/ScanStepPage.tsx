@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useOutletContext } from 'react-router'
 
 import { ApiError } from '../../api/client'
@@ -7,8 +8,16 @@ import { StepActionBar } from '../../components/StepActionBar'
 import { Alert } from '../../components/ui/alert'
 import { Progress } from '../../components/ui/progress'
 import { useTriggerScanMutation } from '../../hooks/useProjects'
+import { useCancelOperation } from '../../hooks/useOperations'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
 import { deriveStepAction } from '../../utils/stepActions'
+import {
+  CANCEL_TEXTS,
+  cancelRequestedText,
+  cancelledAtText,
+  cancelledText,
+  waitingText,
+} from '../../utils/operationTexts'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 /**
@@ -18,8 +27,12 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
 export function ScanStepPage() {
   const { project, refetchProject } = useOutletContext<PipelineOutletContext>()
   const scanMutation = useTriggerScanMutation(project.id)
+  const cancelMutation = useCancelOperation(project.id)
 
   const scanStatus = project.last_scan?.status ?? null
+  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf - die id kommt aus der Zusammenfassung.
+  const scanRunId = project.last_scan?.id ?? null
+  const isCancelRequested = project.last_scan?.cancel_requested_at != null
   const scanStartedAt = project.last_scan?.started_at ?? null
   const [awaitingConfirmation, setAwaitingConfirmation] = useTriggerConfirmation(
     scanStatus,
@@ -28,11 +41,17 @@ export function ScanStepPage() {
   )
 
   const isTriggerPending = scanMutation.isPending || awaitingConfirmation
-  const isBusy = isTriggerPending || scanStatus === 'running'
+  const isBusy = isTriggerPending || scanStatus === 'running' || scanStatus === 'queued'
   const { action, rerun } = deriveStepAction('scan', project, {
     openCount: null,
     isTriggerPending,
   })
+
+  function handleCancelScan(): void {
+    if (scanRunId !== null) {
+      cancelMutation.mutate({ kind: 'scan', runId: scanRunId })
+    }
+  }
 
   function handleTriggerScan(): void {
     if (isBusy) {
@@ -64,18 +83,52 @@ export function ScanStepPage() {
   let statusText: string
   switch (action.kind) {
     case 'start':
-      statusText = 'Noch nicht gescannt'
+      statusText = scanStatus === 'cancelled' ? cancelledText('scan') : 'Noch nicht gescannt'
+      break
+    case 'queued':
+      statusText = isCancelRequested ? cancelRequestedText('scan') : waitingText('scan')
       break
     case 'running':
-      statusText = isScanProcessing
-        ? `Scan läuft… ${scanAnnouncedDecile}% verarbeitet`
-        : 'Scan läuft…'
+      statusText = isCancelRequested
+        ? cancelRequestedText('scan')
+        : isScanProcessing
+          ? `Scan läuft… ${scanAnnouncedDecile}% verarbeitet`
+          : 'Scan läuft…'
       break
     case 'retry':
       statusText = 'Scan fehlgeschlagen'
       break
     default:
       statusText = 'Erfolgreich'
+  }
+
+  // „abgebrochen" friert den Fortschritt ein (Spec 0641): letzter Stand, kein Ruecksetzen auf 0,
+  // keine Restdauer. Beim Warten gibt es noch nichts zu zeigen.
+  let detail: ReactNode = null
+  if (isScanEnumerating || isScanProcessing) {
+    detail = (
+      <div className="flex w-full max-w-sm flex-col gap-2">
+        <p className="text-sm text-text">
+          {isScanEnumerating
+            ? 'Dateien werden gezählt…'
+            : `${scanFilesFound} von ${scanTotalFiles} Dateien verarbeitet`}
+        </p>
+        {scanTotalFiles !== null && scanTotalFiles > 0 ? (
+          <Progress aria-hidden="true" value={scanFilesFound} max={scanTotalFiles} />
+        ) : (
+          <Progress aria-hidden="true" />
+        )}
+      </div>
+    )
+  } else if (scanStatus === 'cancelled' && scanTotalFiles !== null && scanTotalFiles > 0) {
+    detail = (
+      <div className="flex w-full max-w-sm flex-col gap-2">
+        <p className="text-sm text-text">
+          {cancelledAtText(scanFilesFound, scanTotalFiles, 'Dateien')}
+        </p>
+        <Progress aria-hidden="true" value={scanFilesFound} max={scanTotalFiles} />
+      </div>
+    )
   }
 
   return (
@@ -142,31 +195,33 @@ export function ScanStepPage() {
       {/* Ohne Wiederholung: Die einzige Wiederholung ist die Hauptaktion der Leiste. */}
       {project.last_scan?.status === 'failed' && <Alert>{project.last_scan.error_message}</Alert>}
 
+      {cancelMutation.isError && (
+        <Alert onRetry={handleCancelScan} retryLabel={CANCEL_TEXTS.retry}>
+          {CANCEL_TEXTS.failed}
+        </Alert>
+      )}
+
       <StepActionBar
         action={action}
         status={
           <>
-            <StatusDot status={action.kind === 'running' ? 'running' : scanStatus} />
+            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+                Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
+            <StatusDot
+              status={
+                action.kind === 'running' ? 'running' : action.kind === 'queued' ? null : scanStatus
+              }
+            />
             {statusText}
           </>
         }
-        detail={
-          (isScanEnumerating || isScanProcessing) && (
-            <div className="flex w-full max-w-sm flex-col gap-2">
-              <p className="text-sm text-text">
-                {isScanEnumerating
-                  ? 'Dateien werden gezählt…'
-                  : `${scanFilesFound} von ${scanTotalFiles} Dateien verarbeitet`}
-              </p>
-              {scanTotalFiles !== null && scanTotalFiles > 0 ? (
-                <Progress aria-hidden="true" value={scanFilesFound} max={scanTotalFiles} />
-              ) : (
-                <Progress aria-hidden="true" />
-              )}
-            </div>
-          )
-        }
+        detail={detail}
         onAction={handleTriggerScan}
+        onCancel={handleCancelScan}
+        cancelRequested={isCancelRequested}
+        cancelPending={cancelMutation.isPending}
+        cancelFocusToken={cancelMutation.data ?? null}
+        operation="scan"
       />
     </section>
   )

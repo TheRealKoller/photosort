@@ -464,11 +464,12 @@ class TestCreate:
 
         assert response.status_code == 201
         review_id = response.json()["id"]
-        assert response.json()["status"] == "running"
+        # Spec 0641: die Pruefung entsteht wartend; den Start vermerkt der Worker.
+        assert response.json()["status"] == "queued"
         assert fake.calls == [("run_classification_review", (review_id,))]
         review = await db_session.get(ClassificationReview, review_id)
         assert review is not None
-        assert review.status == ScanStatus.RUNNING
+        assert review.status == ScanStatus.QUEUED
         assert review.phase is None
         assert review.sample_size == 17
         assert review.photo_count == 2
@@ -660,17 +661,22 @@ class TestCreate:
 
         assert response.status_code == 409
 
+    # Spec 0641: „cancelled" blockiert nichts - AK „laesst sich unmittelbar eine neue Pruefung
+    # anlegen". Beide nicht-aktiven Endzustaende in EINEM Fall, damit die Zusage nicht an einem
+    # einzelnen Status haengt.
+    @pytest.mark.parametrize("status", [ScanStatus.FAILED, ScanStatus.CANCELLED])
     async def test_a_finished_review_does_not_block_a_new_one(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
+        status: ScanStatus,
     ) -> None:
         monkeypatch.setattr(settings, "eye_enabled", True)
         monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
         project = await self._ready_project(db_session)
         user = await _make_user(db_session)
-        await _make_review(db_session, project, user, status=ScanStatus.FAILED)
+        await _make_review(db_session, project, user, status=status)
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
@@ -1677,6 +1683,23 @@ class TestVerdict:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project, _user, review = await _finished_review(db_session, status=ScanStatus.FAILED)
+        photo = await _add_photo(db_session, project, "keep.jpg")
+        case = await _add_case(db_session, review, photo, 1, "motifs")
+
+        response = await authenticated_api_client.put(
+            _url(project.id, f"/{review.id}/cases/{case.id}/verdict"),
+            json={"verdict": "both_ok"},
+        )
+
+        assert response.status_code == 409
+
+    async def test_a_cancelled_review_is_409(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Spec 0641: Urteile bleiben der ERFOLGREICH abgeschlossenen Pruefung vorbehalten. Ein
+        abgebrochener Lauf hat keine Faelle - und selbst ein von Hand angelegter wird nicht
+        beurteilbar."""
+        project, _user, review = await _finished_review(db_session, status=ScanStatus.CANCELLED)
         photo = await _add_photo(db_session, project, "keep.jpg")
         case = await _add_case(db_session, review, photo, 1, "motifs")
 

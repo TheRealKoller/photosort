@@ -18,6 +18,10 @@ const TONE_CLASSES: Record<ScanStatusLabel, string> = {
   running: 'bg-status-running-tint border-status-running-strong text-status-running-strong',
   success: 'bg-status-success-tint border-status-success-strong text-status-success-strong',
   failed: 'bg-status-failed-tint border-status-failed-strong text-status-failed-strong',
+  // Spec 0641: „wartet" und „abgebrochen" sind weder Erfolg noch Fehler - derselbe neutrale Ton
+  // wie „noch nie geschehen", den das Wort daneben praezisiert.
+  queued: 'bg-status-idle-tint border-status-idle-strong text-status-idle-strong',
+  cancelled: 'bg-status-idle-tint border-status-idle-strong text-status-idle-strong',
 }
 
 interface StatusTagProps {

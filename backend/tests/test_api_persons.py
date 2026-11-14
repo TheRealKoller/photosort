@@ -721,6 +721,8 @@ def _run_row(**fields: Any) -> Any:
     from photosort.models import ClassificationPhase, CriterionScoringRun, ScanStatus
 
     defaults: dict[str, Any] = {
+        # Die Zusammenfassung traegt seit Spec 0641 die Lauf-Id; die Zeile bleibt ungespeichert.
+        "id": 1,
         "status": ScanStatus.RUNNING,
         "phase": ClassificationPhase.PERSONS,
         "phase_started_at": NOW,

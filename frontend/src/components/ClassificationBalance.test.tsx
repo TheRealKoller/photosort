@@ -38,6 +38,7 @@ const LANDMARK_PHASE = cloudPhase({
 
 function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScoringRunSummary {
   return {
+    id: 1,
     status: 'success',
     started_at: '2026-09-09T10:00:00Z',
     finished_at: '2026-09-09T10:20:00Z',
@@ -54,6 +55,7 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     persons_photos_total: null,
     persons_photos_processed: null,
     mode: null,
+    cancel_requested_at: null,
     eye_photos_total: null,
     eye_photos_processed: null,
     ...overrides,

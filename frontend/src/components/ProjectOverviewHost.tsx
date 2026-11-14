@@ -7,6 +7,7 @@ import { ProjectOverviewContext, type ProjectOverviewControls } from '../hooks/u
 import { useProjectQuery } from '../hooks/useProjects'
 import { computeStepStates, getDefaultStepId } from '../utils/pipelineSteps'
 import { WorkflowOverviewDialog } from './WorkflowOverviewDialog'
+import { ProjectOperationsBar } from './ProjectOperationsBar'
 
 /** Ohne gültige Projekt-Id gibt es keine Übersicht - der Auslöser erscheint dort ohnehin nicht,
  * weil kein Projekt lädt. */
@@ -93,6 +94,10 @@ function ValidProjectOverviewHost({
 
   return (
     <ProjectOverviewContext.Provider value={controls}>
+      {/* Spec 0641: Die Leiste steht auf JEDER Projektseite oben - Pipeline, Kuratierung,
+          Endauswahl und Pruefungen. Sie rendert sich selbst weg, solange nichts laeuft oder
+          wartet. */}
+      <ProjectOperationsBar projectId={projectId} />
       {children}
       {/* Ohne geladenes Projekt kein Dialog. Ein `404` schlaegt dabei den Cache: Ist das Projekt
           inzwischen geloescht, haelt sein zwischengespeicherter Stand den Dialog nicht offen. Ein

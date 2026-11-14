@@ -115,3 +115,103 @@ describe('StepActionBar', () => {
     expect(live).not.toHaveTextContent('3 von 10')
   })
 })
+
+describe('StepActionBar: Abbrechen (Spec 0641)', () => {
+  const CANCEL = { onCancel: vi.fn(), operation: 'scan' } as const
+
+  it.each([
+    ['running', { kind: 'running', label: 'Fotos werden eingelesen…' }],
+    ['queued', { kind: 'queued', label: 'Wartet auf Start…' }],
+  ] as const)('zeigt bei "%s" genau einen Abbrechen-Knopf', (_, action) => {
+    renderBar(action, CANCEL)
+
+    expect(within(bar()).getAllByRole('button', { name: /abbrechen$/i })).toHaveLength(1)
+    expect(within(bar()).getByRole('button', { name: 'Scan abbrechen' })).toBeEnabled()
+  })
+
+  it.each([
+    ['start', { kind: 'start', label: 'Fotos einlesen' }],
+    ['retry', { kind: 'retry', label: 'Fotos einlesen' }],
+    ['confirm', { kind: 'confirm', label: 'Ausschuss abschließen', openCount: null }],
+    ['next', { kind: 'next', label: 'Weiter', to: '/x' }],
+  ] as const)('zeigt bei "%s" keinen Abbrechen-Knopf', (_, action) => {
+    renderBar(action, CANCEL)
+
+    expect(within(bar()).queryByRole('button', { name: /abbrechen/i })).not.toBeInTheDocument()
+  })
+
+  it('zeigt "wartet" als gesperrten Auslöser ohne Ladezeichen', () => {
+    renderBar({ kind: 'queued', label: 'Wartet auf Start…' }, CANCEL)
+
+    const trigger = within(bar()).getByRole('button', { name: 'Wartet auf Start…' })
+    expect(trigger).toBeDisabled()
+    expect(within(trigger).queryByTestId('button-spinner')).not.toBeInTheDocument()
+  })
+
+  it('löst den Abbruch ohne Rückfrage aus', async () => {
+    const onCancel = vi.fn()
+    const user = userEvent.setup()
+    renderBar(
+      { kind: 'running', label: 'Fotos werden eingelesen…' },
+      { onCancel, operation: 'scan' },
+    )
+
+    await user.click(within(bar()).getByRole('button', { name: 'Scan abbrechen' }))
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('gibt bei eigener Anfrage der Statuszeile den Fokus', () => {
+    const action = { kind: 'running', label: 'Fotos werden eingelesen…' } as const
+    // Die Antwort der eigenen Mutation - nur sie darf den Fokus bewegen.
+    const ownRequest = { kind: 'scan', run_id: 1, status: 'running', outcome: 'cancel_requested' }
+    const { rerender } = renderBar(action, CANCEL)
+
+    rerender(
+      <MemoryRouter>
+        <StepActionBar
+          action={action}
+          status="Scan wird abgebrochen…"
+          {...CANCEL}
+          cancelRequested
+          cancelFocusToken={ownRequest}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(within(bar()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
+    const live = bar().querySelector('[aria-live]')
+    expect(live).toHaveFocus()
+    expect(live).toHaveTextContent('Scan wird abgebrochen…')
+  })
+
+  it('zieht den Fokus nicht, wenn ein fremder Abbruch per Poll eintrifft', () => {
+    const action = { kind: 'running', label: 'Fotos werden eingelesen…' } as const
+    const { rerender } = renderBar(action, CANCEL)
+    within(bar()).getByRole('button', { name: 'Scan abbrechen' }).focus()
+
+    // Kein `cancelFocusToken`: der Zustandswechsel kam aus einem Poll, nicht aus einer Bedienung.
+    rerender(
+      <MemoryRouter>
+        <StepActionBar
+          action={action}
+          status="Scan wird abgebrochen…"
+          {...CANCEL}
+          cancelRequested
+        />
+      </MemoryRouter>,
+    )
+
+    expect(bar().querySelector('[aria-live]')).not.toHaveFocus()
+  })
+
+  it('zieht den Fokus nicht, wenn die Seite schon mit angefordertem Abbruch geladen wird', () => {
+    renderBar(
+      { kind: 'running', label: 'Fotos werden eingelesen…' },
+      { ...CANCEL, cancelRequested: true },
+    )
+
+    expect(bar().querySelector('[aria-live]')).not.toHaveFocus()
+  })
+})

@@ -87,6 +87,7 @@ function listItem(
     case_open: 3,
     photo_count: 12,
     unclassifiable_photo_count: 0,
+    cancel_requested_at: null,
     ...overrides,
   }
 }
@@ -267,6 +268,38 @@ describe('ClassificationReviewsPage', () => {
 
     await userEvent.setup().click(within(alert).getByRole('button', { name: 'Erneut anlegen' }))
 
+    expect(screen.getByRole('region', { name: 'Neue Prüfung anlegen' })).toBeInTheDocument()
+  })
+
+  it('nennt wartende und abgebrochene Pruefungen im neutralen Ton (Spec 0641)', async () => {
+    vi.mocked(reviewApi.listClassificationReviews).mockResolvedValue([
+      listItem(5, { status: 'queued', case_count: 0, case_open: 0 }),
+      listItem(4, { status: 'cancelled', phase: 'side_b', case_count: 0, case_open: 0 }),
+    ])
+
+    renderPage()
+
+    const waiting = await screen.findByText('wartet')
+    const cancelled = screen.getByText('abgebrochen')
+    expect(waiting.className).toContain('status-idle')
+    expect(cancelled.className).toContain('status-idle')
+    // Die Listenzeile ist ein Link und traegt keinen Abbrechen-Knopf - dort wirkt die Projektleiste.
+    expect(screen.queryByRole('button', { name: /abbrechen$/i })).not.toBeInTheDocument()
+  })
+
+  it('meldet eine abgebrochene juengste Pruefung nicht als Fehler; neu anlegen geht sofort', async () => {
+    vi.mocked(reviewApi.listClassificationReviews).mockResolvedValue([
+      listItem(9, { status: 'cancelled', phase: 'side_a', case_count: 0, case_open: 0 }),
+    ])
+    const user = userEvent.setup()
+
+    renderPage()
+
+    expect(await screen.findByText('abgebrochen')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const open = screen.getByRole('button', { name: 'Neue Prüfung anlegen' })
+    expect(open).toBeEnabled()
+    await user.click(open)
     expect(screen.getByRole('region', { name: 'Neue Prüfung anlegen' })).toBeInTheDocument()
   })
 

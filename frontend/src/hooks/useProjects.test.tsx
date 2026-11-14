@@ -441,6 +441,7 @@ describe('useClassificationEstimateQuery', () => {
 
 function runningScan(): ProjectOut['last_scan'] {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -451,6 +452,7 @@ function runningScan(): ProjectOut['last_scan'] {
     photos_removed: 0,
     files_skipped: 0,
     error_message: null,
+    cancel_requested_at: null,
   }
 }
 
@@ -465,11 +467,13 @@ function runningScoringRun(): ProjectOut['last_scoring_run'] {
     suggestions_found: 0,
     error_message: null,
     gate_confirmed_at: null,
+    cancel_requested_at: null,
   }
 }
 
 function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -486,6 +490,7 @@ function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] 
     persons_photos_total: null,
     persons_photos_processed: null,
     mode: null,
+    cancel_requested_at: null,
     eye_photos_total: null,
     eye_photos_processed: null,
   }

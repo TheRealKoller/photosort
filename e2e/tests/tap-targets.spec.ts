@@ -41,7 +41,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 49
+const EXPECTED_CONTROL_COUNT = 51
 
 async function assertTappable(
   control: Locator,
@@ -434,6 +434,26 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await expect(gesperrt, 'gesperrte Schritte der Leiste').toHaveCount(1)
   await assertTappable(gesperrt, 'gesperrter Schritt der Schrittleiste', { ariaDisabled: true })
   checked.push('gesperrter Schritt der Schrittleiste')
+
+  // --- Abbrechen eines wartenden Vorgangs (specs/features/0641-vorgaenge-abbrechen.md) --------
+  // Heisser Pfad: Ein Fehlgriff auf den Abbrechen-Knopf beendet einen Lauf ohne Rueckfrage. Der
+  // Knopf der Aktionsleiste steht direkt neben dem gesperrten Ausloeser, "Alle abbrechen" in der
+  // Projektleiste darueber - beide also in Nachbarschaft weiterer Flaechen. Das Projekt traegt
+  // einen wartenden Scan OHNE Abbruchwunsch, beide Knoepfe sind deshalb bedienbar.
+  const operationsProjectId = await demoProjectId(page, DEMO_PROJECTS.operations)
+  await page.goto(`/projects/${operationsProjectId}/pipeline/scan`)
+  await assertTappable(
+    page.getByRole('button', { name: 'Alle abbrechen' }),
+    'Alle abbrechen (Projektleiste)',
+  )
+  checked.push('Alle abbrechen')
+  await assertTappable(
+    page
+      .getByRole('group', { name: 'Nächste Aktion' })
+      .getByRole('button', { name: 'Scan abbrechen' }),
+    'Scan abbrechen (Aktionsleiste)',
+  )
+  checked.push('Scan abbrechen')
 
   // --- Die Wahlzeile der Duplikat-Vergleichsansicht (specs/features/0374-...) ----------------
   // Heisser Pfad nach derselben Begruendung wie die Entwurfskachel: Beim Durchgehen einer Serie

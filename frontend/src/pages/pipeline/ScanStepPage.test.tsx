@@ -6,6 +6,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../api/client'
+import * as operationsApi from '../../api/operations'
 import * as projectsApi from '../../api/projects'
 import type { ProjectOut, ScanSummary } from '../../api/types'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
@@ -20,6 +21,9 @@ function leiste(): HTMLElement {
 }
 
 vi.mock('../../api/projects')
+vi.mock('../../api/operations')
+
+const GESTERN = '2026-07-19T10:00:00Z'
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -54,6 +58,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
 
 function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -64,6 +69,7 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
     photos_removed: 0,
     files_skipped: 0,
     error_message: null,
+    cancel_requested_at: null,
     ...overrides,
   }
 }
@@ -280,5 +286,87 @@ describe('ScanStepPage', () => {
     expect(dot).not.toHaveClass('bg-status-success')
     expect(rerun).toBeDisabled()
     expect(within(rerun).getByTestId('button-spinner')).toBeInTheDocument()
+  })
+
+  // --- Spec 0641: Abbrechen ------------------------------------------------------------------
+
+  it.each(['running', 'queued'] as const)(
+    'zeigt bei "%s" genau einen Abbrechen-Knopf, der ohne Rückfrage GENAU diesen Lauf abbricht',
+    async (status) => {
+      vi.mocked(operationsApi.cancelOperation).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      renderPage(project({ last_scan: scan({ id: 42, status }) }))
+
+      expect(screen.getAllByRole('button', { name: /abbrechen$/i })).toHaveLength(1)
+      await user.click(within(leiste()).getByRole('button', { name: 'Scan abbrechen' }))
+
+      expect(operationsApi.cancelOperation).toHaveBeenCalledWith(1, 'scan', 42)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['kein Lauf', null],
+    ['success', 'success'],
+    ['failed', 'failed'],
+    ['cancelled', 'cancelled'],
+  ] as const)('zeigt bei "%s" keinen Abbrechen-Knopf', (_, status) => {
+    renderPage(
+      project({ last_scan: status === null ? null : scan({ status, finished_at: GESTERN }) }),
+    )
+
+    expect(screen.queryByRole('button', { name: /abbrechen/i })).not.toBeInTheDocument()
+  })
+
+  it('zeigt "wartet" als Wort mit gesperrtem Auslöser und ohne Fortschritt', () => {
+    renderPage(project({ last_scan: scan({ status: 'queued' }) }))
+
+    expect(within(leiste()).getByText('Scan wartet')).toBeInTheDocument()
+    expect(within(leiste()).getByRole('button', { name: 'Wartet auf Start…' })).toBeDisabled()
+    expect(leiste().querySelector('progress')).toBeNull()
+  })
+
+  it('nennt bei angefordertem Abbruch den Zustand und sperrt den Knopf', () => {
+    renderPage(project({ last_scan: scan({ status: 'running', cancel_requested_at: GESTERN }) }))
+
+    expect(within(leiste()).getByText('Scan wird abgebrochen…')).toBeInTheDocument()
+    expect(within(leiste()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
+  })
+
+  it('zeigt "abgebrochen" ohne Alert, friert den Fortschritt ein und gibt den Auslöser frei', () => {
+    renderPage(
+      project({
+        last_scan: scan({
+          status: 'cancelled',
+          finished_at: GESTERN,
+          total_files: 12,
+          files_found: 5,
+        }),
+      }),
+    )
+
+    expect(within(leiste()).getByText('Scan abgebrochen')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(leiste()).getByText('Abgebrochen bei 5 von 12 Dateien')).toBeInTheDocument()
+    const progress = leiste().querySelector('progress') as HTMLProgressElement
+    expect(progress.value).toBe(5)
+    expect(progress.max).toBe(12)
+    expect(screen.queryByText(/verbleibend|restdauer|noch etwa/i)).not.toBeInTheDocument()
+    // Die Bilanz gilt nur für einen erfolgreichen Lauf; der Auslöser trägt die Startbeschriftung.
+    expect(screen.queryByText('Hinzugefügt')).not.toBeInTheDocument()
+    expect(within(leiste()).getByRole('button', { name: START })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /verwerfen|löschen/i })).not.toBeInTheDocument()
+  })
+
+  it('meldet eine gescheiterte Übermittlung als Alert mit Wiederholung', async () => {
+    vi.mocked(operationsApi.cancelOperation).mockRejectedValue(new ApiError(500, 'kaputt'))
+    const user = userEvent.setup()
+    renderPage(project({ last_scan: scan({ id: 42, status: 'running' }) }))
+
+    await user.click(within(leiste()).getByRole('button', { name: 'Scan abbrechen' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Der Abbruch konnte nicht übermittelt werden.')
+    expect(within(alert).getByRole('button', { name: 'Erneut versuchen' })).toBeEnabled()
   })
 })

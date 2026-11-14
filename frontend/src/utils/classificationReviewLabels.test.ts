@@ -193,6 +193,14 @@ describe('classificationReviewLabels - Stand einer Pruefung', () => {
     })
   })
 
+  // Spec 0641: weder Erfolg noch Fehlschlag - neutraler Ton, das Wort traegt die Aussage.
+  it.each([
+    ['queued', 'wartet'],
+    ['cancelled', 'abgebrochen'],
+  ] as const)('nennt eine Pruefung in "%s" "%s" im neutralen Ton', (status, label) => {
+    expect(reviewListStand({ ...base, status })).toEqual({ tone: 'never', label })
+  })
+
   it('nennt eine gescheiterte Pruefung "fehlgeschlagen"', () => {
     expect(reviewListStand({ ...base, status: 'failed' })).toEqual({
       tone: 'failed',

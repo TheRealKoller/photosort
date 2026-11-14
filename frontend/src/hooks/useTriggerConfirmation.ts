@@ -60,7 +60,9 @@ export function useTriggerConfirmation(
       return
     }
     const isNewRun = startedAt !== baselineStartedAtRef.current
-    if (status === 'running' || (status !== null && isNewRun)) {
+    // `queued` (Spec 0641) bestaetigt den Trigger ebenfalls: der Auftrag ist angenommen, auch wenn
+    // der Worker ihn noch nicht begonnen hat.
+    if (status === 'running' || status === 'queued' || (status !== null && isNewRun)) {
       setAwaiting(false)
       return
     }

@@ -13,11 +13,18 @@ import {
   useFineLabelsQuery,
   useTriggerClassificationMutation,
 } from '../hooks/useProjects'
+import { useCancelOperation } from '../hooks/useOperations'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
 import { MODEL_CHOICE_TEXTS } from '../utils/classificationReviewLabels'
 import { formatProviderLabel } from '../utils/formatStats'
 import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { deriveStepAction } from '../utils/stepActions'
+import {
+  CANCEL_TEXTS,
+  cancelRequestedText,
+  cancelledText,
+  waitingText,
+} from '../utils/operationTexts'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'
@@ -142,6 +149,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   const estimateQuery = useClassificationEstimateQuery(project.id, way)
   const fineLabelsQuery = useFineLabelsQuery(project.id)
   const triggerMutation = useTriggerClassificationMutation(project.id)
+  const cancelMutation = useCancelOperation(project.id)
   const location = useLocation()
   const headingRef = useRef<HTMLHeadingElement>(null)
 
@@ -173,6 +181,9 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   const scoringRun = project.last_scoring_run
   const run = project.last_criterion_scoring_run
   const runStatus = run?.status ?? null
+  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
+  const runId = run?.id ?? null
+  const isCancelRequested = run?.cancel_requested_at != null
   const runStartedAt = run?.started_at ?? null
   const [awaitingConfirmation, setAwaitingConfirmation] = useTriggerConfirmation(
     runStatus,
@@ -181,11 +192,17 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   )
 
   const isTriggerPending = triggerMutation.isPending || awaitingConfirmation
-  const isBusy = isTriggerPending || runStatus === 'running'
+  const isBusy = isTriggerPending || runStatus === 'running' || runStatus === 'queued'
   const { action, rerun } = deriveStepAction('kriterien', project, {
     openCount: null,
     isTriggerPending,
   })
+
+  function handleCancelClassification(): void {
+    if (runId !== null) {
+      cancelMutation.mutate({ kind: 'classification', runId })
+    }
+  }
   const estimate = estimateQuery.data ?? null
   // Traegt der wirksame Weg Kosten? Cloud immer, Eye nur mit Einwilligung (dann laeuft die
   // Sehenswuerdigkeits-Erkennung mit), lokal nie. Dieselbe Bedingung entscheidet, ob die
@@ -272,10 +289,18 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   let statusText: string
   switch (action.kind) {
     case 'start':
-      statusText = 'Noch nicht klassifiziert'
+      statusText =
+        runStatus === 'cancelled' ? cancelledText('classification') : 'Noch nicht klassifiziert'
+      break
+    case 'queued':
+      statusText = isCancelRequested
+        ? cancelRequestedText('classification')
+        : waitingText('classification')
       break
     case 'running':
-      statusText = 'Klassifizierung läuft…'
+      statusText = isCancelRequested
+        ? cancelRequestedText('classification')
+        : 'Klassifizierung läuft…'
       break
     case 'retry':
       statusText = 'Klassifizierung fehlgeschlagen'
@@ -410,8 +435,11 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           Teilschrittliste, danach die Bilanz dieses einen Laufs. Beide gleichzeitig zu zeigen
           hieße, denselben Lauf zweimal zu beschreiben - und ließe die Sektion über ihre bisherige
           Höhe hinauswachsen (Akzeptanzkriterium "überfrachtet die Seite nicht"). */}
+      {/* Spec 0641: Auch ein abgebrochener oder wartender Lauf zeigt die Teilschrittliste - sie
+          friert bei „abgebrochen" auf dem letzten Stand ein. Die Bilanz tritt erst nach einem
+          beendeten Lauf MIT Ergebnis an ihre Stelle, nie als Ersatz fuer den Abbruch. */}
       {run !== null &&
-        (runStatus === 'running' ? (
+        (runStatus === 'running' || runStatus === 'queued' || runStatus === 'cancelled' ? (
           <ClassificationProgress run={run} />
         ) : (
           <ClassificationBalance run={run} />
@@ -473,17 +501,33 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       </div>
 
       {rerun === null && estimateBlock}
+      {cancelMutation.isError && (
+        <Alert onRetry={handleCancelClassification} retryLabel={CANCEL_TEXTS.retry}>
+          {CANCEL_TEXTS.failed}
+        </Alert>
+      )}
 
       <StepActionBar
         action={action}
         status={
           <>
-            <StatusDot status={action.kind === 'running' ? 'running' : runStatus} />
+            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+                Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
+            <StatusDot
+              status={
+                action.kind === 'running' ? 'running' : action.kind === 'queued' ? null : runStatus
+              }
+            />
             {statusText}
           </>
         }
         onAction={handleTrigger}
         disabled={isTriggerDisabled}
+        onCancel={handleCancelClassification}
+        cancelRequested={isCancelRequested}
+        cancelPending={cancelMutation.isPending}
+        cancelFocusToken={cancelMutation.data ?? null}
+        operation="classification"
       />
     </section>
   )

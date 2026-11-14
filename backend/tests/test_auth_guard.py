@@ -16,6 +16,7 @@ from photosort.api import (
     model_choice,
     motifs,
     opencloud,
+    operations,
     persons,
     project_overview,
     projects,
@@ -142,7 +143,7 @@ async def test_login_remains_public(api_client: httpx.AsyncClient) -> None:
 def _protected_router_operations() -> list[tuple[str, str]]:
     # Direkt ueber die APIRouter-Objekte statt ueber app.routes iteriert - robuster gegenueber
     # FastAPI-internen Repraesentationen von eingebundenen Routern (_IncludedRouter u.ae.).
-    operations: list[tuple[str, str]] = []
+    entries: list[tuple[str, str]] = []
     # specs/features/0207-projekt-statistikseite.md: `stats.router` ist hier ergaenzt, sonst
     # gaelte die 401-Vollstaendigkeitsgarantie fuer den neuen Router nicht - und die Absicherung
     # eines kuenftigen zweiten Stats-Endpunkts haenge allein daran, dass niemand die Dependency
@@ -197,6 +198,10 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         # Schreibzugriff auf genau diese Frage. Seine beiden Endpunkte tragen zusaetzlich je
         # einen eigenen, pfadbenannten 401-Fall in tests/test_api_model_choice.py.
         model_choice.router,
+        # Spec 0641, S1: der Abbruch ist ein unauthentifizierter SCHREIBZUGRIFF, wenn der
+        # Torwaechter fehlt - und seine Endpunkte tragen kein `current_user` in der Signatur,
+        # an dem das auffiele.
+        operations.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")
@@ -207,8 +212,8 @@ def _protected_router_operations() -> list[tuple[str, str]]:
             for method in methods:
                 if method == "HEAD":
                     continue
-                operations.append((method, concrete_path))
-    return operations
+                entries.append((method, concrete_path))
+    return entries
 
 
 @pytest.mark.parametrize("method,path", _protected_router_operations())

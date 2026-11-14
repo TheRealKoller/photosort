@@ -1325,6 +1325,19 @@ Verarbeitungs-Cache (Thumbnails).
     Projekt, siehe ADR
     [`decisions/0019-job-lauf-heartbeat-watchdog.md`](../specs/decisions/0019-job-lauf-heartbeat-watchdog.md)
     und "Datenmodell" unten (`last_progress_at`).
+  - **Kooperativer Abbruch und Wartezustand** (Spec
+    [`0641`](../specs/features/0641-vorgaenge-abbrechen.md), ADR
+    [`decisions/0147-kooperativer-abbruch-und-wartezustand-der-laeufe.md`](../specs/decisions/0147-kooperativer-abbruch-und-wartezustand-der-laeufe.md)):
+    Die Auslöser legen die Laufzeile vor `enqueue_job` als `QUEUED` an und reichen `run_id` an den
+    Job; der Worker übernimmt per bedingtem `UPDATE … WHERE status='QUEUED' AND
+    cancel_requested_at IS NULL` und beginnt bei null Zeilen nichts. Der neue Router
+    `api/operations.py` (`GET /projects/{id}/operations`, `POST …/{kind}/{run_id}/cancel`,
+    `POST …/cancel-all`) setzt projektgebunden `cancel_requested_at`; der Worker liest den Merker an
+    seinen Commit-Punkten und endet über `_finish_cancelled` als `CANCELLED`. Drosselungs- und
+    Retry-Wartezeiten in `cloud_vision` brechen über `run_cancel.py::CancelToken` (`ContextVar`)
+    mit `RunCancelled` ab. Ist der Merker gesetzt, hat `CANCELLED` Vorrang vor `FAILED` — in den
+    Fehlerpfaden, in Schicht 1 und in `reap_stalled_runs`; dieser finalisiert hängende
+    `QUEUED`-Läufe erst nach `QUEUED_STALL_THRESHOLD` (24 h).
   - `scan_project`-Job (`worker.py`) für Foto-Ingest.
   - Thumbnail-/Display-Erzeugung (`thumbnails.py`, Pillow) beim Scan, Ablage im lokalen Cache
     (Docker-Volume `photo_cache`), Dateiname deterministisch aus `photo_id`+`etag` (kein neues
@@ -1918,6 +1931,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     [`decisions/0020-scan-enumeration-und-parallele-verarbeitung.md`](../specs/decisions/0020-scan-enumeration-und-parallele-verarbeitung.md)).
     Im API-Response als `ScanSummary.total_files` durchgereicht, macht den bisherigen reinen
     Rohzähler zu einem echten Prozent-Fortschritt auf der Projekt-Detailseite.
+  - **Abbruch und Wartezustand** (Spec
+    [`0641`](../specs/features/0641-vorgaenge-abbrechen.md)): `ScanStatus` und `ExportRunStatus`
+    tragen zusätzlich `queued` (Zeile beim Auslösen angelegt, Job noch nicht übernommen) und
+    `cancelled` (Endzustand nach Nutzer-Abbruch — weder Erfolg noch Fehler, schaltet keinen
+    Folgeschritt frei). Nullable `cancel_requested_at` (Abbruch angefordert) in `scan_runs`,
+    `scoring_runs`, `criterion_scoring_runs`, `remote_category_classification_runs`, `export_runs`
+    und `classification_reviews`; ohne Backfill, `NULL` = kein Abbruch angefordert.
 - **PhotoScore** *(implementiert, Spec 0003, `models.py`, Datenmodell festgelegt in
   [`decisions/0006-local-scoring-datamodel.md`](../specs/decisions/0006-local-scoring-datamodel.md))*:
   1:1 zu `Photo` (`photo_id` als Primary Key). Ergebnis der lokalen Heuristiken aus Phase A:

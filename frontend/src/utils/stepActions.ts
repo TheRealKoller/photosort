@@ -6,12 +6,15 @@ import {
   NEXT_STEP_LABELS,
   NEXT_UNAVAILABLE_TEXT,
   RUN_STEP_TEXTS,
+  QUEUED_TRIGGER_LABEL,
 } from './stepActionTexts'
 
 /** Die eine Hauptaktion einer Schrittseite. */
 export type StepAction =
   | { kind: 'start'; label: string }
   | { kind: 'running'; label: string }
+  // Angenommen, aber noch nicht begonnen (Spec 0641): gesperrt, ohne Ladezeichen.
+  | { kind: 'queued'; label: string }
   | { kind: 'retry'; label: string }
   | { kind: 'confirm'; label: string; openCount: number | null }
   | { kind: 'next'; label: string; to: string }
@@ -67,8 +70,17 @@ export function deriveStepAction(
   if (isTriggerPending || status === 'running') {
     return { action: { kind: 'running', label: texts.running }, rerun }
   }
+  if (status === 'queued') {
+    return { action: { kind: 'queued', label: QUEUED_TRIGGER_LABEL }, rerun: null }
+  }
   if (status === 'failed') {
     return { action: { kind: 'retry', label: texts.start }, rerun: null }
+  }
+  // Abgebrochen heisst „ohne Ergebnis" (Spec 0641): derselbe Startknopf wie beim ersten Mal, kein
+  // „Erneut …" - und der Folgeschritt bleibt gesperrt, weil `computeStepStates` nur `success` als
+  // erledigt wertet.
+  if (status === 'cancelled') {
+    return { action: { kind: 'start', label: texts.start }, rerun: null }
   }
   if (status === null) {
     return { action: { kind: 'start', label: texts.start }, rerun: null }

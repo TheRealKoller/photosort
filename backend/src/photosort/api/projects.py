@@ -106,6 +106,9 @@ class ProjectDelete(BaseModel):
 class ScanSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Die id adressiert den Lauf fuer den Abbruch; der Merker traegt den Abbruchwunsch in die
+    # Oberflaeche, bevor der Lauf endet.
+    id: int
     status: ScanStatus
     started_at: datetime
     finished_at: datetime | None
@@ -118,6 +121,7 @@ class ScanSummary(BaseModel):
     photos_removed: int
     files_skipped: int
     error_message: str | None
+    cancel_requested_at: datetime | None
 
 
 class ScoringRunSummary(BaseModel):
@@ -136,6 +140,7 @@ class ScoringRunSummary(BaseModel):
     error_message: str | None
     # Ausschuss-Gate: None = noch nicht bestaetigt.
     gate_confirmed_at: datetime | None
+    cancel_requested_at: datetime | None
 
 
 class ExportRunSummary(BaseModel):
@@ -152,6 +157,7 @@ class ExportRunSummary(BaseModel):
     exported_count: int
     failed_count: int
     error_message: str | None
+    cancel_requested_at: datetime | None
 
 
 class CloudPhaseSummaryOut(BaseModel):
@@ -194,6 +200,7 @@ class CriterionScoringRunSummary(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     status: ScanStatus
     started_at: datetime
     finished_at: datetime | None
@@ -248,6 +255,7 @@ class CriterionScoringRunSummary(BaseModel):
     # keine Trefferzahl.
     persons_photos_total: int | None
     persons_photos_processed: int | None
+    cancel_requested_at: datetime | None
 
 
 class ClassificationEstimatePartOut(BaseModel):
@@ -639,6 +647,7 @@ async def _criterion_scoring_run_summary(
     dieser Felder."""
     phases = await _cloud_phase_summaries(session, run)
     return CriterionScoringRunSummary(
+        id=run.id,
         status=run.status,
         started_at=run.started_at,
         finished_at=run.finished_at,
@@ -657,6 +666,7 @@ async def _criterion_scoring_run_summary(
         phase_remaining_seconds=_phase_remaining_seconds(run, phases),
         persons_photos_total=run.persons_photos_total,
         persons_photos_processed=run.persons_photos_processed,
+        cancel_requested_at=run.cancel_requested_at,
     )
 
 
@@ -1003,7 +1013,10 @@ async def delete_project(
         await _latest_remote_category_classification_run(session, project_id),
         await _latest_classification_review(session, project_id),
     )
-    if any(run is not None and run.status == ScanStatus.RUNNING for run in latest_runs):
+    if any(
+        run is not None and run.status in (ScanStatus.RUNNING, ScanStatus.QUEUED)
+        for run in latest_runs
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Fuer dieses Projekt laeuft gerade ein Vorgang. Warte, bis er fertig ist, "
@@ -1070,8 +1083,15 @@ async def trigger_scan(
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
+    """Legt den wartenden Lauf VOR dem Einreihen an: damit ist er sofort sichtbar, adressierbar
+    und abbrechbar, und der Worker uebernimmt per bedingtem UPDATE genau diese Zeile. Die
+    Antwort bleibt `202 {"status": "queued"}`."""
     await _get_project_or_404(project_id, session)
-    await enqueuer.enqueue_job("scan_project", project_id)
+    scan_run = ScanRun(project_id=project_id, status=ScanStatus.QUEUED)
+    session.add(scan_run)
+    await session.commit()
+    await session.refresh(scan_run)
+    await enqueuer.enqueue_job("scan_project", project_id, run_id=scan_run.id)
     return {"status": "queued"}
 
 
@@ -1085,7 +1105,11 @@ async def trigger_score(
     # dependencies=[Depends(get_current_user)]-Torwaechter, keine Rollenunterscheidung zwischen
     # den beiden bekannten Nutzern.
     await _get_project_or_404(project_id, session)
-    await enqueuer.enqueue_job("score_project", project_id)
+    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.QUEUED)
+    session.add(scoring_run)
+    await session.commit()
+    await session.refresh(scoring_run)
+    await enqueuer.enqueue_job("score_project", project_id, run_id=scoring_run.id)
     return {"status": "queued"}
 
 
@@ -1217,8 +1241,9 @@ async def trigger_classify(
     Client-Konstruktion, und ein Dienst, der WAEHREND des Laufs wegbricht, laesst den Lauf
     `FAILED` enden.
 
-    Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim tatsaechlichen
-    Start (run_classification in worker.py), identisches Muster wie trigger_scan/trigger_score."""
+    Legt die wartende `CriterionScoringRun`-Zeile VOR dem Einreihen an (Felder wie
+    `worker.py::_start_criterion_scoring_run`); der Job uebernimmt sie. Den
+    `RemoteCategoryClassificationRun` legt weiterhin erst der Worker an."""
     if not settings.category_selection_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1298,6 +1323,19 @@ async def trigger_classify(
     ) or estimate.landmark is not None
     estimated_cost_usd = estimate.estimated_cost_usd if cloud_contact else None
 
+    criterion_run = CriterionScoringRun(
+        project_id=project_id,
+        scoring_run_id=payload.scoring_run_id,
+        status=ScanStatus.QUEUED,
+        cloud_requested=path == "cloud",
+        estimated_cost_usd=estimated_cost_usd,
+        mode=ClassificationMode(path),
+        album_level_source=project.category_method,
+    )
+    session.add(criterion_run)
+    await session.commit()
+    await session.refresh(criterion_run)
+
     # `use_cloud` bleibt der vierte Positionsparameter des Jobs und ist genau beim wirksamen
     # Cloud-Weg `True`; `mode` faehrt als Schluesselwort mit (S6). Die aufgeloesten Modelle
     # fahren mit, damit der Job nicht erneut raten muss. Ein alter Worker kennt die
@@ -1311,6 +1349,7 @@ async def trigger_classify(
         mode=path,
         category_model=resolved.category_model,
         landmark_model=resolved.landmark_model,
+        run_id=criterion_run.id,
     )
     return {"status": "queued"}
 
@@ -1352,7 +1391,7 @@ async def _reject_while_a_criterion_run_is_active(
     *,
     afterwards: str = "Der Richtwert kann danach gesetzt werden.",
 ) -> None:
-    """`409`, solange der Kriterien-Lauf dieses Projekts laeuft.
+    """`409`, solange der Kriterien-Lauf dieses Projekts laeuft oder wartet.
 
     ENGER als `api/cameras.py::_reject_while_a_run_is_active`, das auch den Scan erfasst: nur
     dieser Lauftyp schreibt `selection_position`, der Scan nicht.
@@ -1381,7 +1420,7 @@ async def _reject_while_a_criterion_run_is_active(
         .scalars()
         .first()
     )
-    if latest == ScanStatus.RUNNING:
+    if latest in (ScanStatus.RUNNING, ScanStatus.QUEUED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Fuer dieses Projekt laeuft gerade eine Klassifizierung. " + afterwards,
