@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { compile } from '@tailwindcss/node'
 import { describe, expect, it } from 'vitest'
 
+import { DUPLICATE_TILE_INSET_X_PX } from './utils/duplicateLayout'
 import { GRID_GAP_PX } from './utils/justifiedRows'
 
 const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
@@ -1054,6 +1055,91 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
       expect(code).not.toMatch(/grid-cols-/)
     },
   )
+
+  /*
+   * specs/features/0638-duplikatansicht-originalformat.md: Raster, Platzhalter und
+   * Vorschau-Streifen der Vergleichsansicht beschneiden nie und zwingen keine feste Form auf -
+   * dieselbe Regel wie in der Kuratierung. Die Buehne der Grossansicht war schon `object-contain`.
+   */
+  it.each([
+    'src/components/DuplicatePhotoTile.tsx',
+    'src/components/DuplicateEnlargedView.tsx',
+    'src/pages/DuplicateComparePage.tsx',
+  ])('haelt object-cover, aspect-square und Spaltenraster aus %s heraus (Spec 0638)', (path) => {
+    const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
+    expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
+
+    const code = stripComments(file?.content ?? '')
+    expect(code).not.toContain('object-cover')
+    expect(code).not.toContain('aspect-square')
+    expect(code).not.toMatch(/grid-cols-/)
+  })
+
+  /*
+   * Die Duplikatliste (Raster und Platzhalter) rechnet mit `GRID_GAP_PX` als Abstand zwischen
+   * zwei Kacheln - die Utility der Liste muss dieselbe Zahl setzen.
+   */
+  it('setzt die Duplikatliste als flex-wrap mit dem gerechneten Zwischenraum (Spec 0638)', () => {
+    const page = sourceFiles.find((file) =>
+      file.path.endsWith('src/pages/DuplicateComparePage.tsx'),
+    )
+    expect(page, 'DuplicateComparePage.tsx muss im Pruefsatz liegen').toBeDefined()
+
+    const listClasses = stripComments(page?.content ?? '').match(
+      /const GRID_LIST_CLASSES = '([^']*)'/,
+    )
+    expect(listClasses, 'Die Liste muss ihre Klassen in GRID_LIST_CLASSES fuehren').not.toBeNull()
+    const classes = listClasses?.[1].split(/\s+/) ?? []
+    expect(classes).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'items-start']))
+    expect(classes).toContain(`gap-${GRID_GAP_PX / 4}`)
+  })
+
+  /*
+   * DIE DRITTE WAHRHEIT DESSELBEN WERTS (Spec 0638). Der waagerechte Kachelrand der
+   * Vergleichsansicht ist `px-2` (8) plus `border-2` (2), je Seite, UND die Zahl
+   * `DUPLICATE_TILE_INSET_X_PX` in der Rasterrechnung. Haengt der Rand an einer Bildschirmbreite
+   * (`sm:px-3`, `p-2 sm:p-3`), stimmt die Rechnung nur noch an einem Breakpoint, und jede volle
+   * Reihe laeuft dort ueber oder schliesst nicht buendig ab.
+   */
+  it('haelt den Kachelrand der Vergleichsansicht an seiner Rechengroesse fest (Spec 0638)', () => {
+    expect(DUPLICATE_TILE_INSET_X_PX).toBe(2 * (8 + 2))
+
+    const tile = sourceFiles.find((file) =>
+      file.path.endsWith('src/components/DuplicatePhotoTile.tsx'),
+    )
+    const page = sourceFiles.find((file) =>
+      file.path.endsWith('src/pages/DuplicateComparePage.tsx'),
+    )
+    expect(tile, 'DuplicatePhotoTile.tsx muss im Pruefsatz liegen').toBeDefined()
+    expect(page, 'DuplicateComparePage.tsx muss im Pruefsatz liegen').toBeDefined()
+    const tileCode = stripComments(tile?.content ?? '')
+    const pageCode = stripComments(page?.content ?? '')
+
+    // Die Kachel: ihre Klassen stehen im ersten Literal des `cn` direkt hinter der gerechneten
+    // Breite; der Rahmen kommt aus den Zustaenden.
+    const tileClasses = tileCode.match(
+      /width: imageWidth \+ DUPLICATE_TILE_INSET_X_PX \}\}\s*className=\{cn\(\s*'([^']*)'/,
+    )?.[1]
+    // Der Platzhalter: das `li` mit derselben gerechneten Breite.
+    const skeletonClasses = pageCode.match(
+      /width: size\.width \+ DUPLICATE_TILE_INSET_X_PX \}\}\s*className="([^"]*)"/,
+    )?.[1]
+    expect(tileClasses, 'Kachelklassen hinter der gerechneten Breite').toBeDefined()
+    expect(skeletonClasses, 'Platzhalterklassen hinter der gerechneten Breite').toBeDefined()
+
+    for (const classes of [tileClasses ?? '', skeletonClasses ?? '']) {
+      const list = classes.split(/\s+/)
+      expect(list).toContain('px-2')
+      expect(list.filter((utility) => /^(?:[a-z0-9]+:)*(?:p|pl|pr|px)-/.test(utility))).toEqual([
+        'px-2',
+      ])
+    }
+    expect(skeletonClasses?.split(/\s+/)).toContain('border-2')
+    for (const rahmen of tileCode.matchAll(/rahmen: '([^']*)'/g)) {
+      expect(rahmen[1].split(/\s+/)).toContain('border-2')
+    }
+    expect([...tileCode.matchAll(/rahmen: '([^']*)'/g)]).toHaveLength(2)
+  })
 
   /*
    * Jedes Kuratierungsraster ist eine umbrechende Liste mit demselben Zwischenraum, mit dem
