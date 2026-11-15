@@ -1145,6 +1145,35 @@ Verarbeitungs-Cache (Thumbnails).
     - **Demo:** „Demo — Duplikate“ trägt drei Gruppen — die beiden offenen Größen `(7, 3)` und eine
       automatisch entschiedene aus zwei Aufnahmen (eigene Konstante, höhere Auflösung und Schärfe
       über der Schwelle beim Gewinner, Merker nur am Verlierer, keine Entscheidungszeile).
+  - **Vergleichsansicht: justiertes Raster, Streifen ohne Beschnitt** *(Spec
+    [`0638`](../specs/features/0638-duplikatansicht-originalformat.md))*: Das Raster der
+    Duplikatgruppe ist wie die Fotoübersicht ein justiertes Zeilenraster statt einer festen
+    Spaltenzahl (Spec 0374 AK3 entfällt), mit eigenen Parametern in `utils/duplicateLayout.ts`:
+    Zielhöhe 280 px, Untergrenze 200, Obergrenze 350 (eine volle Reihe darüber steht wie die
+    letzte, linksbündig), Planungsverhältnis auf 0,56 bis 7 begrenzt, Bildfläche ≥ 112 px breit,
+    damit die breiteste Wahlschaltfläche hineinpasst. Die Kachel führt ihre Breite als Bildbreite
+    plus 20 px — `px-2` an allen Breakpoints plus `border-2`; ein `sm:px-3` ließe jede volle Reihe
+    überlaufen, deshalb koppelt der Design-Vertrag beide Zahlen aneinander („dritte Wahrheit
+    desselben Werts"). Die Bildfläche ist ein Inline-Maß, das Bild `object-contain`; der Rand bei
+    unbekanntem oder extremem Verhältnis ist die Kartenfläche. Die Platzhalter bestehen aus
+    demselben Modul (4 × 3:2 samt Rand und Textzeilen), damit weder das Eintreffen der Gruppe noch
+    das der Bilder das Raster verschiebt.
+  - **Streifen der Großansicht ohne Beschnitt:** Jede Vorschau steht in fester Höhe
+    (`h-16 sm:h-20`), die Breite folgt dem Seitenverhältnis über `aspect-ratio`, begrenzt durch
+    `min-w-11` (44 px Trefferfläche) und `max-w-full`; das Bild ist `object-contain`, der Rand eines
+    schmalen Hochformats `bg-surface`. Der Streifen bricht um und scrollt nie waagerecht.
+  - **Sicherheit:** Raster und Streifen schreiben ausschließlich die bereinigte Zahl aus
+    `duplicatePlanningRatio`/`planningRatio` in eine gewöhnliche CSS-Eigenschaft — keine
+    zusammengesetzte Zeichenkette, keine Custom-Property, kein `url()`-Kontext; feindlich belegte
+    Werte fallen auf 3:2 zurück (Test beidseitig, siehe Sicherheitskonzept).
+  - **Prüfung:** `designSystem.contract.test.ts` hält `object-cover`, `aspect-square` und
+    `grid-cols-` aus den drei Dateien, `gap-3` an `GRID_GAP_PX` und den Kachelrand an seine
+    Rechengröße. `grid-columns.spec.ts` misst im Browser gleiche Höhe und Oberkante je Zeile,
+    bündige volle Reihen, eine nachweislich kürzere letzte, Kasten- gegen Bildverhältnis,
+    verschiedene Bildbreiten innerhalb einer Gruppe, Kacheln ≥ 100 px, die Extremwerte 0,3/20/`null`
+    per Antwort-Eingriff und das Ausbleiben eines Sprungs beim Eintreffen der Bilddaten (Anfragen
+    angehalten, vorher/nachher gemessen). `duplikat-vergleich.spec.ts` misst dieselben Zusagen am
+    Streifen (≥ 44 × 44, Breite = Höhe × Verhältnis, 44-px-Feld bei 0,3, volle Streifenbreite bei 20).
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
