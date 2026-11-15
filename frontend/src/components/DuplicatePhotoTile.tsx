@@ -2,6 +2,7 @@ import type { Ref } from 'react'
 
 import type { DuplicateDecision, PhotoOut } from '../api/types'
 import { cn } from '../lib/utils'
+import { DUPLICATE_TILE_INSET_X_PX } from '../utils/duplicateLayout'
 import { formatExposure, formatSharpness } from '../utils/duplicateMetrics'
 import { PhotoImage } from './PhotoImage'
 import { Button } from './ui/button'
@@ -181,6 +182,10 @@ export interface DuplicatePhotoTileProps {
   onDecide: (decision: DuplicateDecision) => void
   /** Die Bildfläche — die Seite setzt dorthin den Fokus zurück, wenn die Großansicht schließt. */
   imageRef?: Ref<HTMLButtonElement>
+  /** Breite und Höhe der Bildfläche in Pixeln, gerechnet von `duplicateGridRows` aus dem
+   * bereinigten Verhältnis. Die Kachel ist `DUPLICATE_TILE_INSET_X_PX` breiter. */
+  imageWidth: number
+  imageHeight: number
 }
 
 /**
@@ -212,36 +217,44 @@ export function DuplicatePhotoTile({
   onOpen,
   onDecide,
   imageRef,
+  imageWidth,
+  imageHeight,
 }: DuplicatePhotoTileProps) {
   return (
     <li
       data-duplicate-decision={effectiveDecision}
+      // Kachelbreite = Bildbreite + `DUPLICATE_TILE_INSET_X_PX`: `px-2` an ALLEN Breiten plus
+      // `border-2` aus dem Zustandsrahmen. Ein breitenabhängiger Rand bräche die Rechnung.
+      style={{ width: imageWidth + DUPLICATE_TILE_INSET_X_PX }}
       className={cn(
-        'flex flex-col gap-3 rounded-lg bg-elevated p-2 sm:p-3',
+        'flex max-w-full flex-col gap-3 rounded-lg bg-elevated px-2 py-2 sm:py-3',
         DUPLICATE_ZUSTAENDE[effectiveDecision].rahmen,
       )}
     >
-      {/* Die Bildfläche beschneidet - Trefferflächen-Utilities haben hier nichts zu suchen, sie
-          würden still abgeschnitten. Sie ist ohnehin deutlich größer als 44px.
+      {/* Die Bildfläche schneidet ihre Ecken ab - Trefferflächen-Utilities haben hier nichts zu
+          suchen, sie würden still abgeschnitten. Sie ist ohnehin größer als 44 × 44 px.
 
           JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen (A6): Hier liegen
           ähnliche Aufnahmen nebeneinander, und genau ihr Helligkeits- und Qualitätsunterschied
           soll beurteilt werden. Den Zustand tragen Rahmen und Kennzeichen außerhalb des Bildes.
 
-          `aspect-square` reserviert die Höhe, bevor das authentifiziert geladene Bild eintrifft. */}
+          KEIN BESCHNITT (Spec 0638): Die Maße kommen aus dem Raster und stehen, bevor das
+          authentifiziert geladene Bild eintrifft; das Bild ist darin eingepasst. Ein Rand bei
+          unbekanntem oder extremem Verhältnis ist die Kartenfläche. */}
       <button
         ref={imageRef}
         type="button"
         onClick={onOpen}
         aria-label={`${photo.relative_path} vergrößern`}
         data-testid="duplicate-image"
-        className="block aspect-square w-full overflow-hidden rounded-md"
+        style={{ width: imageWidth, height: imageHeight }}
+        className="block max-w-full overflow-hidden rounded-md"
       >
         <PhotoImage
           photoId={photo.id}
           variant="thumbnail"
           alt={photo.relative_path}
-          className="size-full object-cover"
+          className="size-full object-contain"
         />
       </button>
 

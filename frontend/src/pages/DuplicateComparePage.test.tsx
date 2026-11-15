@@ -3,11 +3,13 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as duplicatesApi from '../api/duplicates'
 import type { DuplicateDecision, DuplicateGroupOut, PhotoOut } from '../api/types'
+import { installResizeObserver } from '../test/observers'
+import { duplicateGridRows } from '../utils/duplicateLayout'
 import {
   DUPLICATE_CONSEQUENCE_TEXT,
   DUPLICATE_EMPTY_TEXT,
@@ -1039,5 +1041,177 @@ describe('DuplicateComparePage - die Zustaende', () => {
     expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeTruthy()
     expect(screen.queryByText(DUPLICATE_EMPTY_TEXT)).toBeNull()
     nurImGefuellten()
+  })
+})
+
+/* ------------------------------------------------------------------------------------------
+ * Spec 0638 - das justierte Raster ohne Beschnitt
+ * ---------------------------------------------------------------------------------------- */
+
+describe('DuplicateComparePage - das justierte Raster (Spec 0638)', () => {
+  const LIST_CLASSES = ['flex', 'w-full', 'flex-wrap', 'items-start', 'gap-3']
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function mitVerhaeltnissen(ids: number[], ratios: (number | null)[]): DuplicateGroupOut {
+    const daten = group(ids)
+    return {
+      ...daten,
+      items: daten.items.map((item, index) => ({
+        ...item,
+        photo: { ...item.photo, aspect_ratio: ratios[index] },
+      })),
+    }
+  }
+
+  function bildflaechen(): HTMLElement[] {
+    return screen.getAllByTestId('duplicate-image')
+  }
+
+  /** Die Masse, die das Raster der Seite bei dieser Breite geben MUSS - je Index. */
+  function erwartet(ratios: (number | null)[], width: number) {
+    const masse = new Map<number, { width: number; height: number }>()
+    for (const row of duplicateGridRows(ratios, width)) {
+      for (const tile of row.tiles) {
+        masse.set(tile.index, { width: tile.width, height: tile.height })
+      }
+    }
+    return ratios.map((_, index) => masse.get(index)!)
+  }
+
+  function pruefeMasse(ratios: (number | null)[], width: number) {
+    const soll = erwartet(ratios, width)
+    bildflaechen().forEach((bildflaeche, index) => {
+      expect(bildflaeche.style.width).toBe(`${soll[index].width}px`)
+      expect(bildflaeche.style.height).toBe(`${soll[index].height}px`)
+      expect(tiles()[index].style.width).toBe(`${soll[index].width + 20}px`)
+    })
+  }
+
+  const RATIOS = [4 / 3, 3 / 4, 2.4, 1, null]
+
+  it('setzt die Liste als umbrechende Zeile und die Masse aus dem Raster', async () => {
+    const observer = installResizeObserver()
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      mitVerhaeltnissen([11, 12, 13, 14, 15], RATIOS),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(5))
+
+    observer.resizeTo(976)
+
+    const liste = tiles()[0].parentElement!
+    expect(liste.className.split(/\s+/)).toEqual(expect.arrayContaining(LIST_CLASSES))
+    expect(liste.className).not.toMatch(/grid-cols-/)
+    pruefeMasse(RATIOS, 976)
+  })
+
+  it('rechnet bei einer anderen Breite andere Masse', async () => {
+    const observer = installResizeObserver()
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      mitVerhaeltnissen([11, 12, 13, 14, 15], RATIOS),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(5))
+    observer.resizeTo(976)
+    const breit = bildflaechen().map((bildflaeche) => bildflaeche.style.width)
+
+    observer.resizeTo(328)
+
+    pruefeMasse(RATIOS, 328)
+    expect(bildflaechen().map((bildflaeche) => bildflaeche.style.width)).not.toEqual(breit)
+  })
+
+  it('zeigt vor der ersten Messung natuerliche Breiten in Zielhoehe', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      mitVerhaeltnissen([11, 12, 13, 14, 15], RATIOS),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(5))
+
+    pruefeMasse(RATIOS, 0)
+  })
+
+  it('rechnet ein feindlich belegtes Verhaeltnis als 3:2, ohne es in den Stil zu tragen', async () => {
+    const observer = installResizeObserver()
+    const feindlich = ['1;background:url(x)', NaN, -1, Infinity] as unknown as number[]
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      mitVerhaeltnissen([11, 12, 13, 14], feindlich),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(4))
+    observer.resizeTo(976)
+
+    pruefeMasse([null, null, null, null], 976)
+    for (const element of [...bildflaechen(), ...tiles()]) {
+      const stil = element.getAttribute('style') ?? ''
+      expect(stil).not.toContain('url(')
+      expect(stil).not.toContain('background')
+    }
+  })
+
+  it('zeigt die Platzhalter in derselben Geometrie als 3:2-Bildflaechen samt Rand', async () => {
+    const observer = installResizeObserver()
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockReturnValue(new Promise(() => {}))
+    renderPage()
+    const platzhalter = await screen.findByRole('status', { name: 'Duplikat-Gruppe wird geladen…' })
+
+    observer.resizeTo(976)
+
+    expect(platzhalter.className.split(/\s+/)).toEqual(expect.arrayContaining(LIST_CLASSES))
+    expect(platzhalter.className).not.toMatch(/grid-cols-/)
+    const kacheln = Array.from(platzhalter.children) as HTMLElement[]
+    expect(kacheln.length).toBeGreaterThan(0)
+    const soll = erwartet(
+      kacheln.map(() => null),
+      976,
+    )
+    kacheln.forEach((kachel, index) => {
+      const bild = kachel.firstElementChild as HTMLElement
+      expect(bild.style.width).toBe(`${soll[index].width}px`)
+      expect(bild.style.height).toBe(`${soll[index].height}px`)
+      expect(kachel.style.width).toBe(`${soll[index].width + 20}px`)
+      expect(kachel.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['px-2', 'border-2', 'border-transparent']),
+      )
+    })
+  })
+
+  it('haengt die Messung nach dem Laden an das echte Raster', async () => {
+    const observer = installResizeObserver()
+    let liefere: (daten: DuplicateGroupOut) => void = () => {}
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockReturnValue(
+      new Promise((resolve) => {
+        liefere = resolve
+      }),
+    )
+    renderPage()
+    await screen.findByRole('status', { name: 'Duplikat-Gruppe wird geladen…' })
+    observer.resizeTo(976)
+
+    liefere(mitVerhaeltnissen([11, 12, 13, 14, 15], RATIOS))
+    await waitFor(() => expect(tiles()).toHaveLength(5))
+    expect(observer.observedCount()).toBe(1)
+    observer.resizeTo(700)
+
+    pruefeMasse(RATIOS, 700)
+  })
+
+  it('misst nach dem Schliessen der Grossansicht wieder', async () => {
+    const observer = installResizeObserver()
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      mitVerhaeltnissen([11, 12, 13, 14, 15], RATIOS),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(5))
+    observer.resizeTo(976)
+    await userEvent.click(screen.getByRole('button', { name: 'Reise/serie-12.jpg vergrößern' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Vergrößerung schließen' }))
+
+    observer.resizeTo(328)
+
+    pruefeMasse(RATIOS, 328)
   })
 })

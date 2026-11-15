@@ -46,6 +46,8 @@ interface TileOverrides {
   bestExposure?: boolean
   deciding?: boolean
   onOpen?: () => void
+  imageWidth?: number
+  imageHeight?: number
   onDecide?: (decision: DuplicateDecision) => void
 }
 
@@ -61,6 +63,8 @@ function tileElement(overrides: TileOverrides = {}) {
       bestExposure={overrides.bestExposure ?? false}
       deciding={overrides.deciding ?? false}
       onOpen={overrides.onOpen ?? vi.fn()}
+      imageWidth={overrides.imageWidth ?? 240}
+      imageHeight={overrides.imageHeight ?? 160}
       onDecide={overrides.onDecide ?? vi.fn()}
     />
   )
@@ -132,13 +136,37 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     }
   })
 
-  it('reserviert die Hoehe der Bildflaeche, bevor das Bild da ist', () => {
+  it('traegt die gerechneten Masse schon vor dem Laden des Bildes', () => {
     // Die Bildflaeche laedt ueber einen authentifizierten Abruf und trifft erst nach dem ersten
-    // Rendern ein; ohne reservierte Hoehe spraenge das Raster beim Eintreffen.
+    // Rendern ein; die Masse kommen aus dem Raster, das Bild aendert sie nicht (Spec 0638, AK6).
+    renderTile({ imageWidth: 213, imageHeight: 160 })
+
+    const bildflaeche = screen.getByTestId('duplicate-image')
+    expect(bildflaeche.style.width).toBe('213px')
+    expect(bildflaeche.style.height).toBe('160px')
+    expect(tile().style.width).toBe('233px')
+    expect(bildflaeche.className).not.toContain('aspect-square')
+  })
+
+  it('passt das Bild ein, statt es zu beschneiden', () => {
     renderTile()
 
-    expect(screen.getByTestId('duplicate-image').className).toContain('aspect-square')
+    const bild = within(screen.getByTestId('duplicate-image')).getByRole('img')
+    expect(bild.className).toContain('object-contain')
+    expect(bild.className).not.toContain('object-cover')
   })
+
+  it.each(['keep', 'discard'] as const)(
+    'traegt den waagerechten Kachelrand an allen Breiten gleich (%s)',
+    (effectiveDecision) => {
+      renderTile({ effectiveDecision })
+
+      const klassen = tile().className.split(/\s+/)
+      expect(klassen).toContain('px-2')
+      expect(klassen).toContain('border-2')
+      expect(klassen.filter((klasse) => /^(sm|md|lg|xl):(p|px)-/.test(klasse))).toEqual([])
+    },
+  )
 })
 
 /* ------------------------------------------------------------------------------------------
