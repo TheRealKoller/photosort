@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from 'react'
 import type { DuplicateDecision, DuplicateGroupItem } from '../api/types'
 import { useEdgeFocusHandoff } from '../hooks/useEdgeFocusHandoff'
 import { cn } from '../lib/utils'
+import { planningRatio } from '../utils/curationLayout'
 import {
   DUPLICATE_ZUSTAENDE,
   DuplicateChoice,
@@ -169,13 +170,18 @@ export function DuplicateEnlargedView({
       </div>
 
       {/* Der Streifen bricht um und scrollt nie waagerecht. Die aktuelle Aufnahme trägt `--text-h`
-          statt Akzent: Akzent heißt in dieser Ansicht „Behalten". */}
+          statt Akzent: Akzent heißt in dieser Ansicht „Behalten".
+
+          KEIN BESCHNITT (Spec 0638): feste Höhe, die Breite folgt dem Verhältnis über
+          `aspect-ratio`, begrenzt durch 44 px und die Streifenbreite; das Bild ist eingepasst,
+          der Rand eines schmalen Hochformats ist `bg-surface` wie an der Bühne. Das Verhältnis
+          erreicht den Stil nur als bereinigte Zahl über `planningRatio`. */}
       <ul aria-label="Alle Aufnahmen der Gruppe" className="flex flex-wrap gap-3">
         {items.map((item, position) => {
           const zustand = DUPLICATE_ZUSTAENDE[item.effective_decision]
           const istAktuell = position === index
           return (
-            <li key={item.photo.id} className="relative">
+            <li key={item.photo.id} className="relative max-w-full">
               <button
                 type="button"
                 aria-label={`Aufnahme ${position + 1} von ${n}: ${item.photo.relative_path}, ${zustand.text}`}
@@ -184,8 +190,9 @@ export function DuplicateEnlargedView({
                   remember()
                   onSelect(item.photo.id)
                 }}
+                style={{ aspectRatio: planningRatio(item.photo.aspect_ratio) }}
                 className={cn(
-                  'block size-16 overflow-hidden rounded-md border-2 sm:size-20',
+                  'block h-16 min-w-11 max-w-full overflow-hidden rounded-md border-2 bg-surface sm:h-20',
                   istAktuell ? 'border-text-h' : 'border-transparent',
                 )}
               >
@@ -193,7 +200,7 @@ export function DuplicateEnlargedView({
                   photoId={item.photo.id}
                   variant="thumbnail"
                   alt=""
-                  className="size-full object-cover"
+                  className="size-full object-contain"
                 />
               </button>
               <span
