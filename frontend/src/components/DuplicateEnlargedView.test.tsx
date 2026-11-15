@@ -176,6 +176,88 @@ describe('DuplicateEnlargedView - Aufbau', () => {
   })
 })
 
+describe('DuplicateEnlargedView - der Streifen ohne Beschnitt (Spec 0638)', () => {
+  function mitVerhaeltnis(id: number, ratio: unknown): DuplicateGroupItem {
+    const basis = item(id)
+    return { ...basis, photo: { ...basis.photo, aspect_ratio: ratio as number } }
+  }
+
+  function streifenKnoepfe(): HTMLElement[] {
+    return within(screen.getByRole('list', { name: 'Alle Aufnahmen der Gruppe' })).getAllByRole(
+      'button',
+    )
+  }
+
+  /** Das gesetzte Verhaeltnis als Zahl - jsdom schreibt eine Zahl als `n / 1` zurueck. Alles
+   * ausser genau dieser Form (eine Zahl, optional `/ 1`) gilt als Verstoss. */
+  function gesetztesVerhaeltnis(knopf: HTMLElement): number {
+    const treffer = /^(\d+(?:\.\d+)?)(?: \/ 1)?$/.exec(knopf.style.aspectRatio)
+    expect(treffer, `aspect-ratio "${knopf.style.aspectRatio}"`).not.toBeNull()
+    return Number(treffer?.[1])
+  }
+
+  it('gibt jedem Knopf feste Hoehe, begrenzte Breite und sein Verhaeltnis', () => {
+    renderView({
+      items: [mitVerhaeltnis(1, 4 / 3), mitVerhaeltnis(2, 0.3), mitVerhaeltnis(3, null)],
+    })
+
+    const knoepfe = streifenKnoepfe()
+    for (const knopf of knoepfe) {
+      expect(knopf.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['h-16', 'sm:h-20', 'min-w-11', 'max-w-full', 'bg-surface']),
+      )
+      expect(knopf.className).not.toMatch(/\bsize-/)
+    }
+    expect(knoepfe.map(gesetztesVerhaeltnis)).toEqual([4 / 3, 0.5, 1.5])
+  })
+
+  it('passt das Bild ein, statt es zu beschneiden', () => {
+    renderView()
+
+    for (const knopf of streifenKnoepfe()) {
+      const bild = knopf.querySelector('img')
+      expect(bild?.className).toContain('object-contain')
+      expect(bild?.className).not.toContain('object-cover')
+    }
+  })
+
+  it.each(['1;background:url(x)', NaN, -1, Infinity, 0])(
+    'traegt ein feindlich belegtes Verhaeltnis nie in den Stil (%s)',
+    (ratio) => {
+      renderView({ items: [mitVerhaeltnis(1, ratio)], currentId: 1 })
+
+      const knopf = streifenKnoepfe()[0]
+      const stil = knopf.getAttribute('style') ?? ''
+      expect(gesetztesVerhaeltnis(knopf)).toBe(1.5)
+      expect(stil).not.toContain('url(')
+      expect(stil).not.toContain('background')
+      expect(stil).not.toContain(';1')
+    },
+  )
+
+  it('behaelt Rahmen und Zustandssymbol der aktuellen Aufnahme', () => {
+    renderView({ currentId: 2 })
+
+    const knoepfe = streifenKnoepfe()
+    expect(knoepfe.map((knopf) => knopf.className.includes('border-text-h'))).toEqual([
+      false,
+      true,
+      false,
+    ])
+    expect(knoepfe.map((knopf) => knopf.className.includes('border-transparent'))).toEqual([
+      true,
+      false,
+      true,
+    ])
+    for (const knopf of knoepfe) {
+      expect(knopf.parentElement?.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['relative', 'max-w-full']),
+      )
+      expect(knopf.parentElement?.querySelector('span svg')).not.toBeNull()
+    }
+  })
+})
+
 describe('DuplicateEnlargedView - blaettern', () => {
   it('verschiebt mit Vor und Zurueck, ohne zu schliessen', async () => {
     const { onSelect, onClose } = renderView({ currentId: 2 })

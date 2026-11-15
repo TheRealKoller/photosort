@@ -16,10 +16,30 @@ import {
   useDuplicateGroupQuery,
 } from '../hooks/useDuplicates'
 import { useEdgeFocusHandoff } from '../hooks/useEdgeFocusHandoff'
+import { useElementWidth } from '../hooks/useElementWidth'
+import { DUPLICATE_TILE_INSET_X_PX, duplicateGridRows } from '../utils/duplicateLayout'
 import { bestExposureIndices, bestSharpnessIndices, formatSpan } from '../utils/duplicateMetrics'
+import type { JustifiedRow } from '../utils/justifiedRows'
 import { ausschussStepPath, duplicateComparePath } from '../utils/projectRoutes'
 
 const SKELETON_TILE_COUNT = 4
+
+/** Raster und Platzhalterliste: umbrechend, oben bündig, mit dem gerechneten `GRID_GAP_PX`. */
+const GRID_LIST_CLASSES = 'flex w-full flex-wrap items-start gap-3'
+
+/** Die Bildmaße je Index aus den Reihen - `duplicateGridRows` führt jeden Index genau einmal. */
+function tileSizesByIndex(
+  count: number,
+  rows: readonly JustifiedRow[],
+): { width: number; height: number }[] {
+  const sizes = Array.from({ length: count }, () => ({ width: 0, height: 0 }))
+  for (const row of rows) {
+    for (const tile of row.tiles) {
+      sizes[tile.index] = { width: tile.width, height: tile.height }
+    }
+  }
+  return sizes
+}
 
 /**
  * Der erste Hinweis (A3): Antippen speichert sofort, und es gilt der ANGEZEIGTE Zustand.
@@ -94,6 +114,29 @@ export function DuplicateComparePage() {
   const bestExposure = useMemo(
     () => bestExposureIndices(items.map((item) => item.exposure)),
     [items],
+  )
+
+  // EIN gemessener Ref für beide Listen: Er hängt an der gerade gerenderten - Platzhalter oder
+  // Raster, nie beide -, und ein Knotenwechsel meldet die neue Liste beim Beobachter an.
+  const { ref: gridRef, width: gridWidth } = useElementWidth<HTMLUListElement>()
+  const tileSizes = useMemo(
+    () =>
+      tileSizesByIndex(
+        items.length,
+        duplicateGridRows(
+          items.map((item) => item.photo.aspect_ratio ?? null),
+          gridWidth,
+        ),
+      ),
+    [items, gridWidth],
+  )
+  const skeletonSizes = useMemo(
+    () =>
+      tileSizesByIndex(
+        SKELETON_TILE_COUNT,
+        duplicateGridRows(Array<null>(SKELETON_TILE_COUNT).fill(null), gridWidth),
+      ),
+    [gridWidth],
   )
 
   const [enlargedId, setEnlargedId] = useState<number | null>(null)
@@ -290,17 +333,24 @@ export function DuplicateComparePage() {
 
       {query.isLoading && (
         <ul
+          ref={gridRef}
           role="status"
           aria-label="Duplikat-Gruppe wird geladen…"
-          className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3"
+          className={GRID_LIST_CLASSES}
         >
-          {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
+          {skeletonSizes.map((size, index) => (
+            // `border-2 border-transparent` steht für den Zustandsrahmen der echten Kachel - ohne
+            // ihn wäre der Platzhalter 4 px schmaler als die Rechnung.
             <li
               key={index}
               aria-hidden="true"
-              className="flex flex-col gap-3 rounded-lg bg-elevated p-2 sm:p-3"
+              style={{ width: size.width + DUPLICATE_TILE_INSET_X_PX }}
+              className="flex max-w-full flex-col gap-3 rounded-lg border-2 border-transparent bg-elevated px-2 py-2 sm:py-3"
             >
-              <Skeleton className="aspect-square w-full rounded-md" />
+              <Skeleton
+                style={{ width: size.width, height: size.height }}
+                className="max-w-full rounded-md"
+              />
               <Skeleton className="h-3 w-full rounded-xs" />
               <Skeleton className="h-3 w-full rounded-xs" />
               <Skeleton className="h-3 w-full rounded-xs" />
@@ -386,7 +436,7 @@ export function DuplicateComparePage() {
               onDecide={handleDecide}
             />
           ) : (
-            <ul className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3">
+            <ul ref={gridRef} className={GRID_LIST_CLASSES}>
               {items.map((item, index) => (
                 <DuplicatePhotoTile
                   key={item.photo.id}
@@ -398,6 +448,8 @@ export function DuplicateComparePage() {
                   bestSharpness={bestSharpness.has(index)}
                   bestExposure={bestExposure.has(index)}
                   deciding={decidingIds.has(item.photo.id)}
+                  imageWidth={tileSizes[index].width}
+                  imageHeight={tileSizes[index].height}
                   onOpen={() => setEnlargedId(item.photo.id)}
                   onDecide={(decision) => handleDecide(item.photo.id, decision)}
                   imageRef={(element) => {

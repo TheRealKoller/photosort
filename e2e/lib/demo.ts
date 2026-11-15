@@ -124,6 +124,31 @@ export async function openDuplicateGroup(
   )
 }
 
+/**
+ * Antwort-Eingriff fuer eine Geometrie-Zusage (Testkonzept, Spec 0638): Die echte Gruppenantwort
+ * wird durchgereicht, nur `aspect_ratio` des Mitglieds an Position i auf `ratios[i]` gesetzt - ein
+ * `undefined`-Eintrag laesst den echten Wert stehen. Der Demo-Bestand traegt bewusst nur
+ * Verhaeltnisse im Normalband; extreme und unbekannte gibt es nur ueber diesen Weg.
+ *
+ * Das Muster trifft nur `GET .../duplicate-groups/<id>`, weder den Index noch `.../decision`.
+ * Vor der Navigation aufrufen.
+ */
+export async function overrideDuplicateRatios(
+  page: Page,
+  ratios: readonly (number | null | undefined)[],
+): Promise<void> {
+  await page.route('**/api/projects/*/duplicate-groups/*', async (route) => {
+    const response = await route.fetch()
+    const json = (await response.json()) as { items: { photo: { aspect_ratio: unknown } }[] }
+    json.items = json.items.map((item, index) =>
+      ratios[index] === undefined
+        ? item
+        : { ...item, photo: { ...item.photo, aspect_ratio: ratios[index] } },
+    )
+    await route.fulfill({ response, json })
+  })
+}
+
 export interface Box {
   x: number
   y: number
