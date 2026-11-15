@@ -142,9 +142,10 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
     // stehen 288px zur Verfuegung. Genau diese Route fehlte hier bisher.
     { label: 'Foto-Detail', path: detailPath, role: 'group' as const, name: 'Bewertung' },
-    // specs/features/0374-duplikate-vergleichen.md: Die Ansicht traegt bei 360 px zwei Spalten
-    // Bildkacheln samt zweiteiliger Wahlzeile - die dichteste Stelle des Produkts nach der
-    // Bewertungsleiste, und damit die, an der ein zu enges Raster zuerst uebersteht.
+    // specs/features/0638-duplikatansicht-originalformat.md: Die Ansicht traegt bei 360 px ein
+    // justiertes Raster (seit 0638 meist ein Bild je Zeile) samt zweiteiliger Wahlzeile in jeder
+    // Kachel - die dichteste Stelle des Produkts nach der Bewertungsleiste, und damit die, an der
+    // ein zu enges Raster zuerst uebersteht.
     {
       label: 'Duplikat-Vergleich',
       path: compareHref ?? '',

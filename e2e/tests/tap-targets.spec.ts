@@ -28,6 +28,7 @@ import {
   demoProjectId,
   duplicateTiles,
   openDuplicateGroup,
+  overrideDuplicateRatios,
   photoTiles,
 } from '../lib/demo.ts'
 import { readOwnDraftStates, restoreOwnDraftStates } from '../lib/draft.ts'
@@ -41,7 +42,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 51
+const EXPECTED_CONTROL_COUNT = 52
 
 async function assertTappable(
   control: Locator,
@@ -503,6 +504,34 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     await assertTappable(page.getByRole('button', { name: label, exact: true }), label)
     checked.push(`${label} der Grossansicht`)
   }
+
+  // --- Der Vorschau-Streifen mit dem schmalsten zugelassenen Feld (specs/features/0638-...) ----
+  // 0,3 ist das Verhaeltnis, bei dem `min-w-11` zuerst greift: Das Feld ist dann 44 px breit und
+  // 64 px hoch, und der Nachbar liegt unmittelbar daneben. Ohne diese Messung bliebe die
+  // Trefferflaeche genau an der Grenze unbelegt; der Demo-Bestand traegt nur Verhaeltnisse im
+  // Normalband, deshalb kommt der Wert aus dem Antwort-Eingriff.
+  await overrideDuplicateRatios(page, [0.3])
+  await page.reload()
+  await expect(
+    page.getByRole('heading', { name: /^Gruppe \d+ von \d+ · / }),
+    'Vergleichsansicht nach dem Neuladen',
+  ).toBeVisible()
+  await duplicateTiles(page)
+    .nth(0)
+    .getByRole('button', { name: /vergrößern$/ })
+    .click()
+  await expect(
+    page.getByRole('heading', { level: 2, name: /^Aufnahme 1 von \d+$/ }),
+    'Grossansicht offen',
+  ).toBeVisible()
+  const vorschau = page
+    .getByRole('list', { name: 'Alle Aufnahmen der Gruppe' })
+    .getByRole('button')
+    .first()
+  await assertTappable(vorschau, 'Vorschau mit Hochformat 0,3')
+  checked.push('Vorschau der Grossansicht (schmales Hochformat)')
+  // Vorbedingung: gemessen wird wirklich das schmale Feld, nicht eine beliebige Vorschau.
+  expect((await vorschau.boundingBox())?.width ?? 0, 'Vorbedingung: 44-px-Feld').toBeCloseTo(44, 0)
 
   // --- Die vier Urteilsflaechen der Klassifizierungspruefung (specs/features/0616-...) --------
   // Heisser Pfad eigener Art: Ein Urteil schreibt einen gespeicherten Zustand, ein Fehlgriff

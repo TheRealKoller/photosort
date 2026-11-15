@@ -7,8 +7,11 @@
  *
  * NEU GEFASST MIT SPEC 0489: Die Fotouebersicht misst keine feste Spaltenzahl mehr. Sie ist ein
  * justiertes ZEILENraster - alle Bilder einer Zeile auf gemeinsamer Hoehe, die Zeile buendig auf
- * die verfuegbare Breite, kein Bild beschnitten. Der Duplikat-Teil weiter unten bleibt
- * unveraendert: dort gilt die Spaltenzahl weiterhin.
+ * die verfuegbare Breite, kein Bild beschnitten.
+ *
+ * SEIT SPEC 0638 gilt dasselbe fuer die Duplikat-Vergleichsansicht weiter unten: Auch dort ist die
+ * feste Spaltenzahl entfallen (Spec 0374 AK3). Die beiden Teile messen jetzt DIESELBE Eigenschaft an
+ * zwei Ansichten.
  *
  * Rot-Nachweis der neuen Fassung: siehe PR-Beschreibung.
  */
@@ -20,6 +23,7 @@ import {
   demoProjectId,
   duplicateTiles,
   openDuplicateGroup,
+  overrideDuplicateRatios,
   photoTiles,
   type Box,
 } from '../lib/demo.ts'
@@ -82,8 +86,8 @@ async function photoTileBoxes(page: Page): Promise<TileMeasurement[]> {
 }
 
 /** Gruppiert die gemessenen Kacheln nach ihrer Oberkante zu Zeilen. */
-function rowsOf(boxes: TileMeasurement[]): TileMeasurement[][] {
-  const rows: TileMeasurement[][] = []
+function rowsOf<T extends Box>(boxes: T[]): T[][] {
+  const rows: T[][] = []
   for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const row = rows[rows.length - 1]
     if (row !== undefined && Math.abs((row[0]?.y ?? 0) - box.y) <= SAME_ROW_TOLERANCE) {
@@ -199,81 +203,294 @@ test('Fotouebersicht laedt beim Scrollen nach, ohne Schaltflaeche', async ({ pag
 })
 
 /**
- * specs/features/0374-duplikate-vergleichen.md, AK3 und die Geometrie-Haelfte von AK8.
+ * specs/features/0638-duplikatansicht-originalformat.md, AK1-AK4 und AK6 - ERSETZT den
+ * Duplikat-Fall dieses Specs, nicht gelockert: Spec 0374 AK3 (bei 360 px genau zwei, bei 1280 px
+ * genau drei Spalten gleicher Breite) gilt nicht mehr. Die Vergleichsansicht ist wie die
+ * Fotouebersicht ein justiertes ZEILENraster, und wie oben ist nichts davon in jsdom pruefbar.
  *
- * ERWEITERUNG DIESES SPECS, kein neuer: Gemessen wird dieselbe Eigenschaft (Rastergeometrie) an
- * einer zweiten Ansicht - und wie oben ist sie in jsdom prinzipiell nicht pruefbar.
- *
- * DIE ZUSAGE LAUTET „bricht um, statt die Bilder kleiner zu machen". Sie ist nur ueber ZWEI
- * Gruppen verschiedener Groesse belegbar: Eine einzelne Gruppe zeigte zwar ihre Kacheln, aber
- * nicht, dass deren Breite an der Fensterbreite haengt und nicht an der Mitgliederzahl. Genau
- * deshalb fuehrt der Demo-Bestand eine Gruppe mit sieben und eine mit drei Aufnahmen.
+ * Die fruehere Fassung mass die Spaltenzahl und die Gleichheit der Kachelbreiten. Beides ist hier
+ * nachweislich falsch: Eine Zeile traegt so viele Aufnahmen, wie ihre Verhaeltnisse zulassen, und
+ * die Kachelbreite FOLGT dem Verhaeltnis. Die Zusagen, die an ihre Stelle treten, stehen unten.
  */
-const DUPLICATE_LADDER = [
-  { width: 360, expectedColumns: 2 },
-  { width: 1280, expectedColumns: 3 },
-] as const
 
-/** Zulaessige Abweichung der Kachelbreite zwischen zwei Gruppen, in px. */
-const WIDTH_TOLERANCE = 1
+/** Die kleinste zugesagte Kachelbreite (AK3). */
+const DUPLICATE_MIN_TILE_WIDTH_PX = 100
+/** Die kleinste zugesagte Bildflaechenhoehe (AK3, Telefon). */
+const DUPLICATE_MIN_IMAGE_HEIGHT_PX = 44
 
-async function tileBoxes(page: Page): Promise<Box[]> {
-  const tiles = duplicateTiles(page)
-  await expect(tiles.first()).toBeVisible()
-  return tiles.evaluateAll((elements) =>
+interface DuplicateTileMeasurement extends Box {
+  /** Die BILDFLAECHE (`duplicate-image`), nicht die Kachel samt Text und Wahlzeile. */
+  image: Box
+  naturalWidth: number
+  naturalHeight: number
+  objectFit: string
+}
+
+/** Die gemessenen Kacheln samt Bildflaeche und dem tatsaechlich geladenen Bild. */
+async function duplicateTileBoxes(page: Page): Promise<DuplicateTileMeasurement[]> {
+  return duplicateTiles(page).evaluateAll((elements) =>
     elements.map((element) => {
       const rect = element.getBoundingClientRect()
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+      const button = element.querySelector('[data-testid="duplicate-image"]')
+      const imageRect = button?.getBoundingClientRect()
+      const image = button?.querySelector('img')
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        image: {
+          x: imageRect?.x ?? 0,
+          y: imageRect?.y ?? 0,
+          width: imageRect?.width ?? 0,
+          height: imageRect?.height ?? 0,
+        },
+        naturalWidth: image instanceof HTMLImageElement ? image.naturalWidth : 0,
+        naturalHeight: image instanceof HTMLImageElement ? image.naturalHeight : 0,
+        objectFit: image instanceof HTMLElement ? getComputedStyle(image).objectFit : '',
+      }
     }),
   )
 }
 
-function firstRowOf(boxes: Box[]): Box[] {
-  const firstRowY = Math.min(...boxes.map((box) => box.y))
-  return boxes.filter((box) => Math.abs(box.y - firstRowY) <= SAME_ROW_TOLERANCE)
+/** Wartet, bis JEDE Kachel ihr Bild geladen hat - vorher ist jeder Verhaeltnisvergleich leer. */
+async function waitForDuplicateImages(page: Page): Promise<void> {
+  const tiles = duplicateTiles(page)
+  await expect(tiles.first(), 'Kacheln der Duplikat-Gruppe').toBeVisible()
+  await expect
+    .poll(
+      async () =>
+        tiles.evaluateAll((elements) =>
+          elements.every((element) => {
+            const image = element.querySelector('[data-testid="duplicate-image"] img')
+            return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+          }),
+        ),
+      {
+        // Sieben bis neunzehn einzeln authentifizierte Blob-Abrufe - die Vorgabe von fuenf
+        // Sekunden reicht dafuer nicht verlaesslich.
+        timeout: IMAGE_LOAD_TIMEOUT_MS,
+        message: 'alle Duplikat-Kacheln haben ihr Bild geladen',
+      },
+    )
+    .toBe(true)
 }
 
-test('Duplikat-Vergleich bricht um, statt die Bilder zu verkleinern', async ({ page }) => {
+test('Duplikat-Vergleich setzt justierte Zeilen ohne Beschnitt', async ({ page }) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
-  const measuredColumns: number[] = []
-  let wideTileWidth = 0
+  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
+  await openDuplicateGroup(page, projectId, 'gross')
+  await waitForDuplicateImages(page)
 
-  for (const { width, expectedColumns } of DUPLICATE_LADDER) {
-    await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
-    await openDuplicateGroup(page, projectId, 'gross')
+  const tiles = await duplicateTileBoxes(page)
+  // Die grosse Gruppe rendert JEDE ihrer sieben Aufnahmen - eine Umsetzung, die bei Platzmangel
+  // Kacheln weglaesst, faellt hier auf und nicht erst beim Hinsehen.
+  expect(tiles.length, 'Kacheln der grossen Gruppe').toBe(7)
 
-    const boxes = await tileBoxes(page)
-    // Die grosse Gruppe rendert JEDE ihrer sieben Aufnahmen - eine Umsetzung, die bei
-    // Platzmangel Kacheln weglaesst, faellt hier auf und nicht erst beim Hinsehen.
-    expect(boxes.length, `Kacheln der grossen Gruppe bei ${width} px`).toBe(7)
+  // Der Demo-Bestand fuehrt bewusst gemischte Formate (4:3, 3:4, 12:5, 1:1). Ohne sie waere ein
+  // justiertes Raster von einem Spaltenraster nicht zu unterscheiden.
+  const shapes = new Set(tiles.map((tile) => (tile.naturalWidth / tile.naturalHeight).toFixed(2)))
+  expect(shapes.size, 'verschiedene Bildformate in der Gruppe').toBeGreaterThanOrEqual(3)
 
-    const firstRow = firstRowOf(boxes)
-    expect(firstRow.length, `Spaltenzahl bei ${width} px`).toBe(expectedColumns)
+  // Die verfuegbare Breite kommt vom CONTAINER der Liste, nie aus den Kacheln selbst - sonst
+  // maesse der Buendigkeitsvergleich sich selbst.
+  const rasterWidth = await duplicateTiles(page)
+    .first()
+    .evaluate((element) => element.parentElement?.clientWidth ?? 0)
+  expect(rasterWidth, 'gemessene Rasterbreite').toBeGreaterThan(0)
 
-    const widths = boxes.map((box) => Math.round(box.width))
-    expect(Math.min(...widths), `schmalste Kachel bei ${width} px`).toBeGreaterThan(0)
-    expect(new Set(widths).size, `verschiedene Kachelbreiten bei ${width} px`).toBe(1)
+  const rows = rowsOf(tiles)
+  expect(rows.length, 'Zeilen im Raster').toBeGreaterThan(1)
 
-    measuredColumns.push(firstRow.length)
-    if (width === 1280) {
-      wideTileWidth = widths[0] ?? 0
-    }
+  // Die LETZTE Zeile ist ausgenommen: sie bleibt bewusst ungestreckt und linksbuendig stehen.
+  for (const [index, row] of rows.slice(0, -1).entries()) {
+    const heights = row.map((tile) => Math.round(tile.image.height))
+    expect(new Set(heights).size, `verschiedene Bildhoehen in Zeile ${index + 1}`).toBe(1)
+    // `items-start` haelt die Kacheln oben buendig - auch wenn unter dem Bild unterschiedlich
+    // viel steht (Wahlzeile oder Begruendung).
+    const tops = row.map((tile) => Math.round(tile.image.y))
+    expect(new Set(tops).size, `verschiedene Oberkanten in Zeile ${index + 1}`).toBe(1)
+
+    const lineWidth = row.reduce((sum, tile) => sum + tile.width, 0) + GRID_GAP * (row.length - 1)
+    expect(
+      Math.abs(lineWidth - rasterWidth),
+      `buendiges Zeilenende in Zeile ${index + 1} (${lineWidth} gegen ${rasterWidth})`,
+    ).toBeLessThanOrEqual(SAME_ROW_TOLERANCE)
   }
 
-  expect(new Set(measuredColumns).size, 'paarweise verschiedene Spaltenzahlen').toBe(
-    DUPLICATE_LADDER.length,
-  )
+  // Und die letzte Zeile ist NACHWEISLICH kuerzer - ohne diese Gegenprobe bestuende die Aussage
+  // "sie wird nicht aufgezogen" auch gegen eine Umsetzung, die sie mitstreckt.
+  const lastRow = rows[rows.length - 1]!
+  const lastLineWidth =
+    lastRow.reduce((sum, tile) => sum + tile.width, 0) + GRID_GAP * (lastRow.length - 1)
+  expect(lastLineWidth, 'die letzte Zeile bleibt ungestreckt').toBeLessThan(rasterWidth)
 
-  // DAS eigentliche Paar: dieselbe Kachelbreite bei drei Mitgliedern wie bei sieben. Ohne diesen
-  // Vergleich bestuende der Spec auch gegen eine Umsetzung, die alle Kacheln in EINE Zeile
-  // presst - sie waeren dort ebenfalls gleich breit, nur eben kleiner.
-  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
-  await openDuplicateGroup(page, projectId, 'klein')
-  const smallBoxes = await tileBoxes(page)
+  // KEIN BESCHNITT - der eigentliche Beweis: Das Verhaeltnis der Bildflaeche folgt dem Verhaeltnis
+  // des tatsaechlich geladenen Bildes. `object-cover` oder eine feste Form liessen hier lauter
+  // gleiche Verhaeltnisse entstehen.
+  for (const tile of tiles) {
+    const imageRatio = tile.naturalWidth / tile.naturalHeight
+    expect(
+      Math.abs(tile.image.width / tile.image.height - imageRatio),
+      `Kastenverhaeltnis gegen Bildverhaeltnis (${tile.image.width}x${tile.image.height} vs. ${tile.naturalWidth}x${tile.naturalHeight})`,
+    ).toBeLessThanOrEqual(RATIO_TOLERANCE * imageRatio + RATIO_TOLERANCE)
+    expect(tile.objectFit, 'das Bild ist eingepasst, nicht zugeschnitten').toBe('contain')
+  }
 
-  expect(smallBoxes.length, 'Kacheln der kleinen Gruppe').toBe(3)
+  // VERSCHIEDENE Kachelbreiten in EINER Gruppe: die Gegenprobe gegen das Spaltenraster, das hier
+  // bis Spec 0638 galt.
   expect(
-    Math.abs(Math.round(smallBoxes[0]?.width ?? 0) - wideTileWidth),
-    `Kachelbreite bei 3 Mitgliedern (${smallBoxes[0]?.width ?? 0}) gegen 7 (${wideTileWidth})`,
-  ).toBeLessThanOrEqual(WIDTH_TOLERANCE)
+    new Set(tiles.map((tile) => Math.round(tile.image.width))).size,
+    'verschiedene Bildbreiten',
+  ).toBeGreaterThan(1)
+
+  for (const tile of tiles) {
+    expect(tile.width, 'Kachel mindestens 100 px breit').toBeGreaterThanOrEqual(
+      DUPLICATE_MIN_TILE_WIDTH_PX,
+    )
+  }
+})
+
+/**
+ * Extreme und unbekannte Verhaeltnisse (AK3, Sicherheit): Der Demo-Bestand traegt bewusst nur
+ * Verhaeltnisse im Normalband, deshalb kommt hier der Antwort-Eingriff zum Einsatz. Geprueft wird
+ * an der schmalsten Breite, weil dort jede Grenze zuerst greift.
+ */
+test('Duplikat-Vergleich passt extreme und unbekannte Verhaeltnisse ins Grenzband ein', async ({
+  page,
+}) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
+  await page.setViewportSize({ width: 360, height: VIEWPORT_HEIGHT })
+  // 0,3 liegt unter dem Planungsband, 20 darueber, `null` heisst unbekannt.
+  await overrideDuplicateRatios(page, [0.3, 20, null])
+  await openDuplicateGroup(page, projectId, 'klein')
+  await waitForDuplicateImages(page)
+
+  const tiles = await duplicateTileBoxes(page)
+  expect(tiles.length, 'Kacheln der kleinen Gruppe').toBe(3)
+
+  // Das Planungsverhaeltnis: unten 0,56, oben 7, unbekannt 3:2 (AK1, AK3).
+  const erwartet = [0.56, 7, 1.5]
+  for (const [index, tile] of tiles.entries()) {
+    expect(
+      tile.image.width / tile.image.height,
+      `Kastenverhaeltnis der Kachel ${index + 1}`,
+    ).toBeCloseTo(erwartet[index]!, 1)
+    expect(tile.objectFit, `Bild ${index + 1} ist eingepasst`).toBe('contain')
+    expect(
+      tile.image.height,
+      `Bildflaeche ${index + 1} mindestens 44 px hoch`,
+    ).toBeGreaterThanOrEqual(DUPLICATE_MIN_IMAGE_HEIGHT_PX - SAME_ROW_TOLERANCE)
+    expect(tile.width, `Kachel ${index + 1} mindestens 100 px breit`).toBeGreaterThanOrEqual(
+      DUPLICATE_MIN_TILE_WIDTH_PX,
+    )
+  }
+
+  // Die Wahlzeile bleibt IN ihrer Kachel - gerade in der schmalsten, die das Grenzband zulaesst.
+  const ueberstand = await duplicateTiles(page).evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect()
+      const knoepfe = [...element.querySelectorAll('[role="group"][aria-label^="Wahl: "] button')]
+      return knoepfe.length === 0
+        ? null
+        : Math.max(...knoepfe.map((knopf) => knopf.getBoundingClientRect().right)) - rect.right
+    }),
+  )
+  expect(
+    ueberstand.filter((wert) => wert !== null).length,
+    'Kacheln mit Wahlzeile',
+  ).toBeGreaterThan(0)
+  for (const wert of ueberstand) {
+    expect(wert ?? 0, 'Wahlzeile innerhalb der Kachel').toBeLessThanOrEqual(SAME_ROW_TOLERANCE)
+  }
+
+  const scroll = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(scroll.scrollWidth, 'kein waagerechtes Scrollen').toBeLessThanOrEqual(
+    scroll.clientWidth + SAME_ROW_TOLERANCE,
+  )
+})
+
+/**
+ * AK6, zweite Ebene: Beim Eintreffen der Bilddaten darf sich NICHTS verschieben. Die Bildanfragen
+ * werden dafuer angehalten und die Rechtecke vor und nach der Freigabe verglichen - gewartet wird
+ * hier also nicht auf das Ereignis, sondern es wird beidseitig gemessen.
+ */
+test('Duplikat-Raster springt beim Eintreffen der Bilddaten nicht', async ({ page }) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
+  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
+  // Der ECHTE Einstieg, damit der Anhaltepunkt erst nach der Liste greift: deren Bilder waeren
+  // sonst beim Ansichtswechsel offene, gleich wieder abgebrochene Anfragen.
+  await page.goto(`/projects/${projectId}/photos?filter=suggested`)
+  const einstieg = page.getByRole('link', { name: /^Duplikate vergleichen —/ })
+  await expect(einstieg, 'listenweiter Einstieg in den Duplikat-Vergleich').toBeVisible()
+  await expect
+    .poll(
+      async () =>
+        photoTiles(page).evaluateAll((elements) =>
+          elements.every((element) => {
+            const image = element.querySelector('img')
+            return image === null || (image.complete && image.naturalWidth > 0)
+          }),
+        ),
+      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: 'Bilder der Fotoliste geladen' },
+    )
+    .toBe(true)
+
+  // Der Ausloeser der Freigabe, vor dem Anhalten gesetzt; `let`, weil er im Handler entsteht.
+  let oeffne: () => void = () => {}
+  const halt = new Promise<void>((resolve) => {
+    oeffne = resolve
+  })
+  let freigegeben = false
+  await page.route(/\/photos\/\d+\/image\?/, async (route) => {
+    if (!freigegeben) {
+      await halt
+    }
+    try {
+      await route.continue()
+    } catch {
+      // Die Anfrage wurde beim Wechsel der Ansicht abgebrochen - kein Fehler des Specs.
+    }
+  })
+
+  await einstieg.click()
+  await expect(duplicateTiles(page), 'Kacheln der grossen Gruppe').toHaveCount(7)
+
+  // Vorbedingung: VOR der Freigabe ist kein Bild geladen - sonst maesse der Vergleich zweimal
+  // denselben Endzustand.
+  const geladene = await duplicateTiles(page).evaluateAll(
+    (elements) =>
+      elements.filter((element) => {
+        const image = element.querySelector('[data-testid="duplicate-image"] img')
+        return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+      }).length,
+  )
+  expect(geladene, 'vor der Freigabe geladene Bilder').toBe(0)
+
+  const vorher = await duplicateTileBoxes(page)
+  freigegeben = true
+  oeffne()
+  await waitForDuplicateImages(page)
+  const nachher = await duplicateTileBoxes(page)
+
+  expect(nachher.length, 'Kacheln nach der Freigabe').toBe(vorher.length)
+  for (const [index, rect] of vorher.entries()) {
+    const spaeter = nachher[index]!
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(
+        Math.abs(spaeter[key] - rect[key]),
+        `Kachel ${index + 1}: ${key} vor (${rect[key]}) und nach (${spaeter[key]}) der Freigabe`,
+      ).toBeLessThanOrEqual(1)
+    }
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(
+        Math.abs(spaeter.image[key] - rect.image[key]),
+        `Bildflaeche ${index + 1}: ${key} vor (${rect.image[key]}) und nach (${spaeter.image[key]})`,
+      ).toBeLessThanOrEqual(1)
+    }
+    expect(spaeter.objectFit, `Bild ${index + 1} nach der Freigabe eingepasst`).toBe('contain')
+  }
 })
