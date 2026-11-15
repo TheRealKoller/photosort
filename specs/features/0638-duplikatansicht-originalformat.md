@@ -1,6 +1,6 @@
 # 0638 - Duplikatsansicht: Bilder im Originalformat ohne Beschnitt anzeigen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #644](https://github.com/TheRealKoller/photosort/pull/644))
 **Erstellt:** 2026-11-15
 **Bezug:** [#638](https://github.com/TheRealKoller/photosort/issues/638)
 
