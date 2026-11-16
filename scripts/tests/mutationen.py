@@ -24,6 +24,12 @@ from dataclasses import dataclass
 KATALOG = ".claude/skills/github-access/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 SKILLER = ".claude/skills/skiller/SKILL.md"
+
+CI = ".github/workflows/ci.yml"
+CI_TEST_SCHRITT = (
+    "      - name: Test (pytest, coverage gate 80%)\n"
+    "        run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80"
+)
 DEVELOPER = ".claude/agents/developer.md"
 
 
@@ -164,6 +170,51 @@ MUTATIONEN: tuple[Mutation, ...] = (
         ),
         invariante="kommentar-pfad",
     ),
+    Mutation(
+        name="coverage-schwelle-gesenkt",
+        waechter="ci",
+        datei=CI,
+        alt="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80",
+        neu="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=70",
+        invariante="coverage-schwelle",
+    ),
+    Mutation(
+        name="qualitaet-nicht-ausgefuehrt",
+        waechter="ci",
+        datei=CI,
+        alt="      - name: Type check (mypy)\n        run: mypy src",
+        neu="      - name: Type check (mypy)\n        run: echo mypy src",
+        invariante="qualitaet-laeuft",
+    ),
+    Mutation(
+        name="tests-nicht-ausgefuehrt",
+        waechter="ci",
+        datei=CI,
+        alt="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80",
+        neu="run: echo pytest",
+        invariante="tests-je-baum",
+    ),
+    Mutation(
+        name="schritt-ueberspringbar",
+        waechter="ci",
+        datei=CI,
+        alt=CI_TEST_SCHRITT,
+        neu=(
+            "      - name: Test (pytest, coverage gate 80%)\n"
+            "        continue-on-error: true\n"
+            "        run: pytest -n auto --cov=photosort --cov-report=term-missing "
+            "--cov-fail-under=80"
+        ),
+        invariante="nicht-ueberspringbar",
+    ),
+    Mutation(
+        name="pr-ausloeser-entfernt",
+        waechter="ci",
+        datei=CI,
+        alt="on:\n  push:\n    branches: [main]\n  pull_request:",
+        neu="on:\n  push:\n    branches: [main]",
+        invariante="pr-ausloeser",
+    ),
 )
 
 
@@ -195,6 +246,19 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
                 "Schnittstelle spricht ausschließlich GraphQL, und im Werkzeugkasten liegt dazu "
                 "nichts.\n**Diese Operation ist remote auf keinem Weg erreichbar** — Eigenschaft "
                 "der Umgebung, keine offene",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="ci-testschritt-anders-benannt",
+        waechter="ci",
+        aenderungen=(
+            (
+                CI,
+                "      - name: Test (pytest, coverage gate 80%)\n        run: pytest -n auto "
+                "--cov=photosort --cov-report=term-missing --cov-fail-under=80",
+                "      - name: Backend-Tests\n        run: pytest -n auto --cov=photosort "
+                "--cov-report=term-missing --cov-fail-under=80",
             ),
         ),
     ),

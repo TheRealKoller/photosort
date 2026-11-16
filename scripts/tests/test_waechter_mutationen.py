@@ -20,13 +20,18 @@ from pathlib import Path
 
 import pytest
 from mutationen import MUTATIONEN, UMFORMIERUNGEN, Mutation
+from test_ci_wirkung import INVARIANTEN as CI_INVARIANTEN
+from test_ci_wirkung import pruefe as ci_pruefe
 from test_github_zugriff_an_einer_stelle import INVARIANTEN, pruefe
 from waechter import Bestand, zeile_an
 
 BESTAND = Bestand.aus_arbeitsbaum()
 
-WÆCHTER = {"katalog": pruefe}
-INVARIANTEN_JE_WÆCHTER = {"katalog": {invariante.id for invariante in INVARIANTEN}}
+WÆCHTER = {"ci": ci_pruefe, "katalog": pruefe}
+INVARIANTEN_JE_WÆCHTER = {
+    "ci": {invariante.id for invariante in CI_INVARIANTEN},
+    "katalog": {invariante.id for invariante in INVARIANTEN},
+}
 
 
 def _anwenden(bestand: Bestand, datei: str, alt: str, neu: str) -> Bestand:
@@ -116,11 +121,15 @@ def test_jede_ersetzung_greift_genau_einmal(datei: str, alt: str) -> None:
 
 
 def test_leerer_bestand_ist_fuer_jeden_waechter_rot() -> None:
-    """Eine leere Eingabe darf nie gruen sein."""
+    """Eine leere Eingabe darf nie gruen sein - ein Befund oder ein lauter Fehler."""
     leer = Bestand({})
 
     for waechter, funktion in sorted(WÆCHTER.items()):
-        assert funktion(leer), f"{waechter} ist ueber einem leeren Bestand gruen."
+        try:
+            befunde = funktion(leer)
+        except ValueError:
+            continue
+        assert befunde, f"{waechter} ist ueber einem leeren Bestand gruen."
 
 
 def test_der_leser_scheitert_laut_bei_null_dateien(tmp_path: Path) -> None:
