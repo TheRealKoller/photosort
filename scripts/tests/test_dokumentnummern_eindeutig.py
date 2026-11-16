@@ -504,12 +504,15 @@ def test_eine_neue_datei_zaehlt_vor_dem_git_add_mit_eine_ignorierte_nicht(
 def test_ein_dateiname_mit_sonderzeichen_kommt_unverfaelscht_zurueck(wegwerf_repo: Path) -> None:
     """`-z` ist die einzige Aufzaehlungsform, die jeden Dateinamen unveraendert durchlaesst.
 
-    Ohne `-z` **quotet** Git jeden Pfad mit Nicht-ASCII-Zeichen: Aus
-    `specs/features/0037-gatefuehrte-….md` wird buchstaeblich
-    `"specs/features/0037-gatef\\303\\274hrte-….md"`, mit fuehrendem Anfuehrungszeichen. Ein so
+    Ohne `-z` **quotet** Git jeden Pfad mit Nicht-ASCII-Zeichen: Aus dem Umlaut-Pfad der Fixture,
+    `specs/decisions/0003-gateführte-pipeline.md`, wird buchstaeblich
+    `"specs/decisions/0003-gatef\\303\\274hrte-pipeline.md"`, mit fuehrendem Anfuehrungszeichen. Ein so
     gelesener Pfad zerfaellt beim Zerlegen anders - sein Elternverzeichnis heisst dann
-    `"specs/features` statt `specs/features` -, und das Dokument faellt **still** aus dem
-    Suchraum, statt geprueft zu werden. Genau ein solcher Name liegt im echten Bestand.
+    `"specs/decisions` statt `specs/decisions` -, und das Dokument faellt **still** aus dem
+    Suchraum, statt geprueft zu werden. Seit Spec 0655 liegt kein solcher Name mehr im echten
+    Bestand (`test_dateinamen_ohne_sonderzeichen.py` haelt das fest); die Nummernpruefung muss
+    einen neu angelegten trotzdem sehen, statt sich darauf zu verlassen, dass ihn der
+    Namenswaechter vorher abweist.
 
     Warum dieser Test noetig ist, obwohl der Selbstschutz greift: Ein ersatzloses Entfernen von
     `-z` ist ein **totaler** Ausfall (kein Nullbyte, ein einziges Element, `suchraum_pruefen`

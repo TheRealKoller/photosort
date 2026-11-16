@@ -2,7 +2,7 @@
 
 **Status:** Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101), 2026-08-17)
 **Erstellt:** 2026-08-15
-**Bezug:** Inbox-Eintrag [`specs/inbox/0021-visualisierung-automatisierter-flow.md`](../inbox/0021-visualisierung-automatisierter-flow.md), idea-sharpener-Gespräch mit Daniel. Löst die in Spec [0037](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) (Implemented) getroffene UI/UX-Entscheidung "kein neuer Wizard/Stepper" bewusst ab — siehe Entscheidungen.
+**Bezug:** Inbox-Eintrag [`specs/inbox/0021-visualisierung-automatisierter-flow.md`](../inbox/0021-visualisierung-automatisierter-flow.md), idea-sharpener-Gespräch mit Daniel. Löst die in Spec [0037](./0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) (Implemented) getroffene UI/UX-Entscheidung "kein neuer Wizard/Stepper" bewusst ab — siehe Entscheidungen.
 
 ## Ziel
 
