@@ -28,7 +28,8 @@ Erster Lauf, als `backend/uv.lock` noch unversioniert im Arbeitsbaum lag:
     FAILED tests/test_lockdateien_versioniert.py::test_die_versionierte_lockmenge_ist_exakt -
       AssertionError: Die versionierte Lockmenge weicht vom festgelegten Stand ab. Fehlend:
         backend/uv.lock
-    FAILED tests/test_lockdateien_versioniert.py::test_keine_lockdatei_liegt_unversioniert_und_nicht_ignoriert -
+    FAILED tests/test_lockdateien_versioniert.py::
+      test_keine_lockdatei_liegt_unversioniert_und_nicht_ignoriert -
       AssertionError: Lockdatei im Arbeitsbaum, aber nicht versioniert und nicht ignoriert:
         backend/uv.lock
     2 failed, 5 passed
@@ -148,9 +149,7 @@ def test_jeder_festgelegte_lockpfad_existiert() -> None:
 def test_ein_fuenfter_paketsatz_ist_rot_bis_er_eingetragen_ist() -> None:
     pfade = [*VERSIONIERTE_LOCKDATEIEN, "design/penpot/package-lock.json"]
 
-    assert lockdateien(pfade) - set(VERSIONIERTE_LOCKDATEIEN) == {
-        "design/penpot/package-lock.json"
-    }
+    assert lockdateien(pfade) - set(VERSIONIERTE_LOCKDATEIEN) == {"design/penpot/package-lock.json"}
 
 
 def test_ein_dateiname_mit_leerzeichen_zerfaellt_nicht() -> None:

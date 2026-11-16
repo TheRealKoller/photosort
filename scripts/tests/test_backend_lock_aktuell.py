@@ -265,7 +265,9 @@ def _kante(kante: object, extra: str | None) -> tuple[str | None, str, tuple[str
     )
 
 
-def deklarierte_kanten(pyproject: Mapping[str, Any]) -> set[tuple[str | None, str, tuple[str, ...]]]:
+def deklarierte_kanten(
+    pyproject: Mapping[str, Any],
+) -> set[tuple[str | None, str, tuple[str, ...]]]:
     return {
         (extra_aus_marker(anforderung.marker), anforderung.name, anforderung.extras)
         for anforderung in deklarationen(pyproject).values()
@@ -282,7 +284,9 @@ def photosort_eintrag(lock: Mapping[str, Any]) -> Mapping[str, Any]:
             f"uv.lock traegt nur {len(pakete)} Pakete (erwartet mindestens {MINDESTZAHL_PAKETE}). "
             "Eine abgeschnittene Datei saehe in jeder Einzelpruefung wie ein sauberer Stand aus."
         )
-    treffer = [paket for paket in pakete if normalisiere_name(str(paket.get("name", ""))) == "photosort"]
+    treffer = [
+        paket for paket in pakete if normalisiere_name(str(paket.get("name", ""))) == "photosort"
+    ]
     if len(treffer) != 1:
         raise ValueError(
             f"{len(treffer)} Eintraege fuer 'photosort' in uv.lock (erwartet genau einer). Bei 0 "
@@ -363,8 +367,10 @@ def rumpf_befunde(rumpf: str) -> list[str]:
     zieldatei: str | None = None
 
     if "--frozen" in export:
-        befunde.append("`uv export` traegt `--frozen` statt `--locked`: Eine Abweichung zwischen "
-                       "Manifest und Lock fiele dann still durch.")
+        befunde.append(
+            "`uv export` traegt `--frozen` statt `--locked`: Eine Abweichung zwischen "
+            "Manifest und Lock fiele dann still durch."
+        )
     if "--locked" not in export:
         befunde.append("`uv export` traegt kein `--locked`.")
     if _wert(export, "-e", "--extra") != "dev":
@@ -545,7 +551,9 @@ def _lock(*eintraege: Mapping[str, Any]) -> dict[str, Any]:
     return {"package": [dict(eintrag) for eintrag in eintraege]}
 
 
-def _photosort(requires: Iterable[Mapping[str, Any]], kantenn: Iterable[Any] = ()) -> dict[str, Any]:
+def _photosort(
+    requires: Iterable[Mapping[str, Any]], kantenn: Iterable[Any] = ()
+) -> dict[str, Any]:
     return {
         "name": "photosort",
         "dependencies": list(kantenn),
@@ -557,7 +565,10 @@ def _photosort(requires: Iterable[Mapping[str, Any]], kantenn: Iterable[Any] = (
     ("bezeichnung", "lock"),
     [
         ("keine Paketliste", {}),
-        ("zu wenige Pakete", _lock(*[{"name": f"paket-{i}"} for i in range(MINDESTZAHL_PAKETE - 1)])),
+        (
+            "zu wenige Pakete",
+            _lock(*[{"name": f"paket-{i}"} for i in range(MINDESTZAHL_PAKETE - 1)]),
+        ),
         ("kein photosort", _lock({"name": "absl-py"})),
         (
             "zwei photosort",

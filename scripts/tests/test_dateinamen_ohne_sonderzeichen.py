@@ -21,7 +21,8 @@ $ cd scripts && pytest -q tests/test_dateinamen_ohne_sonderzeichen.py
 [...]
 E   AssertionError: specs/features/0037-gateführte-bewertungs-pipeline-mit-backfill.md: Position
 E   11: 'ü' (U+00FC) - kein ASCII-Zeichen. [...]
-FAILED tests/test_dateinamen_ohne_sonderzeichen.py::test_kein_basename_traegt_mehr_als_ascii_kleinbuchstaben_ohne_leerraum
+FAILED tests/test_dateinamen_ohne_sonderzeichen.py::
+    test_kein_basename_traegt_mehr_als_ascii_kleinbuchstaben_ohne_leerraum
 
 Der Befund nennt Pfad, 1-basierte Zeichenposition, Zeichen, `U+XXXX` und die zulaessige Form,
 stabil sortiert - ein Befund ohne diese vier Angaben laesst offen, ob der Name falsch oder die
@@ -274,9 +275,7 @@ def _befunde(name: str) -> list[str]:
 def test_jede_abweichende_schreibweise_wird_erkannt(name: str, erwartet: tuple[str, ...]) -> None:
     befunde = _befunde(name)
 
-    fehlend = [
-        teil for teil in erwartet if not any(teil in befund for befund in befunde)
-    ]
+    fehlend = [teil for teil in erwartet if not any(teil in befund for befund in befunde)]
     assert not fehlend, (
         f"Die Schreibweise {name!r} muesste Befunde mit {fehlend!r} erzeugen; gefunden: "
         f"{befunde}. Faellt ein Fall aus der Tabelle, ist die Pruefung stiller geworden."
