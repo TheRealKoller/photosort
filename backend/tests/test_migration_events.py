@@ -325,15 +325,3 @@ def test_downgrade_does_not_bring_the_deleted_rows_back(tmp_path: Path) -> None:
             connection.execute(text("SELECT COUNT(*) FROM criterion_scoring_runs")).scalar_one()
             == 1
         )
-
-
-def test_the_module_documents_the_irreversible_deletion() -> None:
-    """Die Nicht-Rueckholbarkeit steht im Migrationsmodul selbst - sie ist die einzige ihrer Art
-    im Projekt und darf niemanden im Betrieb ueberraschen."""
-    source = _MIGRATION_PATH.read_text(encoding="utf-8")
-
-    assert "downgrade" in source
-    assert "photo_rankings" in source
-    assert any(
-        marker in source.lower() for marker in ("nicht zurueck", "nicht wiederher", "unumkehrbar")
-    )

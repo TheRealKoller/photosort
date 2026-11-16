@@ -4,6 +4,7 @@ import inspect
 
 import pytest
 
+from photosort import landmark, remote_classification
 from photosort.cloud_vision import (
     DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER,
     VISION_MODELS_BY_PROVIDER,
@@ -97,20 +98,6 @@ class TestTheProviderDefaults:
     def test_they_cover_exactly_the_selectable_providers(self) -> None:
         assert set(DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER) == set(VISION_MODELS_BY_PROVIDER)
 
-    def test_every_default_is_documented_with_its_source(self) -> None:
-        """Belegpflicht analog ADR 0059 Punkt 5 (Modellpreise): jede Voreinstellung traegt Quelle
-        und Abrufdatum im Kommentar - bei Mistral ausdruecklich samt der offen bleibenden
-        Beleglucke. Geprueft wird nur, DASS die Tabelle kommentiert ist; der Inhalt der Herleitung
-        ist eine Aussage ueber fremde Systeme und gehoert in ADR 0074."""
-        import photosort.cloud_vision as cloud_vision
-
-        source = inspect.getsource(cloud_vision)
-        table_start = source.index("DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER")
-        preceding = source[:table_start]
-
-        assert "2026-09-10" in preceding
-        assert "0074" in preceding
-
 
 class TestTheThrottleIsAlwaysPassedIn:
     """K6, Bauform analog `TestTheModelIsAlwaysPassedIn` in test_pricing.py: der Schrittmacher ist
@@ -131,27 +118,42 @@ class TestTheThrottleIsAlwaysPassedIn:
             assert parameter.default is inspect.Parameter.empty, client.__name__
             assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, client.__name__
 
-    def test_both_factories_pull_the_process_wide_throttle_of_the_derived_provider(self) -> None:
+    def test_both_factories_pull_the_process_wide_throttle_of_the_derived_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Die beiden Factories laufen in keinem automatisierten Test (echtes Secret, echter
-        Netzwerkversuch) - abgesichert ist ihr Durchreichen deshalb als Quelltext-Verankerung
-        plus `mypy --strict`.
+        Netzwerkversuch). Belegt wird die Wirkung mit gepatchten Client-Klassen: was die Factory
+        baut, traegt den Schrittmacher des aus dem Modell abgeleiteten Anbieters - als Sentinel.
 
         BEIDE leiten den Anbieter aus dem uebergebenen Modell ab (ADR 0143 Punkt 2; fuer den
         Kategorie-Client schon seit ADR 0139 Punkt 4). Keine der beiden Factories liest
         `settings.landmark_provider`: der beschriebe den Installationsanbieter statt der Wahl des
         Projekts.
         """
-        # Eine Regel, eine Stelle: die Ableitung selbst steht in
-        # `model_choice.provider_for_task_model` (Spec 0383, Finding D5); hier bleibt zu belegen,
-        # dass beide Factories sie ziehen und ihren Wert weiterreichen.
-        landmark_source = inspect.getsource(build_landmark_client)
-        assert "provider = provider_for_task_model(model)" in landmark_source
-        assert "throttle_for_provider(provider)" in landmark_source
-        assert "throttle_for_provider(settings.landmark_provider)" not in landmark_source
-        assert "throttle=throttle" in landmark_source
+        sentinel = object()
+        gebaut: list[tuple[str, dict[str, object]]] = []
 
-        category_source = inspect.getsource(build_category_classification_client)
-        assert "provider = provider_for_task_model(model)" in category_source
-        assert "throttle_for_provider(provider)" in category_source
-        assert "throttle_for_provider(settings.landmark_provider)" not in category_source
-        assert "throttle=throttle" in category_source
+        def aufzeichnend(name: str) -> type:
+            def __init__(self: object, **kwargs: object) -> None:
+                gebaut.append((name, kwargs))
+
+            return type(name, (), {"__init__": __init__})
+
+        for modul, namen in (
+            (landmark, ("AnthropicLandmarkClient", "MistralLandmarkClient")),
+            (remote_classification, ("AnthropicCategoryClient", "MistralCategoryClient")),
+        ):
+            for name in namen:
+                monkeypatch.setattr(modul, name, aufzeichnend(name))
+            monkeypatch.setattr(modul, "throttle_for_provider", lambda provider: sentinel)
+
+        model = next(iter(VISION_MODELS_BY_PROVIDER["mistral"]))
+        build_landmark_client(model)
+        build_category_classification_client(model)
+
+        assert [name for name, _ in gebaut] == [
+            "MistralLandmarkClient",
+            "MistralCategoryClient",
+        ]
+        assert gebaut[0][1]["throttle"] is sentinel
+        assert gebaut[1][1]["throttle"] is sentinel

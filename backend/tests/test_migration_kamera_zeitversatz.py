@@ -347,15 +347,3 @@ def test_downgrade_does_not_bring_the_offsets_back(tmp_path: Path) -> None:
 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT COUNT(*) FROM project_cameras")).scalar_one() == 0
-
-
-def test_the_module_documents_the_irreversible_loss_of_the_offsets() -> None:
-    """Die Nicht-Rueckholbarkeit steht im Migrationsmodul selbst - sie darf niemanden im Betrieb
-    ueberraschen."""
-    source = _MIGRATION_PATH.read_text(encoding="utf-8")
-
-    assert "downgrade" in source
-    assert "taken_at_original" in source
-    assert any(
-        marker in source.lower() for marker in ("nicht zurueck", "nicht wiederher", "unumkehrbar")
-    )

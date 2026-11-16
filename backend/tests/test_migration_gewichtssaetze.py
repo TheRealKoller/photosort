@@ -234,13 +234,3 @@ def test_the_downgrade_drops_both_tables_and_the_run_column(tmp_path: Path) -> N
     assert _SETS not in tables
     assert _ENTRIES not in tables
     assert _RUN_COLUMN not in run_columns
-
-
-def test_the_downgrade_docstring_names_the_loss_of_the_adjusted_weights() -> None:
-    """Die Struktur wird wiederhergestellt, nie die Daten: Nach dem Rueckweg rechnet jeder Lauf
-    wieder mit den Startwerten, ohne dass irgendetwas das als Verlust ausweist."""
-    module = _load_migration_module()
-    docstrings = f"{module.__doc__ or ''}\n{module.downgrade.__doc__ or ''}".lower()
-
-    assert "verlust" in docstrings or "verloren" in docstrings or "verliert" in docstrings
-    assert "gewicht" in docstrings

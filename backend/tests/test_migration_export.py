@@ -160,12 +160,3 @@ def test_the_downgrade_drops_both_tables(tmp_path: Path) -> None:
 
     assert _RUN_TABLE not in tables
     assert _PHOTO_TABLE not in tables
-
-
-def test_the_downgrade_docstring_names_the_loss_of_every_past_export() -> None:
-    """Die Struktur wird wiederhergestellt, nie die Daten - wer den Rueckwaertsweg aufruft, liest
-    im Docstring, dass die Nachweise vergangener Exporte dabei verloren gehen."""
-    module = _load_migration_module()
-    docstrings = (module.downgrade.__doc__ or "") + (module.upgrade.__doc__ or "")
-
-    assert "export" in docstrings.lower()

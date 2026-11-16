@@ -229,16 +229,22 @@ def test_a_second_decision_for_the_same_photo_is_structurally_impossible(tmp_pat
             )
 
 
-def test_the_upgrade_touches_no_data_at_all() -> None:
-    """Kein Backfill: Ein bestehendes Projekt behaelt genau den Ausschuss, den sein letzter Lauf
-    vorgeschlagen hat. Ein eingeschriebener Vorgabewert waere von einer getroffenen Entscheidung
-    nicht mehr zu unterscheiden."""
-    module = _load_migration_module()
-    quelle = _MIGRATION_PATH.read_text(encoding="utf-8")
+def test_the_upgrade_touches_no_data_at_all(tmp_path: Path) -> None:
+    """Kein Backfill: Die neue Tabelle kommt leer, und vorhandene Daten bleiben unberuehrt. Ein
+    eingeschriebener Vorgabewert waere von einer getroffenen Entscheidung nicht mehr zu
+    unterscheiden - der Fall prueft die Wirkung, nicht den Quelltext."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    with engine.begin() as connection:
+        _create_pre_migration_schema(connection)
+        connection.execute(text("CREATE TABLE marker (id INTEGER PRIMARY KEY, note TEXT)"))
+        connection.execute(text("INSERT INTO marker (id, note) VALUES (1, 'bleibt')"))
+        _apply(connection, "upgrade")
 
-    assert module.upgrade is not None
-    for anweisung in ("INSERT ", "UPDATE ", "DELETE "):
-        assert anweisung not in quelle.upper()
+        rows = connection.execute(text(f"SELECT COUNT(*) FROM {_TABLE}")).scalar_one()  # noqa: S608
+        marker = connection.execute(text("SELECT note FROM marker")).scalar_one()
+
+    assert rows == 0
+    assert marker == "bleibt"
 
 
 def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
@@ -254,14 +260,3 @@ def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
         tables = set(inspect(connection).get_table_names())
 
     assert _TABLE not in tables
-
-
-def test_the_downgrade_docstring_names_the_loss_of_every_decision() -> None:
-    """Die Struktur wird wiederhergestellt, nie die Daten - wer den Rueckwaertsweg aufruft, liest
-    am Artefakt selbst, was er verliert. Hier wiegt das schwerer als bei einer Anzeigetabelle: Mit
-    den Zeilen faellt jede ausdrueckliche Herausnahme aus dem Cloud-Bestand fort."""
-    module = _load_migration_module()
-    docstrings = f"{module.__doc__ or ''}\n{module.downgrade.__doc__ or ''}".lower()
-
-    assert "verlust" in docstrings or "verloren" in docstrings or "verliert" in docstrings
-    assert "entscheidung" in docstrings

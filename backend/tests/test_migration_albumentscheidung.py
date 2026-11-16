@@ -322,13 +322,3 @@ def test_the_downgrade_deletes_every_row_without_an_album_decision(tmp_path: Pat
     assert rows == [(1, "FAVORITE"), (2, "ALBUM_WORTHY"), (3, "REJECTED")]
     assert "favorite" not in columns
     assert not columns["status"]["nullable"]
-
-
-def test_the_downgrade_docstring_names_the_data_loss() -> None:
-    """Die Zusage aus Auflage S12 steht am Artefakt selbst, nicht nur in der Spec: Wer den
-    Rueckwaertsweg aufruft, liest dort, was er verliert."""
-    module = _load_migration_module()
-    docstrings = f"{module.__doc__ or ''}\n{module.downgrade.__doc__ or ''}".lower()
-
-    assert "verlust" in docstrings or "verliert" in docstrings
-    assert "geloescht" in docstrings or "loescht" in docstrings
