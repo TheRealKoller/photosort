@@ -1,6 +1,6 @@
 # 0652 - Prüfungen prüfen die Wirkung statt den Wortlaut
 
-**Status:** Accepted
+**Status:** Implemented ([PR #657](https://github.com/TheRealKoller/photosort/pull/657))
 **Erstellt:** 2026-11-16
 **Bezug:** Issue [#652](https://github.com/TheRealKoller/photosort/issues/652)
 
