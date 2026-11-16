@@ -1,6 +1,6 @@
 # 0635 - Bildflächen erst im gefüllten Zustand messen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #646](https://github.com/TheRealKoller/photosort/pull/646))
 **Erstellt:** 2026-11-16
 **Bezug:** Issue [#635](https://github.com/TheRealKoller/photosort/issues/635)
 
