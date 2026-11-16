@@ -33,14 +33,14 @@ from waechter import Bestand, zeile_an
 
 BESTAND = Bestand.aus_arbeitsbaum()
 
-WÆCHTER = {
+Waechter = {
     "befehle": befehle_pruefe,
     "board": board_pruefe,
     "ci": ci_pruefe,
     "katalog": pruefe,
     "warten": warten_pruefe,
 }
-INVARIANTEN_JE_WÆCHTER = {
+INVARIANTEN_JE_Waechter = {
     "befehle": {invariante.id for invariante in BEFEHLE_INVARIANTEN},
     "board": {invariante.id for invariante in BOARD_INVARIANTEN},
     "ci": {invariante.id for invariante in CI_INVARIANTEN},
@@ -68,10 +68,10 @@ def _liegt_im_bereich(befund_ort: str, mutation: Mutation, bereich: tuple[int, i
     return beginn <= int(nummer) <= ende
 
 
-@pytest.mark.parametrize("waechter", sorted(WÆCHTER))
+@pytest.mark.parametrize("waechter", sorted(Waechter))
 def test_der_unmutierte_bestand_ist_gruen(waechter: str) -> None:
     """Ein Waechter, der schon ohne Mutation rot ist, belegt nichts."""
-    befunde = WÆCHTER[waechter](BESTAND)
+    befunde = Waechter[waechter](BESTAND)
 
     assert not befunde, "Befunde im unmutierten Bestand: " + "; ".join(
         befund.meldung for befund in befunde
@@ -85,7 +85,7 @@ def test_umformulierung_bleibt_gruen(fall: object) -> None:
     for datei, alt, neu in fall.aenderungen:
         bestand = _anwenden(bestand, datei, alt, neu)
 
-    befunde = WÆCHTER[fall.waechter](bestand)
+    befunde = Waechter[fall.waechter](bestand)
 
     assert not befunde, f"Umformulierung '{fall.name}' wurde rot: " + "; ".join(
         befund.meldung for befund in befunde
@@ -96,7 +96,7 @@ def test_umformulierung_bleibt_gruen(fall: object) -> None:
 def test_jede_mutation_erzeugt_ihren_befund(mutation: Mutation) -> None:
     """Bricht die Mutation die deklarierte Invariante, sitzt der Befund im geaenderten Bereich."""
     mutiert = _anwenden(BESTAND, mutation.datei, mutation.alt, mutation.neu)
-    befunde = WÆCHTER[mutation.waechter](mutiert)
+    befunde = Waechter[mutation.waechter](mutiert)
     eigene = [befund for befund in befunde if befund.invariante == mutation.invariante]
     bereich = _geaenderter_bereich(BESTAND[mutation.datei], mutation.alt, mutation.neu)
 
@@ -111,17 +111,17 @@ def test_jede_mutation_erzeugt_ihren_befund(mutation: Mutation) -> None:
     )
 
 
-@pytest.mark.parametrize("waechter", sorted(WÆCHTER))
+@pytest.mark.parametrize("waechter", sorted(Waechter))
 def test_mutationen_und_invarianten_decken_sich(waechter: str) -> None:
     """Je Invariante mindestens eine Mutation, und keine Mutation gegen eine unbekannte Invariante."""
     deklariert = {m.invariante for m in MUTATIONEN if m.waechter == waechter}
 
-    assert deklariert <= INVARIANTEN_JE_WÆCHTER[waechter], (
+    assert deklariert <= INVARIANTEN_JE_Waechter[waechter], (
         f"{waechter}: Mutationen nennen unbekannte Invarianten "
-        f"{sorted(deklariert - INVARIANTEN_JE_WÆCHTER[waechter])}."
+        f"{sorted(deklariert - INVARIANTEN_JE_Waechter[waechter])}."
     )
-    assert INVARIANTEN_JE_WÆCHTER[waechter] <= deklariert, (
-        f"{waechter}: ohne Mutation sind {sorted(INVARIANTEN_JE_WÆCHTER[waechter] - deklariert)}."
+    assert INVARIANTEN_JE_Waechter[waechter] <= deklariert, (
+        f"{waechter}: ohne Mutation sind {sorted(INVARIANTEN_JE_Waechter[waechter] - deklariert)}."
     )
 
 
@@ -139,7 +139,7 @@ def test_leerer_bestand_ist_fuer_jeden_waechter_rot() -> None:
     """Eine leere Eingabe darf nie gruen sein - ein Befund oder ein lauter Fehler."""
     leer = Bestand({})
 
-    for waechter, funktion in sorted(WÆCHTER.items()):
+    for waechter, funktion in sorted(Waechter.items()):
         try:
             befunde = funktion(leer)
         except ValueError:

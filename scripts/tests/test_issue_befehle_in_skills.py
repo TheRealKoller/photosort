@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from itertools import pairwise
 
-from waechter import Befund, Bestand, Invariante, befund, codebloecke
+from waechter import Befund, Bestand, Invariante, befund
 
 REPO = "TheRealKoller/photosort"
 ANWEISUNGSRAUM = (".claude", "CLAUDE.md")
@@ -86,18 +86,8 @@ class Aufruf:
         return f"{self.datei}:{self.zeile}"
 
 
-def _befehlszeilen(text: str) -> list[tuple[int, str]]:
-    """Codeblock-Zeilen, die mit `gh ` beginnen - Prosa mit `gh` ist keine Befehlszeile."""
-    zeilen: list[tuple[int, str]] = []
-    for block in codebloecke(text):
-        for zeile in block.split("\n"):
-            if zeile.strip().startswith("gh "):
-                zeilen.append((0, zeile.strip()))
-    return zeilen
-
-
 def aufrufe(datei: str, text: str) -> list[Aufruf]:
-    """Alle `gh`-Aufrufe eines Textes - aus Codebloecken und aus Befehlszeilen mit ID-Etikett."""
+    """Alle `gh`-Aufrufe eines Textes: zeilenanfangs-verankert, mit oder ohne ID-Etikett."""
     ergebnis: list[Aufruf] = []
     for treffer in _AUFRUF.finditer(text):
         befehl = treffer.group("befehl").strip()

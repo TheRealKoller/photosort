@@ -269,6 +269,20 @@ MUTATIONEN: tuple[Mutation, ...] = (
         neu="## Blockiert: CI-Fehlschlag außerhalb der bekannten Klasse",
         invariante="anker-protokoll",
     ),
+    Mutation(
+        name="grenze-nicht-leer",
+        waechter="katalog",
+        datei=KATALOG,
+        alt=(
+            "**Auswertungsgrenze:** keine Felder — ausgewertet wird ausschließlich der "
+            "Ergebniswert aus der"
+        ),
+        neu=(
+            "**Auswertungsgrenze:** `bucket` — ausgewertet wird ausschließlich der Ergebniswert "
+            "aus der"
+        ),
+        invariante="lesende-grenze",
+    ),
 )
 
 
@@ -352,6 +366,25 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
                 REFINEMENT,
                 "- `issue-titel-schreiben`",
                 "- `issue-titel-schreiben` — den geschärften Titel am Issue setzen",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="ci-zusatzjob-und-umbenannt",
+        waechter="ci",
+        aenderungen=(
+            (
+                CI,
+                "  frontend:\n",
+                "  zusatz:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo zusatz\n\n"
+                "  frontend:\n",
+            ),
+            (
+                CI,
+                CI_TEST_SCHRITT,
+                "      - name: Backend-Tests\n"
+                "        run: pytest -n auto --cov=photosort --cov-report=term-missing "
+                "--cov-fail-under=80",
             ),
         ),
     ),

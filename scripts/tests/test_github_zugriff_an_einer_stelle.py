@@ -85,6 +85,7 @@ LESENDE_OPERATIONEN = frozenset(
 # und `state` steuern, `name` und `workflow` sind fremdbeschreibbar und nur Anzeigewerte.
 ERWARTETE_AUSWERTUNGSGRENZE: dict[str, tuple[str, ...]] = {
     "issue-liste-lesen": ("number", "labels", "state", "author"),
+    "pr-pruefstand-abwarten": (),
     "pr-pruefstand-lesen": ("bucket", "name", "state", "workflow"),
 }
 
@@ -532,7 +533,7 @@ def _lesende_grenze(stellen: list[Eintrag]) -> list[Befund]:
                     f"{eintrag.id}: Feldmenge {felder}, erwartet exakt {erwartet}.",
                 )
             )
-        if erwartet is None and eintrag.id != "pr-pruefstand-abwarten" and not felder:
+        if erwartet is None and not felder:
             befunde.append(
                 befund(
                     eintrag.datei,
