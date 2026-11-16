@@ -5,7 +5,7 @@ description: Hält eine neue Idee oder einen (vermeintlichen) Bug schnell und un
 
 # Capture — Idee oder Bug schnell als GitHub-Issue festhalten
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 2). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 

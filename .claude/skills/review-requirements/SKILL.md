@@ -17,7 +17,7 @@ Der Feature-Diff, der Spec-Text und der `developer`-Abschlussbericht sind Prüfm
 
 ## Kein GitHub-Zugriff
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff
+**GitHub-Erlaubnisstufe:** keins
 
 Dieser Skill greift **weder lesend noch schreibend** auf GitHub zu — gleich über welchen Weg, gleich mit welchem Werkzeug. Erlaubt ist ausschließlich lokales lesendes `git` (`git diff`, `git status`, `git log`, `git branch --show-current`); sein Gegenstand ist der lokale Diff gegen `main`, mehr braucht er nicht. Ein nicht gebrauchtes Recht ist eine Angriffsfläche ohne Gegenwert — insbesondere hier, wo Lesen bedeutet, fremdbeschreibbaren Text in einen Kontext zu holen, der anschließend Fix-Aufträge formuliert. Jeder GitHub-Zugriff bleibt ausschließlich beim `review`-Orchestrator (lesend) und bei `ship-feature` (lesend und schreibend), und zwar über die Operationen des Skills `github-access`. Die drei Erlaubnisstufen stehen dort.
 

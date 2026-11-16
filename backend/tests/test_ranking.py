@@ -94,10 +94,3 @@ class TestTheMonotonicityIsBack:
         result = rank_photos({1: math.nextafter(0.5, 1.0), 2: 0.5})
 
         assert [entry.photo_id for entry in result] == [1, 2]
-
-
-class TestRankingDocstrings:
-    def test_rank_photos_documents_the_restored_monotonicity(self) -> None:
-        """Die Monotonie ist eine ZUSAGE und steht im Docstring - wer eine Daempfung ergaenzt, muss
-        hier vorbei."""
-        assert "monoton" in (rank_photos.__doc__ or "").casefold()

@@ -211,13 +211,3 @@ def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
         tables = set(inspect(connection).get_table_names())
 
     assert _TABLE not in tables
-
-
-def test_the_downgrade_docstring_names_the_loss_of_every_joint_decision() -> None:
-    """Die Struktur wird wiederhergestellt, nie die Daten - wer den Rueckwaertsweg aufruft, liest
-    am Artefakt selbst, was er verliert."""
-    module = _load_migration_module()
-    docstrings = f"{module.__doc__ or ''}\n{module.downgrade.__doc__ or ''}".lower()
-
-    assert "verlust" in docstrings or "verloren" in docstrings or "verliert" in docstrings
-    assert "entscheidung" in docstrings

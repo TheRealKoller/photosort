@@ -4,6 +4,8 @@
 **Datum:** 2026-09-06
 **Bezug:** GitHub-Issue [`#339`](https://github.com/TheRealKoller/photosort/issues/339), zugehörige Feature-Spec `specs/features/0339-*.md`, `architect`-Konsultation für Story #339 am 2026-09-06 (Messungen desselben Tages, siehe Kontext).
 
+**Teilweise abgelöst:** Abschnitt 8 (Prüfform des Katalogs) — die Prüfungen des Katalogs sind seit [ADR 0148](./0148-der-rote-waechtertest-traegt-eine-aussage-oder-eine-form.md) reine Funktionen `Bestand → Befunde` mit deklarierten Invarianten; Satz- und Markerwortlaute entfallen, die Aussagen bleiben.
+
 **Löst ab (jeweils benannt, nicht stillschweigend übergangen):**
 
 - [`decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md`](./0057-board-lebenszyklus-nativ-statt-eigenbau.md), **Abschnitt 4, erster Satz** („Der Board-Zugriff sind ab jetzt einzelne `gh`-Befehle in den Skill-Dateien") und **Abschnitt 7** (Umfang der Remote-Grenze). An ihre Stelle treten Abschnitt 1–3 bzw. Abschnitt 5 dieser ADR. **Alles Übrige aus ADR 0057 bleibt unverändert in Kraft** — insbesondere der fünfwertige Lebenszyklus (Abschnitt 1), die Auslöser-Tabelle mit den drei nativen Übergängen (Abschnitt 2), `Done` heißt „vom Board" (Abschnitt 3), der Ersatz der vier Werkzeug-Prüfungen (Abschnitt 5), das Fehlschlag-Muster (Abschnitt 6) und der PR-ohne-Merge-Rückfall (Abschnitt 8). ADR 0057 behält deshalb den Status `Accepted` und trägt künftig einen Vermerk auf diese ADR; sie wird **nicht** als Ganzes `Superseded` gesetzt (Begründung und Abwägung: Abschnitt 7 dieser ADR).

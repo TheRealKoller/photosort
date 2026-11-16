@@ -1,0 +1,1325 @@
+{
+  "aktiv": [
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "katalog-geschlossen",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "wege-geschlossen",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "wege-belegt",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "wege-board",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "ziel-literal",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "lesende-grenze",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "verweis-abschnitt",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "id-verwendung",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "zugriff-nur-im-katalog",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "messbegriffe",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "erlaubnisstufe",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "kommentar-pfad",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "qualitaet-laeuft",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "tests-je-baum",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "coverage-schwelle",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "nicht-ueberspringbar",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "pr-ausloeser",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_issue_befehle_in_skills.py",
+      "invariante": "freitext-nur-als-datei",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_issue_befehle_in_skills.py",
+      "invariante": "ziel-geschlossen",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_issue_befehle_in_skills.py",
+      "invariante": "reihenfolge-ausfuehrung",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_board_befehle_in_skills.py",
+      "invariante": "board-werte",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "pruefstand-blockierend",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "anker-protokoll",
+      "klasse": "B"
+    }
+  ],
+  "entfernt": [
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_suchraum_hat_eine_plausible_groesse",
+      "satz": "Selbstschutz (a): Eine kaputte Aufzaehlung darf nicht als Nullbefund durchgehen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_erlaubte_ort_liegt_im_suchraum",
+      "satz": "Selbstschutz (b): Wird das Verzeichnis erneut umbenannt, meldet es dieser Test.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_claude_md_liegt_im_suchraum",
+      "satz": "Selbstschutz (b), zweiter Zweig: `CLAUDE.md` liegt nicht unter `.claude/`.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_gegenprobe_traegt_je_musterfamilie",
+      "satz": "Selbstschutz (c): Eine Gegenprobe nur fuer `gh` sagt ueber `mcp__github__` nichts.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_kein_github_zugriff_ausserhalb_des_katalogs",
+      "satz": "test_kein_github_zugriff_ausserhalb_des_katalogs",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_kein_messbegriff_im_suchraum",
+      "satz": "Schwacher, ausdruecklich als schwach gefuehrter Waechter gegen die Vorabmessung.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_katalog_fuehrt_genau_die_erwarteten_operationen",
+      "satz": "test_der_katalog_fuehrt_genau_die_erwarteten_operationen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_jede_operation_haelt_die_verbindliche_form",
+      "satz": "test_jede_operation_haelt_die_verbindliche_form",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_katalog_nennt_mindestens_ein_mcp_werkzeug_literal",
+      "satz": "Ohne ein einziges Vorkommen waere das `mcp__github__`-Muster nie ausgeuebt.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_keine_operation_liest_issue_kommentare",
+      "satz": "Eigenschaft des Vokabulars, nicht eine Feldliste: Was es nicht gibt, ruft niemand auf.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_feldmenge_der_listenden_leseoperation_ist_exakt_festgelegt",
+      "satz": "Exakt, nicht \"mindestens\": Die Feldmenge **ist** hier die Sicherheitszusage.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_beide_neuen_eintraege_benennen_ihren_normalisierten_wert",
+      "satz": "Eine API-Antwort ist strukturiert: Was verglichen wird, steht als Wert, nicht als Feld.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_zielzustands_schreiber_fuehrt_eine_drift_pruefung",
+      "satz": "Die Freigabepolitik haengt an einer Label-Menge, die diese Operation zurueckschreibt.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_drei_schreibenden_board_operationen_fuehren_eine_nachhol_zeile",
+      "satz": "Der Befehl zieht aus den vier Ablauf-Skills hierher - die Zusicherung wandert mit.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_lesende_board_operation_begruendet_ihre_fehlende_nachhol_zeile",
+      "satz": "test_die_lesende_board_operation_begruendet_ihre_fehlende_nachhol_zeile",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_jede_verwendete_operations_id_existiert_im_katalog",
+      "satz": "Einseitig: Die Gegenrichtung wird ausdruecklich nicht geprueft.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_erkennungsraum_findet_die_operationen_ueberhaupt",
+      "satz": "Ein leerer Erkennungsraum liesse den Integritaetstest leer wahr werden.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_jede_skill_und_agenten_datei_traegt_genau_ihre_erlaubnisstufe",
+      "satz": "test_jede_skill_und_agenten_datei_traegt_genau_ihre_erlaubnisstufe",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_fuenf_perspektiven_skills_tragen_kein_github_zugriff",
+      "satz": "Nicht \"nur lesend\": Ein Recht, das keiner von ihnen braucht, wird nicht eingeraeumt.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_beiden_penpot_skills_tragen_kein_github_zugriff",
+      "satz": "Die Freigabe *erreicht* den Rundenablauf, sie wird von ihm nie *ermittelt*.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_zugriff_wird_an_beliebiger_stelle_der_zeile_gefunden",
+      "satz": "Unverankert: Beide am Bestand belegten Umgehungsformen muessen auffallen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_prosa_ueber_den_zugriff_gilt_nicht_als_zugriff",
+      "satz": "Deutscher Fliesstext schreibt die CLI mit anliegendem Backtick, nie als 'gh ' plus Wort.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_gh_pr_wird_nicht_mit_gh_project_verwechselt",
+      "satz": "`gh pr` ist ein Praefix von `gh project` - ohne Wortgrenze waere die Meldung falsch.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_katalog_selbst_wird_uebergangen",
+      "satz": "test_der_katalog_selbst_wird_uebergangen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_andere_datei_wird_nicht_uebergangen",
+      "satz": "test_eine_andere_datei_wird_nicht_uebergangen",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_unbekannter_unterbefehl_wird_als_solcher_gemeldet",
+      "satz": "test_ein_unbekannter_unterbefehl_wird_als_solcher_gemeldet",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_leerer_suchraum_scheitert_laut_statt_still",
+      "satz": "test_ein_leerer_suchraum_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_katalog_ohne_eintrag_scheitert_laut_statt_still",
+      "satz": "test_ein_katalog_ohne_eintrag_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_jeder_enumerierte_messbegriff_wird_gefunden",
+      "satz": "Positivfall synthetisch - im Repository gibt es null legitime Vorkommen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_erwartete_eintragsform_gilt_nicht_als_verstoss",
+      "satz": "test_die_erwartete_eintragsform_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_gh_vor_mcp_wird_gemeldet",
+      "satz": "test_gh_vor_mcp_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_unbekannter_weg_wird_gemeldet",
+      "satz": "test_ein_unbekannter_weg_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_board_operation_mit_zweitem_weg_wird_gemeldet",
+      "satz": "test_eine_board_operation_mit_zweitem_weg_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_board_operation_ohne_remote_kennzeichnung_wird_gemeldet",
+      "satz": "test_eine_board_operation_ohne_remote_kennzeichnung_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_operation_ohne_ziel_literal_wird_gemeldet",
+      "satz": "test_eine_operation_ohne_ziel_literal_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_lesende_operation_ohne_auswertungsgrenze_wird_gemeldet",
+      "satz": "test_eine_lesende_operation_ohne_auswertungsgrenze_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_die_erwartete_auswertungsgrenze_wird_exakt_gelesen",
+      "satz": "test_die_erwartete_auswertungsgrenze_wird_exakt_gelesen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_ergaenztes_feld_faellt_auf",
+      "satz": "`title` ist der Fall, um dessentwillen es diese Zusicherung gibt.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_entferntes_feld_faellt_auf",
+      "satz": "Ohne `author` faellt die Markierung fremder Autorschaft aus - still.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_prosa_hinter_dem_gedankenstrich_zaehlt_nicht_zur_feldmenge",
+      "satz": "Sonst zoege jedes in Backticks gesetzte Wort der Erlaeuterung in die Feldmenge.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_grenzzeile_ohne_gedankenstrich_scheitert_laut_statt_still",
+      "satz": "test_eine_grenzzeile_ohne_gedankenstrich_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_block_ohne_grenzzeile_scheitert_laut_statt_still",
+      "satz": "test_ein_block_ohne_grenzzeile_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_operation_ohne_mcp_weg_ohne_begruendung_wird_gemeldet",
+      "satz": "Erste Richtung: einwegig, aber ohne Auskunft warum.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_operation_mit_mcp_weg_und_begruendung_wird_gemeldet",
+      "satz": "Zweite Richtung - die, die der Vorgaengerfassung gefehlt hat.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_rueckblick_im_fliesstext_gilt_nicht_als_markierung",
+      "satz": "Der eigentliche Fehler von 2026-09-06: Eine Suche kann 'gilt' nicht von 'galt' trennen.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_operation_ohne_mcp_weg_mit_begruendung_gilt_nicht_als_verstoss",
+      "satz": "test_eine_operation_ohne_mcp_weg_mit_begruendung_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_leere_begruendung_wird_gemeldet",
+      "satz": "test_eine_leere_begruendung_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_erkennungsraum_trennt_ids_von_anderen_kebab_woertern",
+      "satz": "test_der_erkennungsraum_trennt_ids_von_anderen_kebab_woertern",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_vertippte_id_faellt_auf",
+      "satz": "test_eine_vertippte_id_faellt_auf",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_zwei_stufen_in_einer_datei_werden_gemeldet",
+      "satz": "test_zwei_stufen_in_einer_datei_werden_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_fehlende_stufe_wird_gemeldet",
+      "satz": "test_eine_fehlende_stufe_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_eine_falsche_stufe_wird_gemeldet",
+      "satz": "test_eine_falsche_stufe_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_lesend_und_schreibend_zaehlt_nicht_als_nur_lesend",
+      "satz": "Regex-Falle derselben Klasse wie `--body`/`--body-file`: Teilworte der Stufennamen.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_leser_findet_beide_zweige_des_suchraums",
+      "satz": "Gegenprobe zum Leser selbst - er muss beide Aufzaehlungszweige liefern.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_eintragsblock_endet_am_naechsten_abschnitt",
+      "satz": "Sonst zoege der letzte Eintrag den Resttext der Datei in seinen Block.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_jeder_zitierte_katalog_abschnitt_existiert",
+      "satz": "test_jeder_zitierte_katalog_abschnitt_existiert",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_veralteter_abschnittstitel_wird_gemeldet",
+      "satz": "test_ein_veralteter_abschnittstitel_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_abschnittszitat_ohne_katalogbezug_zaehlt_nicht",
+      "satz": "Sonst faenge der Scan jedes beliebige Abschnittszitat einer anderen Datei mit ein.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_der_stichproben_audit_steht_an_genau_einer_stelle",
+      "satz": "Die Pflicht darf nicht in einer Datei liegen, die sie nach ihrer Stufe nicht erfuellen darf.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_abgeschaffter_abschnittstitel_ist_praefix_keiner_ueberschrift",
+      "satz": "Gegenprobe zum Praefix-Vergleich: Er darf die drei realen Altfaelle nicht durchlassen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_github_zugriff_an_einer_stelle.py::test_ein_zitat_ohne_den_erlaeuternden_zusatz_gilt_als_treffer",
+      "satz": "test_ein_zitat_ohne_den_erlaeuternden_zusatz_gilt_als_treffer",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_alle_issue_aufrufe_halten_die_verbindliche_form",
+      "satz": "test_alle_issue_aufrufe_halten_die_verbindliche_form",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_der_suchraum_enthaelt_die_befehlssammlung",
+      "satz": "Gegenprobe zum Leser: die Sammlung selbst muss im Suchraum liegen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_die_befehlssammlung_fuehrt_die_titel_befehlsform",
+      "satz": "Gegenprobe: Ohne die Zeile in der Sammlung haette der Ablauf keine Vorlage.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_refinement_schreibt_den_titel_zwischen_body_und_ready",
+      "satz": "test_refinement_schreibt_den_titel_zwischen_body_und_ready",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_andere_titel_form_wird_gemeldet",
+      "satz": "test_eine_andere_titel_form_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_die_vorgeschriebene_titel_form_gilt_nicht_als_verstoss",
+      "satz": "test_die_vorgeschriebene_titel_form_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_inline_body_wird_gemeldet",
+      "satz": "test_ein_inline_body_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_body_file_gilt_nicht_als_inline_body",
+      "satz": "`--body\\b` traefe auch `--body-file` - der korrekte Bestand waere rot.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_fremdes_repo_wird_gemeldet",
+      "satz": "test_ein_fremdes_repo_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_schreibender_aufruf_ohne_repo_wird_gemeldet",
+      "satz": "test_ein_schreibender_aufruf_ohne_repo_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_lesender_aufruf_darf_ohne_repo_stehen",
+      "satz": "test_ein_lesender_aufruf_darf_ohne_repo_stehen",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_die_json_feldliste_gilt_weder_als_titel_noch_als_body",
+      "satz": "Gegenrichtung zur Regex-Falle: `--json body,title,...` traegt keine der beiden Optionen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_unbekanntes_verb_wird_gemeldet",
+      "satz": "test_ein_unbekanntes_verb_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf",
+      "satz": "Prosa nennt das Kommando in Backticks, ruft es aber nicht - sonst Falschbefunde.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_die_fundstelle_nennt_datei_und_zeile",
+      "satz": "test_die_fundstelle_nennt_datei_und_zeile",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen",
+      "satz": "test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_suchraum_ohne_issue_aufruf_scheitert_laut_statt_still",
+      "satz": "test_ein_suchraum_ohne_issue_aufruf_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_die_erwartete_kette_gilt_nicht_als_verstoss",
+      "satz": "test_die_erwartete_kette_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_prosa_ueber_die_operationen_kehrt_die_reihenfolge_nicht_um",
+      "satz": "Im Skill-Text stehen alle IDs auch in Fliesstext, weit vor den Ausfuehrungsstellen.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet",
+      "satz": "test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_titel_stelle_hinter_der_ready_stelle_wird_gemeldet",
+      "satz": "test_eine_titel_stelle_hinter_der_ready_stelle_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_geloeschte_titel_stelle_wird_gemeldet",
+      "satz": "Ohne diese Zusicherung waere die Reihenfolge-Aussage leer wahr.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_geloeschte_body_stelle_wird_gemeldet",
+      "satz": "test_eine_geloeschte_body_stelle_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_geloeschte_bereich_stelle_wird_gemeldet",
+      "satz": "Viertes Glied, dieselbe Pflichtbeigabe: ohne Existenz-Zusicherung leer wahr.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_verschwundene_board_stellen_werden_gemeldet",
+      "satz": "Das Folgeglied braucht seine Existenz-Zusicherung so gut wie die drei davor.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_bereich_stelle_vor_der_titel_stelle_wird_gemeldet",
+      "satz": "test_eine_bereich_stelle_vor_der_titel_stelle_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_bereich_stelle_hinter_dem_ersten_board_zugriff_wird_gemeldet",
+      "satz": "Gebunden wird gegen *jede* Board-Stelle: Der Prioritaets-Zugriff steht vor dem Status.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_bereich_stelle_im_fliesstext_zaehlt_nicht_als_ausfuehrungsstelle",
+      "satz": "Aus der Ausfuehrungsstelle Prosa zu machen, entfernt sie - und das faellt auf.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_ein_anderer_statuswert_gilt_nicht_als_ready_gate",
+      "satz": "`In Progress` ist derselbe Operationsname - nur der Wert trennt die beiden Stellen.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_ausfuehrungsstelle_wird_in_jeder_schreibform_gelesen",
+      "satz": "test_eine_ausfuehrungsstelle_wird_in_jeder_schreibform_gelesen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_issue_befehle_in_skills.py::test_eine_erwaehnung_im_fliesstext_ist_keine_ausfuehrungsstelle",
+      "satz": "test_eine_erwaehnung_im_fliesstext_ist_keine_ausfuehrungsstelle",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_alle_board_aufrufe_nennen_gueltige_felder_und_werte",
+      "satz": "test_alle_board_aufrufe_nennen_gueltige_felder_und_werte",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_der_suchraum_enthaelt_die_befehlssammlung",
+      "satz": "Gegenprobe zum Leser: die Sammlung selbst muss im Suchraum liegen.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_ungueltiger_statuswert_wird_gemeldet",
+      "satz": "test_ein_ungueltiger_statuswert_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_unquotierter_wert_faellt_nicht_durch_den_parser",
+      "satz": "test_ein_unquotierter_wert_faellt_nicht_durch_den_parser",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_die_gueltigen_werte_und_platzhalter_gelten_nicht_als_verstoss",
+      "satz": "test_die_gueltigen_werte_und_platzhalter_gelten_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_unbekanntes_feld_wird_gemeldet",
+      "satz": "test_ein_unbekanntes_feld_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_eine_falsche_projektnummer_wird_gemeldet",
+      "satz": "test_eine_falsche_projektnummer_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_fremder_owner_wird_gemeldet",
+      "satz": "test_ein_fremder_owner_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_aufruf_ohne_feld_und_wert_wird_gemeldet",
+      "satz": "test_ein_aufruf_ohne_feld_und_wert_wird_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_die_fundstelle_nennt_datei_und_zeile",
+      "satz": "test_die_fundstelle_nennt_datei_und_zeile",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_zwei_aufrufe_in_einer_datei_werden_einzeln_gelesen",
+      "satz": "test_zwei_aufrufe_in_einer_datei_werden_einzeln_gelesen",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf",
+      "satz": "Prosa nennt das Kommando, ruft es aber nicht - sonst meldet der Parser Falschbefunde.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen",
+      "satz": "test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_suchraum_ohne_board_aufruf_scheitert_laut_statt_still",
+      "satz": "test_ein_suchraum_ohne_board_aufruf_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_jeder_ablauf_skill_fuehrt_den_berichtsabschnitt_woertlich",
+      "satz": "test_jeder_ablauf_skill_fuehrt_den_berichtsabschnitt_woertlich",
+      "klasse": "B",
+      "traeger": "test_der_bestand_nennt_nur_gueltige_felder_und_werte",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_ein_abschnitt_ohne_den_festen_satz_wuerde_auffallen",
+      "satz": "Gegenprobe: die leere Huelle, gegen die der zweite Teil der Zusicherung gerichtet ist.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_board_befehle_in_skills.py::test_der_umbruch_des_festen_satzes_gilt_nicht_als_abweichung",
+      "satz": "Der Satz steht in den Skill-Dateien umbrochen - Satzlayout, kein Inhaltsunterschied.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_suchraum_hat_eine_plausible_groesse",
+      "satz": "test_der_suchraum_hat_eine_plausible_groesse",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_tragende_datei_liegt_im_suchraum_und_ist_plausibel_gross",
+      "satz": "Ohne diesen Waechter prueft der Test einen Raum, in dem sein Gegenstand nicht vorkommt.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_ueberschrift_eines_offsetvergleichs_existiert",
+      "satz": "Sonst bestuenden die Platzierungsvergleiche nach der naechsten Umbenennung leer.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jeder_ablauf_nennt_den_wartepunkt_genau_einmal",
+      "satz": "„Genau ein Wartepunkt je Ablauf\" - die pruefbare Fassung ist die Fundstellenzahl.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jeder_ablauf_holt_den_beleg_fuer_rot",
+      "satz": "`rot` wird nie aus einem Exit-Code allein geschlossen - der Beleg braucht die Leseoperation.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_wartepunkt_steht_nach_dem_letzten_push_und_vor_dem_bericht",
+      "satz": "Platzierung ueber Zeichenoffsets statt ueber eine Formulierung.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_die_pruefstands_befehlszeilen_halten_ihre_form",
+      "satz": "test_die_pruefstands_befehlszeilen_halten_ihre_form",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_die_befehlszeilen_stehen_ausschliesslich_im_katalog",
+      "satz": "ADR 0061: Der Katalog ist der einzige Ort, an dem ein GitHub-Befehl steht.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_das_ergebnisvokabular_ist_geschlossen_und_vollstaendig",
+      "satz": "Gleichheit, nicht Teilmenge: Ein fuenfter Wert faellt auf, ein verschwundener auch.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_betriebszahl_kommt_im_anweisungsraum_genau_einmal_vor",
+      "satz": "Was es nur einmal gibt, kann nicht driften - deshalb Einmaligkeit statt Gleichheit.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_pruefstands_operation_haelt_ihre_feldmenge_exakt",
+      "satz": "Exakt, nicht \"mindestens\" - und fuer den blockierenden Aufruf ist die Zusage die **leere**",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_berichtsblock_ist_ausschliesslich_im_katalog_definiert",
+      "satz": "test_der_berichtsblock_ist_ausschliesslich_im_katalog_definiert",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_die_definition_des_berichtsblocks_fuehrt_alle_drei_felder",
+      "satz": "Was nicht dasteht, schreibt der Lauf auch nicht.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_beide_ablaeufe_fuehren_den_berichtsblock",
+      "satz": "test_beide_ablaeufe_fuehren_den_berichtsblock",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_beide_anker_stehen_wortgleich_in_developer_md",
+      "satz": "test_beide_anker_stehen_wortgleich_in_developer_md",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_die_ankerdefinition_steht_ausschliesslich_in_developer_md",
+      "satz": "Einzige Definitionsstelle - `ship-feature` verweist funktional, kopiert nicht.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_ship_feature_nennt_beide_anker_in_seiner_trigger_liste",
+      "satz": "Ein Anker, den die Ausloeseliste nicht kennt, loest nichts aus.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_befehlserkenner_verwechselt_gh_pr_nicht_mit_gh_project",
+      "satz": "`gh pr` ist ein Praefix von `gh project` - ohne Wortgrenze waere die Zaehlung falsch.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_erwaehnung_im_fliesstext_ist_keine_befehlszeile",
+      "satz": "Die geforderte Nicht-Reaktion: Der Katalog darf ueber seinen eigenen Befehl reden.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_die_erwartete_befehlsform_gilt_nicht_als_verstoss",
+      "satz": "test_die_erwartete_befehlsform_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_abweichung_der_befehlsform_wird_gemeldet",
+      "satz": "Gegenprobe je Bauregel - eine Nullmeldung oben ist sonst kein Befund, sondern ein Defekt.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_tabellenleser_liest_ausschliesslich_die_erste_spalte",
+      "satz": "Sonst zoege jedes Backtick-Wort der zweiten Spalte ins Vokabular.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_tabellenleser_endet_an_der_ersten_nicht_tabellenzeile",
+      "satz": "Sonst zaehlte Prosa hinter der Tabelle mit.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_jede_mutation_des_vokabulars_faellt_auf",
+      "satz": "test_jede_mutation_des_vokabulars_faellt_auf",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_fehlende_ergebnistabelle_scheitert_laut_statt_still",
+      "satz": "test_eine_fehlende_ergebnistabelle_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_leere_feldmenge_ist_ein_ergebnis_eine_fehlende_zeile_ein_fehler",
+      "satz": "Die Unterscheidung, an der die Zusage des blockierenden Aufrufs haengt.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_ein_feldname_in_der_leeren_grenze_faellt_auf",
+      "satz": "Die einzige Abwesenheitszusage dieser Familie - auf einer Formzeile, nicht auf Prosa.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_prosa_hinter_dem_gedankenstrich_zaehlt_nicht_zur_feldmenge",
+      "satz": "test_prosa_hinter_dem_gedankenstrich_zaehlt_nicht_zur_feldmenge",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_grenzzeile_ohne_gedankenstrich_scheitert_laut_statt_still",
+      "satz": "test_eine_grenzzeile_ohne_gedankenstrich_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_eintragsleser_endet_an_der_naechsten_ueberschrift",
+      "satz": "Ohne die Grenze zoege der Eintrag den Resttext der Datei in sich.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_ein_fehlender_eintrag_scheitert_laut_statt_still",
+      "satz": "test_ein_fehlender_eintrag_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_definitionsleser_trennt_zaun_von_erwaehnung",
+      "satz": "Eine dritte Datei, die den Block **zitiert**, ist keine zweite Definitionsstelle.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_zweite_definitionsstelle_wuerde_gemeldet",
+      "satz": "test_eine_zweite_definitionsstelle_wuerde_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_der_offsetvergleich_unterscheidet_beide_richtungen",
+      "satz": "Gegenprobe zur Methodik selbst - sie ist die Zusicherung, nicht der Wortlaut.",
+      "klasse": "B",
+      "traeger": "test_der_bestand_wartet_blockierend_und_endlich",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_eine_zweite_fundstelle_einer_betriebszahl_wuerde_gemeldet",
+      "satz": "test_eine_zweite_fundstelle_einer_betriebszahl_wuerde_gemeldet",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_zwei_fundstellen_in_derselben_datei_werden_gezaehlt",
+      "satz": "Eine Datei-Liste allein genuegt nicht: Auch zweimal in einer Datei ist zweimal.",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_ci_warten_verankert.py::test_ein_leerer_suchraum_scheitert_laut_statt_still",
+      "satz": "test_ein_leerer_suchraum_scheitert_laut_statt_still",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_der_testschritt_parallelisiert_mit_unveraendertem_coverage_gate",
+      "satz": "test_der_testschritt_parallelisiert_mit_unveraendertem_coverage_gate",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_pytest_xdist_steht_im_dev_extra",
+      "satz": "test_pytest_xdist_steht_im_dev_extra",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_der_uv_cache_steht_mit_richtigem_pfad_und_schluessel_direkt_vor_install_dependencies",
+      "satz": "test_der_uv_cache_steht_mit_richtigem_pfad_und_schluessel_direkt_vor_install_dependencies",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_die_job_schluesselmenge_ist_exakt",
+      "satz": "test_die_job_schluesselmenge_ist_exakt",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_alle_pruefschritte_sind_vorhanden_und_ungekuerzt",
+      "satz": "test_alle_pruefschritte_sind_vorhanden_und_ungekuerzt",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_kein_pruefschritt_ist_ueberspringbar_oder_nicht_blockierend",
+      "satz": "test_kein_pruefschritt_ist_ueberspringbar_oder_nicht_blockierend",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_die_erwartete_testschrittform_gilt_nicht_als_verstoss",
+      "satz": "test_die_erwartete_testschrittform_gilt_nicht_als_verstoss",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_jede_abweichung_der_testschrittform_wird_erkannt",
+      "satz": "test_jede_abweichung_der_testschrittform_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_umbenannter_testschritt_wird_erkannt",
+      "satz": "test_ein_umbenannter_testschritt_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_fehlender_testschritt_scheitert_laut",
+      "satz": "test_ein_fehlender_testschritt_scheitert_laut",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_dev_extra_ohne_den_eintrag_wird_erkannt",
+      "satz": "test_ein_dev_extra_ohne_den_eintrag_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_dev_extra_mit_dem_eintrag_ist_kein_befund",
+      "satz": "test_ein_dev_extra_mit_dem_eintrag_ist_kein_befund",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_mutierter_uv_cache_schritt_wird_erkannt",
+      "satz": "test_ein_mutierter_uv_cache_schritt_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_uv_cache_der_nicht_direkt_vor_install_dependencies_steht_wird_erkannt",
+      "satz": "test_ein_uv_cache_der_nicht_direkt_vor_install_dependencies_steht_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_eine_zusaetzliche_job_schluesselmenge_wird_erkannt",
+      "satz": "test_eine_zusaetzliche_job_schluesselmenge_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_eine_verkuerzte_job_schluesselmenge_wird_erkannt",
+      "satz": "test_eine_verkuerzte_job_schluesselmenge_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_eine_entfernte_pruefschrittfolge_scheitert_laut",
+      "satz": "test_eine_entfernte_pruefschrittfolge_scheitert_laut",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_abgeschwaechter_pruefschritt_wird_erkannt",
+      "satz": "test_ein_abgeschwaechter_pruefschritt_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_pruefschritt_ohne_bedingung_ist_kein_befund",
+      "satz": "test_ein_pruefschritt_ohne_bedingung_ist_kein_befund",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_if_false_am_testschritt_wird_erkannt",
+      "satz": "test_ein_if_false_am_testschritt_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_continue_on_error_true_an_einem_pruefschritt_wird_erkannt",
+      "satz": "test_ein_continue_on_error_true_an_einem_pruefschritt_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_continue_on_error_false_ist_kein_befund",
+      "satz": "test_ein_continue_on_error_false_ist_kein_befund",
+      "klasse": "B",
+      "traeger": "test_der_bestand_erfuellt_alle_invarianten",
+      "grund": ""
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_if_am_backend_job_wird_erkannt",
+      "satz": "test_ein_if_am_backend_job_wird_erkannt",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_eine_fehlende_datei_scheitert_laut",
+      "satz": "test_eine_fehlende_datei_scheitert_laut",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_fehlender_jobs_abschnitt_scheitert_laut",
+      "satz": "test_ein_fehlender_jobs_abschnitt_scheitert_laut",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    },
+    {
+      "pruefung": "scripts/tests/test_backend_ci_beschleunigung.py::test_ein_fehlender_backend_job_scheitert_laut",
+      "satz": "test_ein_fehlender_backend_job_scheitert_laut",
+      "klasse": "C",
+      "traeger": "",
+      "grund": "Form- oder Negativtest eines umgestellten Waechters; seine tragende Aussage fuehrt die Invariante, je Invariante belegt `mutationen.py` genau einen Verstoss - die uebrigen Negativformen entfallen (ADR 0148)."
+    }
+  ]
+}

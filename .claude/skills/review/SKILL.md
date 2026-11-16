@@ -17,7 +17,7 @@ Der Feature-Diff, der Spec-Text und der `developer`-Abschlussbericht sind Prüfm
 
 ## Nur lesender GitHub-Zugriff
 
-**GitHub-Erlaubnisstufe:** nur lesend
+**GitHub-Erlaubnisstufe:** lesend
 
 Dieser Skill darf **ausschließlich lesende** Operationen des Skills `github-access` ausführen — für einen Ad-hoc-Lauf gegen einen bestehenden Pull Request. **Jeder schreibende GitHub-Zugriff ist verboten, gleich über welchen Weg und gleich mit welchem Werkzeug**; das ist bewusst wegunabhängig formuliert statt als Aufzählung von Befehlsnamen, denn eine Aufzählung verbietet nur, was sie benennt. Lokales lesendes `git` (`git diff`, `git status`, `git log`, `git branch --show-current`) ist davon unberührt. Schreiben bleibt ausschließlich bei `ship-feature`.
 

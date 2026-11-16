@@ -114,13 +114,15 @@ jobs:
   # Deckt alles unter scripts/ ab - neben den Demo-Skripten auch die Repo-Konsistenztests, die
   # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind. Seit ADR 0061
   # steht jeder GitHub-Zugriff des Ablaufs an genau einer Stelle
-  # (.claude/skills/github-access/SKILL.md); die Tests hier pruefen deren Text: die Form der
-  # gh-Befehle, die Katalogform (21 Operationen, Wege in fester Reihenfolge), die
-  # referentielle Integritaet der Operations-IDs, die Erlaubnisstufen je Skill-/Agenten-Datei -
-  # und vor allem eine Abwesenheit, naemlich dass ausserhalb dieser einen Stelle kein
-  # GitHub-Zugriff steht. Kein numerisches Coverage-Gate (anders als backend), der
-  # Abdeckungsanspruch steht in der Teststrategie der jeweiligen Spec. Kein echtes gh, keine
-  # MCP-Werkzeuge, kein Netzwerk hier - gelesen werden ausschliesslich Dateien des Repositories.
+  # (.claude/skills/github-access/SKILL.md); die Tests hier pruefen deren Wirkung als reine
+  # Funktionen `Bestand -> Befunde` mit deklarierten Invarianten (ADR 0148): Katalog geschlossen,
+  # Wege belegt, Wertklassen der gh-Befehle (Ziel, Freitext nur als Datei, Board-Optionsmengen),
+  # Erlaubnisstufen und Reihenfolge im refinement-Ablauf - und vor allem eine Abwesenheit,
+  # naemlich dass ausserhalb dieser einen Stelle kein GitHub-Zugriff steht. Verletzungsfaelle
+  # belegt `scripts/tests/mutationen.py` je Invariante einmal, nicht ein Negativtest je Form.
+  # Kein numerisches Coverage-Gate (anders als backend), der Abdeckungsanspruch steht in der
+  # Teststrategie der jeweiligen Spec. Kein echtes gh, keine MCP-Werkzeuge, kein Netzwerk hier -
+  # gelesen werden ausschliesslich Dateien des Repositories.
   demo-scripts:
     runs-on: ubuntu-latest
     defaults:

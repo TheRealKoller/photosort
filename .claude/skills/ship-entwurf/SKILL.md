@@ -5,7 +5,7 @@ description: 'Liefert aus, was ein abgeschlossener Penpot-Entwurfsrundenlauf im 
 
 # Ship Entwurf — ein Entwurfsrundenlauf endet im Pull Request
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Nur in der Hauptsession.** Dieser Skill ist der Auslieferpfad eines Entwurfsrundenlaufs: Er
 committet, was der Lauf im Repository verändert hat, gleicht mit `main` ab, pusht und eröffnet

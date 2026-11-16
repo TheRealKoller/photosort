@@ -1,378 +1,140 @@
-"""Prueft die Board-Befehlszeilen in den Skill-/Agent-Dateien statisch.
+"""Board-Schreibzugriffe: genau ein Feld, Wert aus der Optionsmenge, geschlossene Literale.
 
-Seit ADR 0057 gibt es kein Board-Werkzeug mehr, das einen Statuswert vor dem Schreiben gegen
-eine mitgefuehrte Konstantenliste pruefen koennte. Ein Tippfehler in `--value "In progress"`
-oder ein zurueckgebliebenes `--value Todo` fiele sonst erst zur Laufzeit auf - mitten in einer
-Session, nachdem der Ablauf bereits laeuft. Dieser Test nimmt genau diese Pruefung wieder auf,
-eine Ebene hoeher: Er parst die `gh project item-edit`-Aufrufe unter `.claude/**` und haelt die
-geschriebenen `--field`/`--value`-Paare gegen die Optionsmengen des Boards.
-
-Bewusst **kein** freier Textscan nach dem Wort "Todo" ueber `.claude/`/`docs/`: "Todo" ist ein
-zu gewoehnliches Wort, ein solcher Test waere Formulierungspolizei mit Falschmeldungen statt
-einer Aussage ueber das Board. Ueber die Wertemenge ist `Todo` ohnehin miterschlagen - es ist
-schlicht kein zulaessiger Wert mehr.
-
-Zweiter Prueffall in derselben Datei: Jeder Ablauf-Skill mit Board-Schreibzugriff fuehrt den
-Berichtsabschnitt `## Lokal nachzuholen` woertlich (Nachfolger der entsprechenden Zusicherung
-aus ADR 0056, deren zweite Haelfte mit der Vorabmessung entfallen ist) - **und den festen Satz
-darin**. Seit ADR 0061 ist die Befehlszeile aus diesem Abschnitt in den Operationskatalog
-gezogen; die Ueberschrift allein wuerde danach auch von einer leeren Huelle bestanden. Wandert
-der Inhalt einer geprueften Textstelle woanders hin, wandert die Zusicherung mit - sonst bleibt
-am alten Ort ein gruener Rest stehen.
-
-Kein echtes `gh`, kein Netzwerk - gelesen werden ausschliesslich Dateien dieses Repositories.
+Seit ADR 0057 prueft kein Board-Werkzeug mehr einen Statuswert vor dem Schreiben. Ein Tippfehler
+in `--value "In progress"` faellt sonst erst zur Laufzeit auf - mitten in einer laufenden Session.
+Diese Aussage bleibt deshalb: sie traegt eine Haertungsregel, nicht die Schreibweise der
+Befehlszeile. Projektnummer und Owner sind geschlossene Literale, unquotierte Werte werden
+gelesen statt uebersprungen.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
-from collections.abc import Mapping
-from dataclasses import dataclass
-from pathlib import Path
 
-import pytest
-
-REPO_WURZEL = Path(__file__).parents[2]
+from waechter import Befund, Bestand, Invariante, befund
 
 PROJEKT_NUMMER = "8"
 PROJEKT_OWNER = "TheRealKoller"
+SUCHRAUM = (".claude", "CLAUDE.md")
 
-# Die Optionsmengen des Felds am echten Board, plus die Platzhalterformen, die im
-# Operationskatalog (`.claude/skills/github-access/SKILL.md`) als Vorlage stehen. `Todo` ist seit
-# ADR 0057 keine Option des Felds `Status` mehr und deshalb hier nicht aufgefuehrt.
 ERLAUBTE_WERTE: dict[str, frozenset[str]] = {
     "Status": frozenset({"Unrefined", "Ready", "In Progress", "Review", "Done", "<Wert>"}),
     "Priorität": frozenset({"Hoch", "Mittel", "Niedrig", "<Hoch|Mittel|Niedrig>"}),
 }
 
-# Die fuenf Ablauf-Skills mit Board-Schreibzugriff. **Wer hier fehlt, wird nicht geprueft** - die
-# Zusicherung unten schlaegt fuer ihn nicht fehl, sie findet gar nicht erst statt. Ein neuer
-# Ablauf-Skill mit `## Lokal nachzuholen` gehoert deshalb in derselben Aenderung in diese Liste.
-ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature", "ship-entwurf")
-
-BERICHTSABSCHNITT = "## Lokal nachzuholen"
-
-# Der feste Satz unter der Ueberschrift. Er steht in den Skill-Dateien umbrochen; verglichen
-# wird deshalb ueber normalisierten Leerraum - der Zeilenumbruch ist Satzlayout, nicht Inhalt,
-# und eine byteweise Pruefung machte jede Neuformatierung zu einem Fehlalarm.
-FESTER_SATZ = (
-    "Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind "
-    "unver\u00e4ndert wiederholbar und lokal nachzuholen."
+INVARIANTEN = (
+    Invariante(
+        "board-werte",
+        "Jeder Board-Schreibzugriff nennt genau ein Feld und einen Wert aus der Optionsmenge; "
+        "Projektnummer und Owner sind geschlossene Literale.",
+    ),
 )
+INVARIANTEN_IDS = frozenset(invariante.id for invariante in INVARIANTEN)
 
-# Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext
-# ("... kennt `gh project item-edit` die namensbasierte Form"). Ohne diese Verankerung meldete
-# der Parser jede Prosa-Zeile, die das Kommando nennt, als Aufruf ohne --field.
-#
-# Vor dem Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar
-# lassen: Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `board-status-setzen`: (so
-# stehen die Nachhol-Zeilen im Operationskatalog), ein Shell-Prompt, ein oeffnender Backtick.
-# Ohne den Listen-Zweig entgingen dem Test genau diese Nachhol-Zeilen.
 _AUFRUF = re.compile(
-    r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*gh project item-edit\b[^\n]*",
+    r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*(?P<befehl>gh project item-[a-z]+[^\n]*)",
     re.MULTILINE,
 )
-_PROJEKT = re.compile(r"gh project item-edit\s+(\S+)")
-_OWNER = re.compile(r"--owner\s+(\S+)")
-# Werte kommen doppelt, einfach oder gar nicht in Anfuehrungszeichen vor. Die unquotierte Form
-# wird ausdruecklich mit geparst: Ein zurueckgebliebenes `--value Todo` muss auffallen, nicht
-# unbemerkt durch den Parser fallen, weil es keine Anfuehrungszeichen trug.
-_FELD = re.compile(r"""--field\s+(?:"([^"]*)"|'([^']*)'|([^\s"']\S*))""")
-_WERT = re.compile(r"""--value\s+(?:"([^"]*)"|'([^']*)'|([^\s"']\S*))""")
+_PROJEKT = re.compile(r"gh project item-[a-z]+\s+(\S+)")
+_OWNER = re.compile(r"--owner[ =](\S+)")
+_FELD = re.compile(r"""--field\s+(?:"([^"]*)"|'([^']*)'|([^\s"'`]+))""")
+_WERT = re.compile(r"""--value\s+(?:"([^"]*)"|'([^']*)'|([^\s"'`]+))""")
 
 
-@dataclass(frozen=True)
-class Aufruf:
-    """Ein einzelner `gh project item-edit`-Aufruf, so wie er in einer Datei steht."""
-
-    datei: str
-    zeile: int
-    rohtext: str
-    projekt: str | None
-    owner: str | None
-    felder: tuple[str, ...]
-    werte: tuple[str, ...]
-
-    @property
-    def fundstelle(self) -> str:
-        return f"{self.datei}:{self.zeile}"
+def _erste(treffer: re.Match[str]) -> str:
+    return next(gruppe for gruppe in treffer.groups() if gruppe is not None)
 
 
-def _erste_gruppe(treffer: re.Match[str]) -> str:
-    doppelt, einfach, blank = treffer.groups()
-    return doppelt if doppelt is not None else (einfach if einfach is not None else blank)
-
-
-def aufrufe_aus_text(text: str, datei: str = "<text>") -> list[Aufruf]:
-    """Reine Funktion: sammelt die Board-Aufrufe eines Textes samt Fundstelle."""
-    aufrufe: list[Aufruf] = []
-    for treffer in _AUFRUF.finditer(text):
-        rohtext = treffer.group(0)
-        projekt = _PROJEKT.search(rohtext)
-        owner = _OWNER.search(rohtext)
-        aufrufe.append(
-            Aufruf(
-                datei=datei,
-                zeile=text.count("\n", 0, treffer.start()) + 1,
-                rohtext=rohtext,
-                projekt=projekt.group(1) if projekt else None,
-                owner=owner.group(1) if owner else None,
-                felder=tuple(_erste_gruppe(t) for t in _FELD.finditer(rohtext)),
-                werte=tuple(_erste_gruppe(t) for t in _WERT.finditer(rohtext)),
+def _befunde(datei: str, zeile: int, befehl: str) -> list[Befund]:
+    befunde: list[Befund] = []
+    projekt = _PROJEKT.search(befehl)
+    if projekt is None or projekt.group(1) != PROJEKT_NUMMER:
+        befunde.append(
+            befund(
+                datei,
+                zeile,
+                "board-werte",
+                f"Projektnummer {projekt.group(1) if projekt else None!r} statt "
+                f"{PROJEKT_NUMMER!r}.",
             )
         )
-    return aufrufe
-
-
-def verstoesse(aufrufe: list[Aufruf]) -> list[str]:
-    """Reine Funktion: meldet je Verstoss Fundstelle und Grund."""
-    befunde: list[str] = []
-    for aufruf in aufrufe:
-        if aufruf.projekt != PROJEKT_NUMMER:
-            befunde.append(
-                f"{aufruf.fundstelle}: Projektnummer {aufruf.projekt!r} statt "
-                f"{PROJEKT_NUMMER!r} - der Aufruf zeigt auf ein anderes Board."
+    owner = _OWNER.search(befehl)
+    if owner is None or owner.group(1) != PROJEKT_OWNER:
+        befunde.append(
+            befund(
+                datei,
+                zeile,
+                "board-werte",
+                f"Owner {owner.group(1) if owner else None!r} statt {PROJEKT_OWNER!r}.",
             )
-        if aufruf.owner != PROJEKT_OWNER:
-            befunde.append(
-                f"{aufruf.fundstelle}: --owner {aufruf.owner!r} statt {PROJEKT_OWNER!r}."
+        )
+    if "item-add" in befehl:
+        return befunde  # die Aufnahme schreibt kein Feld
+    felder = [_erste(treffer) for treffer in _FELD.finditer(befehl)]
+    werte = [_erste(treffer) for treffer in _WERT.finditer(befehl)]
+    if len(felder) != 1 or len(werte) != 1:
+        befunde.append(
+            befund(
+                datei,
+                zeile,
+                "board-werte",
+                f"{len(felder)} Feld(er) und {len(werte)} Wert(e) - erwartet genau eins je.",
             )
-        if len(aufruf.felder) != 1 or len(aufruf.werte) != 1:
-            befunde.append(
-                f"{aufruf.fundstelle}: erwartet genau ein --field und ein --value, gefunden "
-                f"{len(aufruf.felder)} bzw. {len(aufruf.werte)} ({aufruf.rohtext})."
+        )
+        return befunde
+    feld, wert = felder[0], werte[0]
+    if feld not in ERLAUBTE_WERTE:
+        befunde.append(
+            befund(
+                datei,
+                zeile,
+                "board-werte",
+                f"Feld {feld!r} ist keines der Board-Felder {sorted(ERLAUBTE_WERTE)}.",
             )
-            continue
-        feld, wert = aufruf.felder[0], aufruf.werte[0]
-        if feld not in ERLAUBTE_WERTE:
-            befunde.append(
-                f"{aufruf.fundstelle}: unbekanntes Feld {feld!r}; das Board kennt "
-                f"{sorted(ERLAUBTE_WERTE)}."
+        )
+    elif wert not in ERLAUBTE_WERTE[feld]:
+        befunde.append(
+            befund(
+                datei,
+                zeile,
+                "board-werte",
+                f"Wert {wert!r} ist keine Option des Felds {feld!r} "
+                f"({sorted(ERLAUBTE_WERTE[feld])}).",
             )
-            continue
-        if wert not in ERLAUBTE_WERTE[feld]:
-            befunde.append(
-                f"{aufruf.fundstelle}: {wert!r} ist keine Option des Felds {feld!r}. "
-                f"Zulaessig sind {sorted(ERLAUBTE_WERTE[feld])}."
-            )
+        )
     return befunde
 
 
-def aufrufe_im_abbild(abbild: Mapping[str, str]) -> list[Aufruf]:
-    """Reine Funktion ueber ein Pfad->Text-Abbild; ein leeres Ergebnis ist ein Fehlerfall."""
-    aufrufe: list[Aufruf] = []
-    for datei in sorted(abbild):
-        aufrufe.extend(aufrufe_aus_text(abbild[datei], datei))
+def aufrufe(datei: str, text: str) -> list[tuple[int, str]]:
+    return [
+        (text.count("\n", 0, treffer.start()) + 1, treffer.group("befehl").strip())
+        for treffer in _AUFRUF.finditer(text)
+    ]
 
-    if not aufrufe:
-        raise ValueError(
-            "0 Treffer: keine einzige `gh project item-edit`-Zeile gefunden. Entweder ist der "
-            "Suchraum kaputt, oder die Befehlsform hat sich geaendert - dann ist dieser Test "
-            "mitzuziehen, sonst prueft er lautlos nichts mehr."
+
+def pruefe(bestand: Bestand) -> list[Befund]:
+    """Alle Board-Schreibzugriffe im Suchraum gegen die Optionsmengen."""
+    befunde: list[Befund] = []
+    anzahl = 0
+    for datei in sorted(bestand):
+        if not any(datei == ort or datei.startswith(f"{ort}/") for ort in SUCHRAUM):
+            continue
+        for zeile, befehl in aufrufe(datei, bestand[datei]):
+            anzahl += 1
+            befunde.extend(_befunde(datei, zeile, befehl))
+    if anzahl == 0:
+        befunde.append(
+            Befund(
+                ort="Bestand",
+                invariante="board-werte",
+                text="kein Board-Schreibzugriff im Suchraum - die Wertpruefung waere leer wahr.",
+            )
         )
-    return aufrufe
+    return befunde
 
 
-def claude_dateien(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
-    """Duenner Leser: die von Git verwalteten Dateien unter `.claude/`.
+def test_der_bestand_nennt_nur_gueltige_felder_und_werte() -> None:
+    """Der lebende Bestand haelt `board-werte`; Verletzungen belegt `mutationen.py`."""
+    befunde = pruefe(Bestand.aus_arbeitsbaum())
 
-    Ueber `git ls-files` statt `rglob`, damit nicht verwaltete Arbeitskopien (etwa ein
-    Worktree unterhalb von `.claude/`) nicht in den Suchraum geraten.
-    """
-    ergebnis = subprocess.run(
-        ["git", "ls-files", "-z", "--", ".claude"],
-        cwd=wurzel,
-        capture_output=True,
-        check=True,
-    )
-    pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
-    return {pfad: (wurzel / pfad).read_text(encoding="utf-8") for pfad in pfade}
-
-
-def test_alle_board_aufrufe_nennen_gueltige_felder_und_werte() -> None:
-    aufrufe = aufrufe_im_abbild(claude_dateien())
-
-    befunde = verstoesse(aufrufe)
-
-    assert not befunde, "Ungueltige Board-Befehlszeile(n) unter .claude/: " + "; ".join(befunde)
-
-
-def test_der_suchraum_enthaelt_die_befehlssammlung() -> None:
-    """Gegenprobe zum Leser: die Sammlung selbst muss im Suchraum liegen."""
-    dateien = claude_dateien()
-
-    assert ".claude/skills/github-access/SKILL.md" in dateien
-
-
-@pytest.mark.parametrize("wert", ["Todo", "In progress", "done", "Erledigt"])
-def test_ein_ungueltiger_statuswert_wird_gemeldet(wert: str) -> None:
-    text = (
-        f'gh project item-edit 8 --owner TheRealKoller --url <url> --field "Status" '
-        f'--value "{wert}"\n'
-    )
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert wert in befunde[0]
-
-
-def test_ein_unquotierter_wert_faellt_nicht_durch_den_parser() -> None:
-    text = "gh project item-edit 8 --owner TheRealKoller --url <url> --field Status --value Todo\n"
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "'Todo'" in befunde[0]
-
-
-@pytest.mark.parametrize(
-    ("feld", "wert"),
-    [
-        ("Status", "Unrefined"),
-        ("Status", "Ready"),
-        ("Status", "In Progress"),
-        ("Status", "Review"),
-        ("Status", "Done"),
-        ("Status", "<Wert>"),
-        ("Priorität", "Hoch"),
-        ("Priorität", "<Hoch|Mittel|Niedrig>"),
-    ],
-)
-def test_die_gueltigen_werte_und_platzhalter_gelten_nicht_als_verstoss(
-    feld: str, wert: str
-) -> None:
-    text = (
-        f'gh project item-edit 8 --owner TheRealKoller --url <issue-url> --field "{feld}" '
-        f'--value "{wert}"\n'
-    )
-
-    assert verstoesse(aufrufe_aus_text(text, "skill.md")) == []
-
-
-def test_ein_unbekanntes_feld_wird_gemeldet() -> None:
-    text = 'gh project item-edit 8 --owner TheRealKoller --field "Spalte" --value "Ready"\n'
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "'Spalte'" in befunde[0]
-
-
-def test_eine_falsche_projektnummer_wird_gemeldet() -> None:
-    text = 'gh project item-edit 9 --owner TheRealKoller --field "Status" --value "Ready"\n'
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "Projektnummer" in befunde[0]
-
-
-def test_ein_fremder_owner_wird_gemeldet() -> None:
-    text = 'gh project item-edit 8 --owner Fremd --field "Status" --value "Ready"\n'
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "--owner" in befunde[0]
-
-
-def test_ein_aufruf_ohne_feld_und_wert_wird_gemeldet() -> None:
-    text = "gh project item-edit 8 --owner TheRealKoller --url <issue-url>\n"
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "genau ein --field" in befunde[0]
-
-
-def test_die_fundstelle_nennt_datei_und_zeile() -> None:
-    text = 'Text\n\ngh project item-edit 8 --owner Fremd --field "Status" --value "Ready"\n'
-
-    befunde = verstoesse(aufrufe_aus_text(text, "skills/x/SKILL.md"))
-
-    assert befunde[0].startswith("skills/x/SKILL.md:3:")
-
-
-def test_zwei_aufrufe_in_einer_datei_werden_einzeln_gelesen() -> None:
-    text = (
-        'gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"\n'
-        'gh project item-edit 8 --owner TheRealKoller --field "Priorität" --value "Hoch"\n'
-    )
-
-    aufrufe = aufrufe_aus_text(text, "skill.md")
-
-    assert [aufruf.zeile for aufruf in aufrufe] == [1, 2]
-    assert verstoesse(aufrufe) == []
-
-
-def test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf() -> None:
-    """Prosa nennt das Kommando, ruft es aber nicht - sonst meldet der Parser Falschbefunde."""
-    text = "erst ab dort kennt `gh project item-edit` die namensbasierte Form.\n"
-
-    assert aufrufe_aus_text(text, "skill.md") == []
-
-
-@pytest.mark.parametrize(
-    "zeile",
-    [
-        'gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
-        '  gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
-        '$ gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
-        '`gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"`',
-        '- gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
-        "- `status-review`: `gh project item-edit 8 --owner TheRealKoller "
-        '--field "Status" --value "Ready"`',
-    ],
-)
-def test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen(zeile: str) -> None:
-    aufrufe = aufrufe_aus_text(zeile + "\n", "skill.md")
-
-    assert len(aufrufe) == 1
-    assert verstoesse(aufrufe) == []
-
-
-def test_ein_suchraum_ohne_board_aufruf_scheitert_laut_statt_still() -> None:
-    with pytest.raises(ValueError, match=r"0 Treffer"):
-        aufrufe_im_abbild({"skills/x/SKILL.md": "Nur Prosa, kein Board-Aufruf.\n"})
-
-
-def normalisiert(text: str) -> str:
-    """Reine Funktion: Leerraumfolgen zu je einem Leerzeichen, fuer den Satzvergleich."""
-    return " ".join(text.split())
-
-
-@pytest.mark.parametrize("skill", ABLAUF_SKILLS)
-def test_jeder_ablauf_skill_fuehrt_den_berichtsabschnitt_woertlich(skill: str) -> None:
-    pfad = REPO_WURZEL / ".claude" / "skills" / skill / "SKILL.md"
-    inhalt = pfad.read_text(encoding="utf-8")
-
-    assert BERICHTSABSCHNITT in inhalt, (
-        f"{pfad} fuehrt den Abschnitt {BERICHTSABSCHNITT!r} nicht mehr woertlich. Ohne ihn "
-        "verschwindet ein fehlgeschlagener Board-Zugriff lautlos, statt als nachholbarer "
-        "Schritt im Bericht zu stehen."
-    )
-    assert normalisiert(FESTER_SATZ) in normalisiert(inhalt), (
-        f"{pfad} fuehrt den festen Satz {FESTER_SATZ!r} nicht mehr woertlich. Seit die "
-        "Befehlszeile in den Operationskatalog gezogen ist, pruefte die Ueberschrift allein nur "
-        "noch eine Huelle - und eine Ueberschrift ohne Inhalt besteht sie."
-    )
-
-
-def test_ein_abschnitt_ohne_den_festen_satz_wuerde_auffallen() -> None:
-    """Gegenprobe: die leere Huelle, gegen die der zweite Teil der Zusicherung gerichtet ist."""
-    huelle = f"{BERICHTSABSCHNITT}\n\n- `board-status-setzen`: siehe Katalog\n"
-
-    assert BERICHTSABSCHNITT in huelle
-    assert normalisiert(FESTER_SATZ) not in normalisiert(huelle)
-
-
-def test_der_umbruch_des_festen_satzes_gilt_nicht_als_abweichung() -> None:
-    """Der Satz steht in den Skill-Dateien umbrochen - Satzlayout, kein Inhaltsunterschied."""
-    umbrochen = (
-        "Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind "
-        "unverändert\nwiederholbar und lokal nachzuholen."
-    )
-
-    assert normalisiert(FESTER_SATZ) in normalisiert(umbrochen)
+    assert not befunde, "Board-Befunde: " + "; ".join(f.meldung for f in befunde)

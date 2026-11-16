@@ -5,7 +5,7 @@ description: 'Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer St
 
 # Refinement — von der Idee zur fachlich geschärften Story
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Fragerunden, das Lohnenswert-Gate, die Entwurfsrunden und die Issue-Schreibregeln hier vollständig stehen.
 
