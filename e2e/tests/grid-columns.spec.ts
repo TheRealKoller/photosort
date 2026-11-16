@@ -18,6 +18,7 @@
 
 import type { Page } from '@playwright/test'
 
+import { warteAufBilder, zaehleGeladeneBilder } from '../lib/bilder.ts'
 import {
   DEMO_PROJECTS,
   demoProjectId,
@@ -36,8 +37,6 @@ const SAME_ROW_TOLERANCE = 2
 const GRID_GAP = 12
 /** Zulaessige Abweichung beim Vergleich Kastenverhaeltnis gegen Bildverhaeltnis. */
 const RATIO_TOLERANCE = 0.02
-/** Wartegrenze, bis alle Kacheln einer Seite ihr Bild geladen haben. */
-const IMAGE_LOAD_TIMEOUT_MS = 30_000
 
 interface TileMeasurement extends Box {
   naturalWidth: number
@@ -45,29 +44,11 @@ interface TileMeasurement extends Box {
 }
 
 async function photoTileBoxes(page: Page): Promise<TileMeasurement[]> {
+  // Zielzustand statt Wartezeit: das Raster existiert erst, wenn die Fotoabfrage geantwortet hat,
+  // und die Bilder erst nach ihrem Blob-Abruf - vorher waeren `naturalWidth`/`naturalHeight` 0 und
+  // der Beschnitt-Vergleich unten bedeutungslos.
   const tiles = photoTiles(page)
-  // Zielzustand statt Wartezeit: das Raster existiert erst, wenn die Fotoabfrage geantwortet hat.
-  await expect(tiles.first()).toBeVisible()
-  // Und die Bilder selbst sind erst nach ihrem authentifizierten Blob-Abruf geladen - ohne dieses
-  // Warten waeren `naturalWidth`/`naturalHeight` 0 und der Beschnitt-Vergleich unten bedeutungslos.
-  await expect
-    .poll(
-      async () =>
-        tiles.evaluateAll((elements) =>
-          elements.every((element) => {
-            const image = element.querySelector('img')
-            return image !== null && image.complete && image.naturalWidth > 0
-          }),
-        ),
-      {
-        // Eine volle Seite sind sechzig einzeln authentifizierte Blob-Abrufe - die Vorgabe von
-        // fuenf Sekunden reicht dafuer nicht verlaesslich, und ein Zeitablauf hier waere ein
-        // sprunghafter Fehlschlag ohne Aussage ueber die Geometrie.
-        timeout: IMAGE_LOAD_TIMEOUT_MS,
-        message: 'alle Kacheln haben ihr Bild geladen',
-      },
-    )
-    .toBe(true)
+  await warteAufBilder(tiles, { flaeche: 'Fotoraster', was: 'Kachelbild', bild: 'img' })
 
   return tiles.evaluateAll((elements) =>
     elements.map((element) => {
@@ -253,27 +234,16 @@ async function duplicateTileBoxes(page: Page): Promise<DuplicateTileMeasurement[
   )
 }
 
+/** Das Bild einer Duplikat-Kachel, innerhalb ihrer Bildflaeche. */
+const DUPLICATE_IMAGE = '[data-testid="duplicate-image"] img'
+
 /** Wartet, bis JEDE Kachel ihr Bild geladen hat - vorher ist jeder Verhaeltnisvergleich leer. */
 async function waitForDuplicateImages(page: Page): Promise<void> {
-  const tiles = duplicateTiles(page)
-  await expect(tiles.first(), 'Kacheln der Duplikat-Gruppe').toBeVisible()
-  await expect
-    .poll(
-      async () =>
-        tiles.evaluateAll((elements) =>
-          elements.every((element) => {
-            const image = element.querySelector('[data-testid="duplicate-image"] img')
-            return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
-          }),
-        ),
-      {
-        // Sieben bis neunzehn einzeln authentifizierte Blob-Abrufe - die Vorgabe von fuenf
-        // Sekunden reicht dafuer nicht verlaesslich.
-        timeout: IMAGE_LOAD_TIMEOUT_MS,
-        message: 'alle Duplikat-Kacheln haben ihr Bild geladen',
-      },
-    )
-    .toBe(true)
+  await warteAufBilder(duplicateTiles(page), {
+    flaeche: 'Duplikat-Raster',
+    was: 'Kachelbild',
+    bild: DUPLICATE_IMAGE,
+  })
 }
 
 test('Duplikat-Vergleich setzt justierte Zeilen ohne Beschnitt', async ({ page }) => {
@@ -426,18 +396,12 @@ test('Duplikat-Raster springt beim Eintreffen der Bilddaten nicht', async ({ pag
   await page.goto(`/projects/${projectId}/photos?filter=suggested`)
   const einstieg = page.getByRole('link', { name: /^Duplikate vergleichen —/ })
   await expect(einstieg, 'listenweiter Einstieg in den Duplikat-Vergleich').toBeVisible()
-  await expect
-    .poll(
-      async () =>
-        photoTiles(page).evaluateAll((elements) =>
-          elements.every((element) => {
-            const image = element.querySelector('img')
-            return image === null || (image.complete && image.naturalWidth > 0)
-          }),
-        ),
-      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: 'Bilder der Fotoliste geladen' },
-    )
-    .toBe(true)
+  await warteAufBilder(photoTiles(page), {
+    flaeche: 'Fotoliste',
+    was: 'Kachelbild',
+    bild: 'img',
+    ohneBildZulaessig: true,
+  })
 
   // Der Ausloeser der Freigabe, vor dem Anhalten gesetzt; `let`, weil er im Handler entsteht.
   let oeffne: () => void = () => {}
@@ -461,13 +425,7 @@ test('Duplikat-Raster springt beim Eintreffen der Bilddaten nicht', async ({ pag
 
   // Vorbedingung: VOR der Freigabe ist kein Bild geladen - sonst maesse der Vergleich zweimal
   // denselben Endzustand.
-  const geladene = await duplicateTiles(page).evaluateAll(
-    (elements) =>
-      elements.filter((element) => {
-        const image = element.querySelector('[data-testid="duplicate-image"] img')
-        return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
-      }).length,
-  )
+  const geladene = await zaehleGeladeneBilder(duplicateTiles(page), DUPLICATE_IMAGE)
   expect(geladene, 'vor der Freigabe geladene Bilder').toBe(0)
 
   const vorher = await duplicateTileBoxes(page)

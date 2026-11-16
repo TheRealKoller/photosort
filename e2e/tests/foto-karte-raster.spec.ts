@@ -12,6 +12,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
 import { readOwnDraftStates, restoreOwnDraftStates } from '../lib/draft.ts'
 import { expect, test } from '../lib/fixtures.ts'
@@ -21,7 +22,6 @@ const WIDTHS = [360, 1280] as const
 const TOLERANCE = 1
 const SAME_ROW_TOLERANCE = 2
 const TARGET_ROW_HEIGHT = 280
-const IMAGE_LOAD_TIMEOUT_MS = 30_000
 /** `HANDLES_FULL_WIDTH_PX` aus frontend/src/utils/curationLayout.ts, je erster Handlung. */
 const THRESHOLDS: Record<string, number> = {
   Streichen: 208,
@@ -52,19 +52,11 @@ interface Grid {
 }
 
 async function measure(grid: Locator): Promise<Grid> {
-  await expect(grid.locator(':scope > li img').first()).toBeVisible()
-  await expect
-    .poll(
-      () =>
-        grid.evaluate((list) =>
-          [...list.querySelectorAll(':scope > li img')].every(
-            (image) =>
-              image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
-          ),
-        ),
-      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: 'alle Bilder des Rasters sind geladen' },
-    )
-    .toBe(true)
+  await warteAufBilder(grid.locator(':scope > li img'), {
+    flaeche: 'Kuratierungsraster',
+    was: 'Kachelbild',
+    bild: null,
+  })
 
   return grid.evaluate((list) => {
     const style = window.getComputedStyle(list)

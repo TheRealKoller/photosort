@@ -10,6 +10,7 @@
 
 import type { Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import {
   DEMO_PROJECTS,
   demoProjectId,
@@ -23,8 +24,6 @@ import { expect, test } from '../lib/fixtures.ts'
 const TOLERANCE = 1
 /** `lg` - ab hier steht die Seitenspalte neben der Buehne. */
 const LG_BREAKPOINT = 1024
-/** Wartegrenze, bis alle Vorschauen des Streifens ihr Bild geladen haben. */
-const IMAGE_LOAD_TIMEOUT_MS = 30_000
 
 async function openEnlarged(page: Page): Promise<void> {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
@@ -123,11 +122,8 @@ test('das Buehnenbild wird an allen vier Ecken selbst getroffen', async ({ page 
   await openEnlarged(page)
 
   const bild = page.getByTestId('duplicate-stage').getByRole('img')
-  await expect(bild, 'Buehnenbild').toBeVisible()
   // Vorbedingung: das Bild ist geladen - erst dann steht das Inhaltsrechteck fest.
-  await expect
-    .poll(() => bild.evaluate((element) => (element as HTMLImageElement).naturalWidth))
-    .toBeGreaterThan(0)
+  await warteAufBilder(bild, { flaeche: 'Buehne', was: 'Buehnenbild', bild: null })
 
   const treffer = await bild.evaluate((element) => {
     const img = element as HTMLImageElement
@@ -179,18 +175,11 @@ async function stripButtons(page: Page): Promise<StripMeasurement[]> {
   const streifen = page.getByRole('list', { name: 'Alle Aufnahmen der Gruppe' })
   await expect(streifen, 'Streifen der Grossansicht').toBeVisible()
   // Ohne geladene Bilder waeren die naturalen Maße 0, und der Verhaeltnisvergleich unten leer.
-  await expect
-    .poll(
-      async () =>
-        streifen.getByRole('button').evaluateAll((elements) =>
-          elements.every((element) => {
-            const image = element.querySelector('img')
-            return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
-          }),
-        ),
-      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: 'alle Vorschauen geladen' },
-    )
-    .toBe(true)
+  await warteAufBilder(streifen.getByRole('button'), {
+    flaeche: 'Vorschau-Streifen',
+    was: 'Vorschaubild',
+    bild: 'img',
+  })
 
   return streifen.getByRole('button').evaluateAll((elements) =>
     elements.map((element) => {
