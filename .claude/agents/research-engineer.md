@@ -6,7 +6,7 @@ tools: Read, WebSearch, WebFetch, Skill
 
 # Research Engineer — Externe Recherche für Daniel und die fünf Fachagenten
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+**GitHub-Erlaubnisstufe:** keins — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
 Die Grenze ausdrücklich gezogen: Externe Recherche auf öffentlichen Webseiten — auch solchen auf github.com — ist **kein** GitHub-Zugriff in diesem Sinne. Gemeint sind Issues, Board und Pull Requests **dieses** Repositories im Rahmen des Entwicklungsablaufs.
 

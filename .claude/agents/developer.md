@@ -6,7 +6,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 
 # Developer — TDD-Umsetzung nach Projektvorgaben
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+**GitHub-Erlaubnisstufe:** keins — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Abschluss-Anker wörtlich fest sind und diese Datei ihre einzige Definitionsstelle dafür ist.
 

@@ -6,7 +6,7 @@ description: 'Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nac
 
 # Ship Feature — Review, PR und Copilot-Review vom Orchestrator
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Ablauf neun Schritte mit je eigener Bedingung und eigenem Fehlerpfad trägt.
 

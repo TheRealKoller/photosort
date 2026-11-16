@@ -5,7 +5,7 @@ description: Entwickelt den Designentwurf zu einer bereits geschärften Story (B
 
 # story-entwurf — eine Story bekommt ihren Designentwurf
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil dieser Skill die einzige Definitionsstelle
 des Abschnitts ist, den er schreibt, und weil die zwölf Sicherheitsauflagen seines Schreibpfads

@@ -5,7 +5,7 @@ description: Sagt, wie weit ein gerade laufender Umsetzungslauf (`developer`-Sub
 
 # laufstand — der Stand wird gelesen, nicht erfragt
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort eingestuften Ablauf-Skills vorbehalten. Lokales lesendes `git` ist davon unberührt.
+**GitHub-Erlaubnisstufe:** keins — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort eingestuften Ablauf-Skills vorbehalten. Lokales lesendes `git` ist davon unberührt.
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Abschnitt `## Sicherheitsauflagen` sechs Auflagen in voller Aussage führt — was gilt, wofür, was bei Verletzung passiert. Sie stehen nirgends sonst in einer Anweisungsdatei und sind vom Kürzen ausgenommen.
 

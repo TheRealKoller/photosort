@@ -5,7 +5,7 @@ description: Bespielt und prüft die Penpot-Design-Datei „PhotoSort — Dark U
 
 # penpot-design — die Design-Quelle bespielen, zurücklesen und darin entwerfen
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+**GitHub-Erlaubnisstufe:** keins — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird, und was der einzige wiederholbar schreibende Schritt anfassen darf — hier vollständig stehen müssen.
 

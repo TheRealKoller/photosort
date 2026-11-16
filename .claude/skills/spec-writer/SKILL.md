@@ -5,7 +5,7 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 # Spec Writer — von der geschärften Story zur akzeptierten technischen Spec
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen — gezählt wie in `CLAUDE.md` festgelegt in Zeilen zu höchstens 100 Zeichen, denen diese Datei nicht folgt —, weil vier Konsultationen mit je eigener Skip-Frage und der gesamte Branch-Ablauf in einem Skill stehen.
 

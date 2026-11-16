@@ -5,7 +5,7 @@ description: 'Definiert den wörtlich festen Anker `## Blockiert: Produktentsche
 
 # produktentscheidung — anhalten und abgeben, statt still selbst entscheiden
 
-**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort eingestuften Ablauf-Skills vorbehalten. Lokales `git` ist davon unberührt.
+**GitHub-Erlaubnisstufe:** keins — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort eingestuften Ablauf-Skills vorbehalten. Lokales `git` ist davon unberührt.
 
 Ein Subagent hat `AskUserQuestion` nicht; das Werkzeug wird aus **jedem** Subagenten entfernt, unabhängig von seiner `tools:`-Zeile und unabhängig vom Aufrufmodus. Der Ersatzweg ist deshalb nicht „anders aufrufen", sondern **anhalten und abgeben**: Der Lauf beendet seinen Turn mit dem Anker, die Hauptsitzung legt die Frage Daniel vor und gibt die Antwort per `SendMessage` an denselben, weiterhin offenen Lauf zurück.
 

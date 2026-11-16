@@ -5,7 +5,7 @@ description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des E
 
 # GitHub Access — der Operationskatalog
 
-**GitHub-Erlaubnisstufe:** lesend und schreibend
+**GitHub-Erlaubnisstufe:** schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil ein Operationskatalog je Operation ihre Wege in fester Reihenfolge führt — Inhalt, der nirgends sonst steht.
 
