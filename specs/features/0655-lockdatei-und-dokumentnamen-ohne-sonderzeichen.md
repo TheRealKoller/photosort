@@ -1,6 +1,6 @@
 # 0655 - Backend-Abhängigkeiten festgehalten, Dokumentnamen ohne Sonderzeichen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #656](https://github.com/TheRealKoller/photosort/pull/656))
 **Erstellt:** 2026-11-16
 **Bezug:** Issue [#655](https://github.com/TheRealKoller/photosort/issues/655)
 
