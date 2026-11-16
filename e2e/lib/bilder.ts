@@ -10,8 +10,8 @@
 import { expect, type Locator } from '@playwright/test'
 
 /**
- * Eine Seite voll einzeln authentifizierter Blob-Abrufe braucht laenger als die fuenf Sekunden,
- * die `expect.poll` ohne Angabe wartet. Dieselbe Grenze gilt fuer jeden Fall, auch das Einzelbild.
+ * Gilt fuer jede Flaeche, auch das Einzelbild, und wird nicht je Fall verlaengert. Eine volle Seite
+ * einzeln authentifizierter Blob-Abrufe laedt nicht verlaesslich innerhalb von fuenf Sekunden.
  */
 const IMAGE_LOAD_TIMEOUT_MS = 30_000
 
