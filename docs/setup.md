@@ -65,8 +65,12 @@ den dev-Dependencies) — derselbe Aufruf, den der CI-Job `backend` fährt:
 
 Der dritte Lauf ist der kleinste und betrifft am ehesten, wer nur Doku oder Specs geändert hat:
 Unter `scripts/tests/` liegen die Repo-Konsistenzprüfungen, die Texte und Dateinamen dieses
-Repositoriums gegeneinander halten (etwa Verweisnummern und die Eindeutigkeit der
-Dokumentnummern). Sie laufen in CI im Job `demo-scripts`, nicht mit den Backend-Tests.
+Repositoriums gegeneinander halten (etwa Verweisnummern, die Eindeutigkeit der Dokumentnummern
+und die Wirkung der Repo-Wächter über `.claude/**`, `CLAUDE.md` und `.github/workflows/**`). Die
+Wächter sind reine Funktionen `Bestand → Befunde` mit deklarierten Invarianten; Verletzungsfälle
+belegt `scripts/tests/mutationen.py` je Invariante einmal, die gefallenen Prüfungen bilanziert
+`scripts/tests/waechter_aussagen.json` (ADR [`0148`](../specs/decisions/0148-der-rote-waechtertest-traegt-eine-aussage-oder-eine-form.md)).
+Sie laufen in CI im Job `demo-scripts`, nicht mit den Backend-Tests.
 
 ### Formatierung
 
@@ -302,7 +306,8 @@ exit 0
 das Setup-Script in der Weboberfläche nachziehen. Die Zielversion existiert zwangsläufig an zwei
 Orten — als dokumentierte Angabe im Repository und als `GH_VERSION` in der
 Umgebungs-Konfiguration —, weil das Setup-Script in sich abgeschlossen ist und keine Datei dieses
-Repositories lesen kann. **Maßgeblich ist die Angabe unter „Mindestversion".** Den Übergang
+Repositories lesen kann. **Maßgeblich ist die Angabe bei `**Mindestversion:**` weiter oben in
+diesem Dokument.** Den Übergang
 Angabe → Block sichert ein Test in CI (`scripts/tests/test_setup_docs.py`): Er liest beide Werte
 aus dieser Datei, stellt sie gegeneinander und prüft zusätzlich, dass die Angabe nicht unter
 2.97.0 fällt; der Lauf wird bei Abweichung sofort rot. Ungesichert bleibt allein der letzte
