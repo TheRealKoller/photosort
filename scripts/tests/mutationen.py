@@ -215,6 +215,60 @@ MUTATIONEN: tuple[Mutation, ...] = (
         neu="on:\n  push:\n    branches: [main]",
         invariante="pr-ausloeser",
     ),
+    Mutation(
+        name="inline-freitext-statt-datei",
+        waechter="befehle",
+        datei=KATALOG,
+        alt=(
+            'gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" '
+            "--body-file <body-datei> <label-schalter>"
+        ),
+        neu=(
+            'gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" '
+            '--body "Inline-Text" <label-schalter>'
+        ),
+        invariante="freitext-nur-als-datei",
+    ),
+    Mutation(
+        name="fremdes-ziel",
+        waechter="befehle",
+        datei=KATALOG,
+        alt="gh issue comment <NNN> --repo TheRealKoller/photosort --body-file <pfad>",
+        neu="gh issue comment <NNN> --repo Fremder/photosort --body-file <pfad>",
+        invariante="ziel-geschlossen",
+    ),
+    Mutation(
+        name="ready-wert-verloren",
+        waechter="befehle",
+        datei=REFINEMENT,
+        alt="- `board-status-setzen` mit Wert `Ready`",
+        neu="- `board-status-setzen` mit Wert `Done`",
+        invariante="reihenfolge-ausfuehrung",
+    ),
+    Mutation(
+        name="board-wert-nicht-in-der-optionsmenge",
+        waechter="board",
+        datei=KATALOG,
+        alt='--field "Status" --value "Ready"',
+        neu='--field "Status" --value "In progress"',
+        invariante="board-werte",
+    ),
+    Mutation(
+        name="wartepunkt-ohne-zeitgrenze",
+        waechter="warten",
+        datei=KATALOG,
+        alt="timeout 540 gh pr checks <MMM>",
+        neu="gh pr checks <MMM>",
+        invariante="pruefstand-blockierend",
+    ),
+    Mutation(
+        name="anker-umbenannt",
+        waechter="warten",
+        datei=DEVELOPER,
+        alt="## Blockiert: CI-Fehlschlag außerhalb der zulässigen Klasse",
+        neu="## Blockiert: CI-Fehlschlag außerhalb der bekannten Klasse",
+        invariante="anker-protokoll",
+    ),
 )
 
 
@@ -259,6 +313,45 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
                 "--cov=photosort --cov-report=term-missing --cov-fail-under=80",
                 "      - name: Backend-Tests\n        run: pytest -n auto --cov=photosort "
                 "--cov-report=term-missing --cov-fail-under=80",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="board-wert-ohne-anfuehrungszeichen",
+        waechter="board",
+        aenderungen=(
+            (
+                KATALOG,
+                "- `board-status-setzen`: `gh project item-edit 8 --owner TheRealKoller --url "
+                'https://github.com/TheRealKoller/photosort/issues/318 --field "Status" '
+                '--value "Ready"`',
+                "- `board-status-setzen`: `gh project item-edit 8 --owner TheRealKoller --url "
+                "https://github.com/TheRealKoller/photosort/issues/318 --field Status "
+                "--value Ready`",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="wartepunkt-mit-anderen-zahlen",
+        waechter="warten",
+        aenderungen=(
+            (
+                KATALOG,
+                "timeout 540 gh pr checks <MMM> --repo TheRealKoller/photosort --watch "
+                "--fail-fast --interval 30 >/dev/null 2>&1",
+                "timeout 300 gh pr checks <MMM> --repo TheRealKoller/photosort --watch "
+                "--fail-fast --interval 60 >/dev/null 2>&1",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="titelzeile-andere-satzstellung",
+        waechter="befehle",
+        aenderungen=(
+            (
+                REFINEMENT,
+                "- `issue-titel-schreiben`",
+                "- `issue-titel-schreiben` — den geschärften Titel am Issue setzen",
             ),
         ),
     ),

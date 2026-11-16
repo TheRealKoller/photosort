@@ -1,654 +1,298 @@
-"""Prueft die `gh issue`-Befehlszeilen in den Skill-/Agent-Dateien statisch.
+"""Befehlsform der `gh`-Zeilen: Freitext nur als Datei, Ziel geschlossen, Reihenfolge der Kette.
 
-Der Issue-Zugriff besteht aus einzelnen `gh`-Befehlen im Skill-Text; es gibt kein Werkzeug, das
-einen Wert vor dem Absetzen pruefen koennte. Zwei Dinge fielen sonst erst zur Laufzeit auf -
-mitten in einer Session, gegen ein oeffentliches Issue:
+Drei Aussagen, die Haertungsregeln tragen - nicht die Schreibweise einer Option:
 
-* Die **Form**: Freitext gelangt nie in eine Kommandozeile. Ein Titel geht ausschliesslich als
-  ``--title "$(cat <pfad>)"`` hinein - die doppelten Anfuehrungszeichen sind tragend, ohne sie
-  zerlegte die Shell den Dateiinhalt an Leerzeichen und expandierte Globs. Ein Body geht
-  ausschliesslich ueber `--body-file`, und die schreibenden Verben tragen `--repo`.
-* Die **Reihenfolge** in `refinement/SKILL.md`: Der Titel wird hinter dem Body und vor dem
-  Statuswechsel auf `Ready` geschrieben. Rutschte die Titel-Stelle hinter die `Ready`-Stelle,
-  erreichte das Issue den Status auch dann, wenn das Schreiben des Titels scheitert.
+- `freitext-nur-als-datei` - jede Option, die Freitext traegt, verweist auf eine Datei
+  (`--body-file`, `-F …=@…`, `"$(cat <pfad>)"`, `"$(<pfad)"`); Inline-Inhalt ist ein Befund.
+- `ziel-geschlossen` - jeder schreibende Aufruf nennt sein Ziel selbst, und es ist dieses
+  Repository.
+- `reihenfolge-ausfuehrung` - im `refinement`-Ablauf folgt die Kette Body -> Titel -> Bereich ->
+  Board, und `Ready` ist das letzte Glied.
 
-Die Reihenfolge-Pruefung ist seit ADR 0061 **ueber die Operations-IDs verankert**, nicht mehr
-ueber Befehlszeilen: Die Befehle sind in den Katalog gezogen, die Reihenfolge ist aber eine
-Eigenschaft des *Ablaufs* und gehoert ohnehin dorthin, wo der Ablauf steht. Sie ueberlebt den
-Umbau damit als Aussage statt als Zeilennummer-Zufall. Bedingung (a) aus der Spec-0288-Sektion des
-Testkonzepts ("ueber geparste Aufrufe, nie ueber `text.index`") bekommt dabei nur einen neuen
-Gegenstand: An die Stelle des geparsten Aufrufs tritt die **Ausfuehrungsstelle**. Eine ID ist ein
-Wort und steht auch in Prosa ("scheitert `issue-titel-schreiben`, entfaellt
-`board-status-setzen`") - ohne eine maschinell erkennbare Form fiele die Aussage auf genau die
-Textstellen-Suche zurueck, die (a) verbietet. Verbindliche Form deshalb: **Eine Ausfuehrungsstelle
-nennt ihre ID zeilenanfangs-verankert in Backticks**, nach optionaler Einrueckung, einem
-Listenpunkt oder einer Schrittnummer. Erwaehnungen im Fliesstext bleiben frei formulierbar und
-zaehlen nicht.
-
-Der frueher hier gefuehrte Fall "Titel und Body in *einem* Befehl" hat mit dem Umzug in den
-Katalog einen staerkeren Gegenstand bekommen und steht deshalb nicht mehr in dieser Datei: Eine
-kombinierte Operation braeuchte eine eigene ID, und die Menge der Katalog-IDs ist geschlossen
-(`test_github_zugriff_an_einer_stelle.py`). Sie faellt dort auf, nicht erst an der Reihenfolge.
-
-Bewusst **kein** Wortscan auf die inhaltlichen Zusagen des Ablaufs (passt der Titel noch, ist die
-neue Fassung gut, nennt die Zusammenfassung beide Fassungen): Diese Zusagen haben im Repository
-keinen Gegenstand, ein Textscan darauf waere Formulierungspolizei mit Falschmeldungen.
-
-Kein echtes `gh`, kein Netzwerk - gelesen werden ausschliesslich Dateien dieses Repositories.
+Ein Aufruf, den der Leser nicht klassifizieren kann, ist ein Befund - nie ein Ueberspringen.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
-from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from itertools import pairwise
 
-import pytest
-
-REPO_WURZEL = Path(__file__).parents[2]
+from waechter import Befund, Bestand, Invariante, befund, codebloecke
 
 REPO = "TheRealKoller/photosort"
-
-# Die Verben, die etwas am Issue veraendern: Sie tragen `--repo`, damit der Aufruf nicht vom
-# zufaelligen Arbeitsverzeichnis der Session abhaengt. `view` ist ausgenommen - die beiden
-# bestehenden Lese-Aufrufe tragen bewusst kein `--repo`.
+ANWEISUNGSRAUM = (".claude", "CLAUDE.md")
 SCHREIBENDE_VERBEN = frozenset({"create", "edit", "close", "comment"})
-# `list` seit ADR 0085 (`issue-liste-lesen`). Ohne diesen Eintrag meldete der Formtest den neuen
-# Lesebefehl als unbekanntes Verb. Die Menge steuert allein die `--repo`-Pflicht: Sie gilt fuer
-# die schreibenden Verben. Dass der Katalogbefehl `--repo` trotzdem traegt, ist hier erlaubt und
-# dort begruendet - gefordert wird es nicht.
-LESENDE_VERBEN = frozenset({"view", "list"})
+LESENDE_VERBEN = frozenset({"view", "list", "checks"})
 
-BEFEHLSSAMMLUNG = ".claude/skills/github-access/SKILL.md"
-REFINEMENT = ".claude/skills/refinement/SKILL.md"
+INVARIANTEN = (
+    Invariante(
+        "freitext-nur-als-datei",
+        "Jede Option eines `gh`-Aufrufs, die Freitext traegt, referenziert eine Datei; "
+        "Inline-Inhalt ist ein Befund.",
+    ),
+    Invariante(
+        "ziel-geschlossen",
+        "Jeder schreibende Aufruf nennt sein Ziel selbst - ueber `--repo`, `-R` oder das "
+        f"Repo-Segment im API-Pfad - und es ist `{REPO}`.",
+    ),
+    Invariante(
+        "reihenfolge-ausfuehrung",
+        "Die Ausfuehrungsstellen des `refinement`-Ablaufs folgen Body -> Titel -> Bereich -> "
+        "Board; `Ready` ist das letzte Glied.",
+    ),
+)
 
-# Die Operationen, deren Reihenfolge das Ablauf-Gate traegt: drei aus Spec 0288, seit Spec 0259
-# ein viertes Glied. Die Kette lautet Body < Titel < Bereich < jede `board-`-Ausfuehrungsstelle.
-BODY_OPERATION = "issue-body-schreiben"
-TITEL_OPERATION = "issue-titel-schreiben"
-BEREICH_OPERATION = "issue-bereich-setzen"
-STATUS_OPERATION = "board-status-setzen"
-READY = "`Ready`"
+INVARIANTEN_IDS = frozenset(invariante.id for invariante in INVARIANTEN)
 
-# Das vierte Glied bindet gegen **jede** Board-Ausfuehrungsstelle, nicht nur gegen die mit Wert
-# `Ready`: `issue-bereich-setzen` ist ein Issue-Zugriff, dessen Fehlschlag alle nachfolgenden
-# Operationen entfallen laesst - auch das Lesen und Schreiben der Prioritaet. Ein Bezug allein
-# auf den `Ready`-Statuswechsel waere bereits erfuellt, wenn die Bereich-Stelle zwischen
-# `board-prioritaet-setzen` und `board-status-setzen` geriete.
-BOARD_PRAEFIX = "board-"
-
-# Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext. Vor dem
-# Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar lassen:
-# Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `titel-edit`:, ein Shell-Prompt, ein
-# oeffnender Backtick.
 _AUFRUF = re.compile(
-    r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*"
-    r"gh issue (?P<verb>[a-z][a-z-]*)\b(?P<rest>[^\n]*)",
+    r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*(?P<befehl>gh [a-z][a-z-]*[^\n]*)",
     re.MULTILINE,
 )
-_REPO = re.compile(r"--repo\s+(\S+)")
-# `--body\b` traefe auch `--body-file` (die Wortgrenze liegt vor dem Bindestrich) und meldete den
-# korrekten Bestand als Verstoss. Dieselbe Falle gilt fuer `--title`, daher beide Male
-# `(?![-\w])`.
-_TITEL = re.compile(r"--title(?![-\w])")
-_TITEL_WOHLGEFORMT = re.compile(r'--title\s+"\$\(cat\s+[^"\s)]+\)"')
-_INLINE_BODY = re.compile(r"--body(?![-\w])")
-_BODY_DATEI = re.compile(r"--body-file(?![-\w])")
-# Eine Ausfuehrungsstelle: die Operations-ID in Backticks, am Zeilenanfang nach optionaler
-# Einrueckung, einem Listenpunkt oder einer Schrittnummer. Der Rest der Zeile wird mitgefuehrt,
-# weil der geschriebene *Wert* dort steht ("`board-status-setzen` mit Wert `Ready`") - ohne ihn
-# liesse sich ein `Ready`-Statuswechsel nicht von einem `In Progress`-Statuswechsel trennen.
+_REPO_OPTION = re.compile(r"(?:--repo|-R)[ =](?P<ziel>\S+)")
+_API_ZIEL = re.compile(r"\brepos/(?P<ziel>[^/\s]+/[^/\s]+)")
+_INLINE = re.compile(
+    r"(?<![\w-])(?P<option>--body|--title|-F|-f)(?:\s+|=)"
+    r"(?P<wert>\"[^\"]*\"|'[^']*'|\S+)"
+)
+_FREITEXT_DATEI = re.compile(r'^(?:"?\$\((?:cat|<)\s*[^)\s]+\)"?|(?:[^=\s]*=)?@\S+)$')
 _AUSFUEHRUNGSSTELLE = re.compile(
     r"^[ \t]*(?:[-*+][ \t]+|\d+\.[ \t]+)?`(?P<id>[a-z][a-z-]*)`(?P<rest>[^\n]*)",
     re.MULTILINE,
 )
+REFINEMENT = ".claude/skills/refinement/SKILL.md"
+BODY, TITEL, BEREICH, STATUS = (
+    "issue-body-schreiben",
+    "issue-titel-schreiben",
+    "issue-bereich-setzen",
+    "board-status-setzen",
+)
+BOARD_PRAEFIX = "board-"
+READY = "`Ready`"
 
 
 @dataclass(frozen=True)
 class Aufruf:
-    """Ein einzelner `gh issue`-Aufruf, so wie er in einer Datei steht."""
+    """Eine `gh`-Befehlszeile samt Ziel und Zeile."""
 
     datei: str
     zeile: int
+    befehl: str
     verb: str
-    rohtext: str
-    repo: str | None
+    ziel: str | None
 
     @property
-    def fundstelle(self) -> str:
+    def ort(self) -> str:
         return f"{self.datei}:{self.zeile}"
 
-    @property
-    def schreibt_titel(self) -> bool:
-        return bool(_TITEL.search(self.rohtext))
 
-    @property
-    def schreibt_body(self) -> bool:
-        return bool(_BODY_DATEI.search(self.rohtext))
+def _befehlszeilen(text: str) -> list[tuple[int, str]]:
+    """Codeblock-Zeilen, die mit `gh ` beginnen - Prosa mit `gh` ist keine Befehlszeile."""
+    zeilen: list[tuple[int, str]] = []
+    for block in codebloecke(text):
+        for zeile in block.split("\n"):
+            if zeile.strip().startswith("gh "):
+                zeilen.append((0, zeile.strip()))
+    return zeilen
 
 
-def aufrufe_aus_text(text: str, datei: str = "<text>") -> list[Aufruf]:
-    """Reine Funktion: sammelt die `gh issue`-Aufrufe eines Textes samt Fundstelle.
-
-    Eine Erwaehnung im Fliesstext wird daran erkannt, dass hinter dem Verb (ggf. nach
-    Leerzeichen) ein schliessender Backtick steht: `` `gh issue create` wird dafuer nicht
-    wiederholt`` ist Prosa, kein Aufruf ohne `--repo`.
-    """
-    aufrufe: list[Aufruf] = []
+def aufrufe(datei: str, text: str) -> list[Aufruf]:
+    """Alle `gh`-Aufrufe eines Textes - aus Codebloecken und aus Befehlszeilen mit ID-Etikett."""
+    ergebnis: list[Aufruf] = []
     for treffer in _AUFRUF.finditer(text):
-        if treffer.group("rest").lstrip(" \t").startswith("`"):
+        befehl = treffer.group("befehl").strip()
+        if not re.match(r"^gh [a-z]", befehl):
             continue
-        rohtext = treffer.group(0)
-        repo = _REPO.search(rohtext)
-        aufrufe.append(
+        teile = befehl.split()
+        bereich = teile[1] if len(teile) > 1 else ""
+        if bereich == "api":
+            verb = "api"
+        elif bereich in {"issue", "pr"} and len(teile) > 2:
+            verb = teile[2]
+        else:
+            continue  # `gh project …` und fremde Bereiche traegt `board-werte`.
+        option = _REPO_OPTION.search(befehl)
+        pfad = _API_ZIEL.search(befehl)
+        ziel = option.group("ziel") if option else (pfad.group("ziel") if pfad else None)
+        ergebnis.append(
             Aufruf(
                 datei=datei,
                 zeile=text.count("\n", 0, treffer.start()) + 1,
-                verb=treffer.group("verb"),
-                rohtext=rohtext,
-                repo=repo.group(1) if repo else None,
+                befehl=befehl,
+                verb=verb,
+                ziel=ziel,
             )
         )
-    return aufrufe
+    return ergebnis
 
 
-def form_verstoesse(aufrufe: list[Aufruf]) -> list[str]:
-    """Reine Funktion: meldet je Verstoss gegen die Befehlsform Fundstelle und Grund."""
-    befunde: list[str] = []
-    for aufruf in aufrufe:
-        if aufruf.verb not in SCHREIBENDE_VERBEN | LESENDE_VERBEN:
+def _freitext(aufruf: Aufruf) -> list[Befund]:
+    befunde: list[Befund] = []
+    for treffer in _INLINE.finditer(aufruf.befehl):
+        wert = treffer.group("wert").strip("\"'")
+        if treffer.group("option") == "--body":
             befunde.append(
-                f"{aufruf.fundstelle}: unbekanntes Verb {aufruf.verb!r}. Bekannt sind "
-                f"{sorted(SCHREIBENDE_VERBEN | LESENDE_VERBEN)} - entweder ein Tippfehler, oder "
-                "dieser Test ist mitzuziehen."
+                befund(
+                    aufruf.datei,
+                    aufruf.zeile,
+                    "freitext-nur-als-datei",
+                    "`--body` traegt Inline-Freitext - Bodies gehen ausschliesslich ueber "
+                    "`--body-file`.",
+                )
             )
-            continue
-        if aufruf.verb in SCHREIBENDE_VERBEN and aufruf.repo != REPO:
+        elif not _FREITEXT_DATEI.match(wert):
             befunde.append(
-                f"{aufruf.fundstelle}: --repo {aufruf.repo!r} statt {REPO!r} bei einem "
-                f"schreibenden Aufruf ({aufruf.verb})."
-            )
-        if aufruf.schreibt_titel and not _TITEL_WOHLGEFORMT.search(aufruf.rohtext):
-            befunde.append(
-                f'{aufruf.fundstelle}: --title muss genau als --title "$(cat <pfad>)" '
-                "geschrieben werden - die doppelten Anfuehrungszeichen sind tragend, und ein "
-                f"Titel-Literal ist Freitext in einer Kommandozeile ({aufruf.rohtext})."
-            )
-        if _INLINE_BODY.search(aufruf.rohtext):
-            befunde.append(
-                f"{aufruf.fundstelle}: Bodies gehen ausschliesslich ueber --body-file, nie als "
-                f"--body in der Kommandozeile ({aufruf.rohtext})."
+                befund(
+                    aufruf.datei,
+                    aufruf.zeile,
+                    "freitext-nur-als-datei",
+                    f"`{treffer.group('option')}` traegt den Inline-Wert {wert!r} - Freitext nur "
+                    'als Dateiverweis (`@pfad`, `"$(cat <pfad>)"`, `"$(<pfad)"`).',
+                )
             )
     return befunde
 
 
-@dataclass(frozen=True)
-class Ausfuehrungsstelle:
-    """Eine Stelle, an der ein Ablauf eine Operation ausfuehrt - ID plus Rest der Zeile."""
-
-    datei: str
-    zeile: int
-    id: str
-    rest: str
-
-    @property
-    def fundstelle(self) -> str:
-        return f"{self.datei}:{self.zeile}"
+SCHREIB_MARKER = re.compile(r"(?:--input|-X\s*[A-Z]+|--method)")
 
 
-def ausfuehrungsstellen(text: str, datei: str = "<text>") -> list[Ausfuehrungsstelle]:
-    """Reine Funktion: sammelt die Ausfuehrungsstellen eines Textes samt Fundstelle.
+def _schreibend(aufruf: Aufruf) -> bool:
+    """Ein Aufruf, der Inhalt in ein GitHub-Artefakt schreibt."""
+    if aufruf.verb in SCHREIBENDE_VERBEN:
+        return True
+    return aufruf.verb == "api" and bool(SCHREIB_MARKER.search(aufruf.befehl))
 
-    Eine Erwaehnung im Fliesstext ("scheitert `issue-titel-schreiben`, entfaellt …") wird nicht
-    mitgezaehlt: Sie steht nicht am Zeilenanfang. Die Trennung ist dieselbe wie bei den
-    Befehlszeilen, nur auf IDs statt auf Kommandos.
-    """
-    return [
-        Ausfuehrungsstelle(
-            datei=datei,
-            zeile=text.count("\n", 0, treffer.start()) + 1,
-            id=treffer.group("id"),
-            rest=treffer.group("rest"),
-        )
+
+def _ziel(aufruf: Aufruf) -> list[Befund]:
+    if not _schreibend(aufruf):
+        if aufruf.verb in LESENDE_VERBEN or aufruf.verb == "api":
+            return []
+        return [
+            befund(
+                aufruf.datei,
+                aufruf.zeile,
+                "ziel-geschlossen",
+                f"`gh {aufruf.verb}` ist weder als lesend noch als schreibend klassifizierbar - "
+                "ein unklassifizierbarer Aufruf ist ein Befund.",
+            )
+        ]
+    if aufruf.ziel is None:
+        return [
+            befund(
+                aufruf.datei,
+                aufruf.zeile,
+                "ziel-geschlossen",
+                "schreibender Aufruf ohne eigenes Ziel - er loest ueber den Arbeitsbaum auf.",
+            )
+        ]
+    if aufruf.ziel != REPO:
+        return [
+            befund(
+                aufruf.datei,
+                aufruf.zeile,
+                "ziel-geschlossen",
+                f"Ziel {aufruf.ziel!r} statt {REPO!r}.",
+            )
+        ]
+    return []
+
+
+def _reihenfolge(bestand: Bestand) -> list[Befund]:
+    if REFINEMENT not in bestand:
+        return [
+            Befund(
+                ort="Bestand",
+                invariante="reihenfolge-ausfuehrung",
+                text=f"{REFINEMENT} fehlt - die Reihenfolge-Aussage waere leer wahr.",
+            )
+        ]
+    text = bestand[REFINEMENT]
+    stellen = [
+        (text.count("\n", 0, treffer.start()) + 1, treffer.group("id"), treffer.group("rest"))
         for treffer in _AUSFUEHRUNGSSTELLE.finditer(text)
     ]
-
-
-def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
-    """Reine Funktion: prueft die Kette Body -> Titel -> Bereich -> Board ueber Ausfuehrungsstellen.
-
-    Ausdruecklich **nicht** ueber Textstellen (`text.index("issue-titel-schreiben")`): Der
-    Skill-Text nennt alle IDs auch in Prosa, eine Suche nach der Zeichenkette kehrte die Aussage
-    um. Jede Existenz-Zusicherung hat eine eigene Meldung - ohne sie waere die
-    Reihenfolge-Aussage leer wahr, sobald eine der Stellen verschwindet.
-    """
-    stellen = ausfuehrungsstellen(text, datei)
-    body = [stelle for stelle in stellen if stelle.id == BODY_OPERATION]
-    titel = [stelle for stelle in stellen if stelle.id == TITEL_OPERATION]
-    bereich = [stelle for stelle in stellen if stelle.id == BEREICH_OPERATION]
-    board = [stelle for stelle in stellen if stelle.id.startswith(BOARD_PRAEFIX)]
-    ready = [stelle for stelle in stellen if stelle.id == STATUS_OPERATION and READY in stelle.rest]
-
-    befunde: list[str] = []
-    if not titel:
+    befunde: list[Befund] = []
+    for kennung in (BODY, TITEL, BEREICH):
+        if not any(id_ == kennung for _, id_, _ in stellen):
+            befunde.append(
+                befund(
+                    REFINEMENT,
+                    1,
+                    "reihenfolge-ausfuehrung",
+                    f"keine Ausfuehrungsstelle von `{kennung}` - die Kette waere unvollstaendig.",
+                )
+            )
+    if not any(id_.startswith(BOARD_PRAEFIX) for _, id_, _ in stellen):
         befunde.append(
-            f"{datei}: keine Ausfuehrungsstelle von `{TITEL_OPERATION}` gefunden. Ohne sie ist "
-            "die Reihenfolge-Aussage leer wahr - der Ablauf schaerft den Issue-Titel nicht mehr. "
-            "Eine Ausfuehrungsstelle nennt ihre ID zeilenanfangs-verankert in Backticks."
+            befund(
+                REFINEMENT,
+                1,
+                "reihenfolge-ausfuehrung",
+                f"keine Ausfuehrungsstelle einer `{BOARD_PRAEFIX}`-Operation.",
+            )
         )
-    if not body:
-        befunde.append(
-            f"{datei}: keine Ausfuehrungsstelle von `{BODY_OPERATION}` gefunden. Der Body ist die "
-            "fachliche Arbeit des Ablaufs; ohne ihn ist die Reihenfolge gegenstandslos."
-        )
-    if not board:
-        befunde.append(
-            f"{datei}: keine Ausfuehrungsstelle einer `{BOARD_PRAEFIX}`-Operation gefunden. Die "
-            "Aussage 'der Bereich steht vor jeder Board-Stelle' ist ohne eine solche Stelle leer "
-            "wahr - der Ablauf koennte saemtliche Board-Zugriffe verlieren, ohne dass etwas rot "
-            "wird. Dieselbe Pflichtbeigabe wie bei den drei Gliedern davor, nur fuer das "
-            "Folgeglied."
-        )
-    if not bereich:
-        befunde.append(
-            f"{datei}: keine Ausfuehrungsstelle von `{BEREICH_OPERATION}` gefunden. Ohne sie "
-            "entsteht der Bereich eines Issues nirgends - die Story erreicht `Ready`, ohne dass "
-            "das Board zeigt, woran sie ruehrt. Eine Ausfuehrungsstelle nennt ihre ID "
-            "zeilenanfangs-verankert in Backticks; zur Laufzeit darf der Schritt entfallen, die "
-            "Stelle im Text nicht."
-        )
-    if not titel or not body:
+    if befunde:
         return befunde
 
-    if not body[0].zeile < titel[0].zeile:
-        befunde.append(
-            f"{titel[0].fundstelle}: `{TITEL_OPERATION}` steht nicht hinter `{BODY_OPERATION}` "
-            f"({body[0].fundstelle}). Scheitert der Titel, soll der geschaerfte Body bereits am "
-            "Issue stehen."
-        )
-    zu_frueh = [stelle.zeile for stelle in ready if stelle.zeile <= titel[0].zeile]
-    if zu_frueh:
-        befunde.append(
-            f"{titel[0].fundstelle}: `{TITEL_OPERATION}` steht nicht vor jeder "
-            f"Ausfuehrungsstelle von `{STATUS_OPERATION}` mit Wert {READY} (Zeile(n) "
-            f"{zu_frueh}). Scheitert der Titel, darf das Issue `Ready` nicht mehr erreichen."
-        )
-    if not bereich:
-        return befunde
+    def erste(kennung: str) -> int:
+        return next(zeile for zeile, id_, _ in stellen if id_ == kennung)
 
-    if not titel[0].zeile < bereich[0].zeile:
-        befunde.append(
-            f"{bereich[0].fundstelle}: `{BEREICH_OPERATION}` steht nicht hinter "
-            f"`{TITEL_OPERATION}` ({titel[0].fundstelle}). Der Bereich ist ein Metadatum am "
-            "bereits geschaerften Issue; scheitert der Titel, soll der Bereich gar nicht erst "
-            "geschrieben werden."
-        )
-    board_zu_frueh = [stelle.fundstelle for stelle in board if stelle.zeile <= bereich[0].zeile]
-    if board_zu_frueh:
-        befunde.append(
-            f"{bereich[0].fundstelle}: `{BEREICH_OPERATION}` steht nicht vor **jeder** "
-            f"`{BOARD_PRAEFIX}`-Ausfuehrungsstelle ({board_zu_frueh}). Scheitert der Bereich, "
-            "entfallen alle nachfolgenden Operationen und das Issue erreicht `Ready` nicht - das "
-            "gilt nur, solange keine davon vorher steht."
-        )
+    ready = [zeile for zeile, id_, rest in stellen if id_ == STATUS and READY in rest]
+    if not ready:
+        return [
+            befund(
+                REFINEMENT,
+                erste(STATUS) if any(id_ == STATUS for _, id_, _ in stellen) else 1,
+                "reihenfolge-ausfuehrung",
+                f"keine Ausfuehrungsstelle von `{STATUS}` mit Wert {READY}.",
+            )
+        ]
+    kette = [
+        (BODY, erste(BODY)),
+        (TITEL, erste(TITEL)),
+        (BEREICH, erste(BEREICH)),
+        ("Board", min(zeile for zeile, id_, _ in stellen if id_.startswith(BOARD_PRAEFIX))),
+        (STATUS + " Ready", min(ready)),
+    ]
+    for (frueher, zeile), (spaeter, spaeter_zeile) in pairwise(kette):
+        if zeile >= spaeter_zeile:
+            befunde.append(
+                befund(
+                    REFINEMENT,
+                    spaeter_zeile,
+                    "reihenfolge-ausfuehrung",
+                    f"`{spaeter}` steht nicht hinter `{frueher}` ({REFINEMENT}:{zeile}).",
+                )
+            )
     return befunde
 
 
-def aufrufe_im_abbild(abbild: Mapping[str, str]) -> list[Aufruf]:
-    """Reine Funktion ueber ein Pfad->Text-Abbild; ein leeres Ergebnis ist ein Fehlerfall."""
-    aufrufe: list[Aufruf] = []
-    for datei in sorted(abbild):
-        aufrufe.extend(aufrufe_aus_text(abbild[datei], datei))
-
-    if not aufrufe:
-        raise ValueError(
-            "0 Treffer: keine einzige `gh issue`-Zeile gefunden. Entweder ist der Suchraum "
-            "kaputt, oder die Befehlsform hat sich geaendert - dann ist dieser Test mitzuziehen, "
-            "sonst prueft er lautlos nichts mehr."
+def pruefe(bestand: Bestand) -> list[Befund]:
+    """Alle Befehlsform-Invarianten ueber einem Bestand."""
+    alle: list[Aufruf] = []
+    for datei in sorted(bestand):
+        if not any(datei == ort or datei.startswith(f"{ort}/") for ort in ANWEISUNGSRAUM):
+            continue
+        alle.extend(aufrufe(datei, bestand[datei]))
+    befunde: list[Befund] = []
+    if not alle:
+        befunde.append(
+            Befund(
+                ort="Bestand",
+                invariante="freitext-nur-als-datei",
+                text="kein `gh`-Aufruf im Anweisungsraum - der Suchraum traegt keine Befehle.",
+            )
         )
-    return aufrufe
-
-
-def claude_dateien(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
-    """Duenner Leser: die von Git verwalteten Dateien unter `.claude/`.
-
-    Ueber `git ls-files` statt `rglob`, damit nicht verwaltete Arbeitskopien (etwa ein Worktree
-    unterhalb von `.claude/`) nicht in den Suchraum geraten.
-    """
-    ergebnis = subprocess.run(
-        ["git", "ls-files", "-z", "--", ".claude"],
-        cwd=wurzel,
-        capture_output=True,
-        check=True,
-    )
-    pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
-    return {pfad: (wurzel / pfad).read_text(encoding="utf-8") for pfad in pfade}
-
-
-def test_alle_issue_aufrufe_halten_die_verbindliche_form() -> None:
-    aufrufe = aufrufe_im_abbild(claude_dateien())
-
-    befunde = form_verstoesse(aufrufe)
-
-    assert not befunde, "Unzulaessige `gh issue`-Befehlszeile(n) unter .claude/: " + "; ".join(
-        befunde
-    )
-
-
-def test_der_suchraum_enthaelt_die_befehlssammlung() -> None:
-    """Gegenprobe zum Leser: die Sammlung selbst muss im Suchraum liegen."""
-    dateien = claude_dateien()
-
-    assert BEFEHLSSAMMLUNG in dateien
-
-
-def test_die_befehlssammlung_fuehrt_die_titel_befehlsform() -> None:
-    """Gegenprobe: Ohne die Zeile in der Sammlung haette der Ablauf keine Vorlage."""
-    aufrufe = aufrufe_aus_text(
-        (REPO_WURZEL / BEFEHLSSAMMLUNG).read_text(encoding="utf-8"), BEFEHLSSAMMLUNG
-    )
-
-    titel_aufrufe = [a for a in aufrufe if a.verb == "edit" and a.schreibt_titel]
-
-    assert titel_aufrufe, (
-        f"{BEFEHLSSAMMLUNG} fuehrt keinen `gh issue edit --title`-Befehl mehr. Die Sammlung ist "
-        "die einzige Stelle, an der die verbindliche Form steht."
-    )
-    assert form_verstoesse(titel_aufrufe) == []
-
-
-def test_refinement_schreibt_den_titel_zwischen_body_und_ready() -> None:
-    befunde = reihenfolge_verstoesse(
-        (REPO_WURZEL / REFINEMENT).read_text(encoding="utf-8"), REFINEMENT
-    )
-
-    assert befunde == [], "; ".join(befunde)
-
-
-@pytest.mark.parametrize(
-    "titel_form",
-    [
-        '--title "Ein fester Titel"',
-        "--title 'Ein fester Titel'",
-        '--title "$TITEL"',
-        '--title "${TITEL}"',
-        "--title $(cat <titel-datei>)",
-        "--title '$(cat <titel-datei>)'",
-    ],
-)
-def test_eine_andere_titel_form_wird_gemeldet(titel_form: str) -> None:
-    text = f"gh issue edit 42 --repo {REPO} {titel_form}\n"
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "--title" in befunde[0]
-
-
-def test_die_vorgeschriebene_titel_form_gilt_nicht_als_verstoss() -> None:
-    text = f'gh issue edit 42 --repo {REPO} --title "$(cat <titel-datei>)"\n'
-
-    assert form_verstoesse(aufrufe_aus_text(text, "skill.md")) == []
-
-
-def test_ein_inline_body_wird_gemeldet() -> None:
-    text = f'gh issue comment 42 --repo {REPO} --body "Freitext in der Kommandozeile"\n'
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "--body-file" in befunde[0]
-
-
-def test_body_file_gilt_nicht_als_inline_body() -> None:
-    """`--body\\b` traefe auch `--body-file` - der korrekte Bestand waere rot."""
-    text = f"gh issue edit 42 --repo {REPO} --body-file <pfad>\n"
-
-    assert form_verstoesse(aufrufe_aus_text(text, "skill.md")) == []
-
-
-def test_ein_fremdes_repo_wird_gemeldet() -> None:
-    text = "gh issue edit 42 --repo Fremd/photosort --body-file <pfad>\n"
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "--repo" in befunde[0]
-
-
-def test_ein_schreibender_aufruf_ohne_repo_wird_gemeldet() -> None:
-    text = 'gh issue close 42 --reason "not planned"\n'
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "None" in befunde[0]
-
-
-def test_ein_lesender_aufruf_darf_ohne_repo_stehen() -> None:
-    text = "gh issue view 42 --json body,title,labels,state\n"
-
-    assert form_verstoesse(aufrufe_aus_text(text, "skill.md")) == []
-
-
-def test_die_json_feldliste_gilt_weder_als_titel_noch_als_body() -> None:
-    """Gegenrichtung zur Regex-Falle: `--json body,title,...` traegt keine der beiden Optionen."""
-    aufrufe = aufrufe_aus_text("gh issue view 42 --json body,title,labels,state\n", "skill.md")
-
-    assert [(a.schreibt_titel, a.schreibt_body) for a in aufrufe] == [(False, False)]
-
-
-def test_ein_unbekanntes_verb_wird_gemeldet() -> None:
-    text = f"gh issue transfer 42 --repo {REPO}\n"
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skill.md"))
-
-    assert len(befunde) == 1
-    assert "unbekanntes Verb" in befunde[0]
-
-
-def test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf() -> None:
-    """Prosa nennt das Kommando in Backticks, ruft es aber nicht - sonst Falschbefunde."""
-    text = "`gh issue create` wird dafuer **nicht** wiederholt - das legte ein zweites an.\n"
-
-    assert aufrufe_aus_text(text, "skill.md") == []
-
-
-def test_die_fundstelle_nennt_datei_und_zeile() -> None:
-    text = "Text\n\ngh issue edit 42 --repo Fremd/photosort --body-file <pfad>\n"
-
-    befunde = form_verstoesse(aufrufe_aus_text(text, "skills/x/SKILL.md"))
-
-    assert befunde[0].startswith("skills/x/SKILL.md:3:")
-
-
-@pytest.mark.parametrize(
-    "zeile",
-    [
-        f"gh issue edit 42 --repo {REPO} --body-file <pfad>",
-        f"  gh issue edit 42 --repo {REPO} --body-file <pfad>",
-        f"$ gh issue edit 42 --repo {REPO} --body-file <pfad>",
-        f"`gh issue edit 42 --repo {REPO} --body-file <pfad>`",
-        f"- gh issue edit 42 --repo {REPO} --body-file <pfad>",
-        f"- `body-edit`: `gh issue edit 42 --repo {REPO} --body-file <pfad>`",
-    ],
-)
-def test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen(zeile: str) -> None:
-    aufrufe = aufrufe_aus_text(zeile + "\n", "skill.md")
-
-    assert len(aufrufe) == 1
-    assert form_verstoesse(aufrufe) == []
-
-
-def test_ein_suchraum_ohne_issue_aufruf_scheitert_laut_statt_still() -> None:
-    with pytest.raises(ValueError, match=r"0 Treffer"):
-        aufrufe_im_abbild({"skills/x/SKILL.md": "Nur Prosa, kein Issue-Aufruf.\n"})
-
-
-_BODY_STELLE = f"- `{BODY_OPERATION}`"
-_TITEL_STELLE = f"- `{TITEL_OPERATION}`"
-_BEREICH_STELLE = f"- `{BEREICH_OPERATION}`"
-_READY_STELLE = f"- `{STATUS_OPERATION}` mit Wert {READY}"
-_IN_PROGRESS_STELLE = f"- `{STATUS_OPERATION}` mit Wert `In Progress`"
-_PRIO_STELLE = "- `board-prioritaet-setzen`"
-_KETTE = [_BODY_STELLE, _TITEL_STELLE, _BEREICH_STELLE, _PRIO_STELLE, _READY_STELLE]
-
-
-def test_die_erwartete_kette_gilt_nicht_als_verstoss() -> None:
-    text = "\n".join(_KETTE) + "\n"
-
-    assert reihenfolge_verstoesse(text, "refinement.md") == []
-
-
-def test_prosa_ueber_die_operationen_kehrt_die_reihenfolge_nicht_um() -> None:
-    """Im Skill-Text stehen alle IDs auch in Fliesstext, weit vor den Ausfuehrungsstellen."""
-    text = (
-        f"Scheitert `{TITEL_OPERATION}`, entfaellt `{STATUS_OPERATION}` mit Wert {READY}.\n"
-        f"Dasselbe gilt fuer `{BEREICH_OPERATION}` und `board-prioritaet-setzen`.\n"
-        f"Der Body (`{BODY_OPERATION}`) steht bewusst vorn.\n" + "\n".join(_KETTE) + "\n"
-    )
-
-    assert reihenfolge_verstoesse(text, "refinement.md") == []
-
-
-def test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet() -> None:
-    text = (
-        "\n".join([_TITEL_STELLE, _BODY_STELLE, _BEREICH_STELLE, _PRIO_STELLE, _READY_STELLE])
-        + "\n"
-    )
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert "nicht hinter" in befunde[0]
-
-
-def test_eine_titel_stelle_hinter_der_ready_stelle_wird_gemeldet() -> None:
-    text = "\n".join([_BODY_STELLE, _READY_STELLE, _TITEL_STELLE, _BEREICH_STELLE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert [b for b in befunde if TITEL_OPERATION in b and READY in b]
-
-
-def test_eine_geloeschte_titel_stelle_wird_gemeldet() -> None:
-    """Ohne diese Zusicherung waere die Reihenfolge-Aussage leer wahr."""
-    text = "\n".join([_BODY_STELLE, _BEREICH_STELLE, _READY_STELLE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert TITEL_OPERATION in befunde[0]
-
-
-def test_eine_geloeschte_body_stelle_wird_gemeldet() -> None:
-    text = "\n".join([_TITEL_STELLE, _BEREICH_STELLE, _READY_STELLE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert BODY_OPERATION in befunde[0]
-
-
-def test_eine_geloeschte_bereich_stelle_wird_gemeldet() -> None:
-    """Viertes Glied, dieselbe Pflichtbeigabe: ohne Existenz-Zusicherung leer wahr."""
-    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _PRIO_STELLE, _READY_STELLE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert BEREICH_OPERATION in befunde[0]
-
-
-def test_verschwundene_board_stellen_werden_gemeldet() -> None:
-    """Das Folgeglied braucht seine Existenz-Zusicherung so gut wie die drei davor.
-
-    Ohne sie bleibt `board_zu_frueh` leer, weil es nichts zu vergleichen gibt - und der Test
-    waere gruen, waehrend `refinement` jeden Board-Zugriff verloren hat.
-    """
-    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _BEREICH_STELLE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert BOARD_PRAEFIX in befunde[0]
-
-
-def test_eine_bereich_stelle_vor_der_titel_stelle_wird_gemeldet() -> None:
-    text = (
-        "\n".join([_BODY_STELLE, _BEREICH_STELLE, _TITEL_STELLE, _PRIO_STELLE, _READY_STELLE])
-        + "\n"
-    )
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert "nicht hinter" in befunde[0]
-
-
-def test_eine_bereich_stelle_hinter_dem_ersten_board_zugriff_wird_gemeldet() -> None:
-    """Gebunden wird gegen *jede* Board-Stelle: Der Prioritaets-Zugriff steht vor dem Status."""
-    text = (
-        "\n".join([_BODY_STELLE, _TITEL_STELLE, _PRIO_STELLE, _BEREICH_STELLE, _READY_STELLE])
-        + "\n"
-    )
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert "vor **jeder**" in befunde[0]
-
-
-def test_eine_bereich_stelle_im_fliesstext_zaehlt_nicht_als_ausfuehrungsstelle() -> None:
-    """Aus der Ausfuehrungsstelle Prosa zu machen, entfernt sie - und das faellt auf."""
-    text = (
-        "\n".join([_BODY_STELLE, _TITEL_STELLE])
-        + f"\nSetz danach ueber `{BEREICH_OPERATION}` den Bereich des Issues.\n"
-        + "\n".join([_PRIO_STELLE, _READY_STELLE])
-        + "\n"
-    )
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert BEREICH_OPERATION in befunde[0]
-
-
-def test_ein_anderer_statuswert_gilt_nicht_als_ready_gate() -> None:
-    """`In Progress` ist derselbe Operationsname - nur der Wert trennt die beiden Stellen.
-
-    Die `In Progress`-Stelle steht hier bewusst **vor** der Titel-Stelle: Ein Ready-Gate, das
-    den Wert nicht ausliest, feuerte genau hier. Gemeldet wird deshalb allein das vierte Glied
-    (eine Board-Stelle vor dem Bereich) - kein Befund nennt `issue-titel-schreiben`.
-    """
-    text = "\n".join([_BODY_STELLE, _IN_PROGRESS_STELLE, *_KETTE[1:]]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert TITEL_OPERATION not in befunde[0]
-    assert "vor **jeder**" in befunde[0]
-
-
-@pytest.mark.parametrize(
-    "zeile",
-    [
-        f"`{BODY_OPERATION}`",
-        f"  `{BODY_OPERATION}`",
-        f"- `{BODY_OPERATION}`",
-        f"* `{BODY_OPERATION}`",
-        f"3. `{BODY_OPERATION}`",
-    ],
-)
-def test_eine_ausfuehrungsstelle_wird_in_jeder_schreibform_gelesen(zeile: str) -> None:
-    stellen = ausfuehrungsstellen(zeile + "\n", "skill.md")
-
-    assert [stelle.id for stelle in stellen] == [BODY_OPERATION]
-
-
-def test_eine_erwaehnung_im_fliesstext_ist_keine_ausfuehrungsstelle() -> None:
-    text = f"Scheitert `{TITEL_OPERATION}`, gib die Meldung unveraendert weiter.\n"
-
-    assert ausfuehrungsstellen(text, "skill.md") == []
+    for aufruf in alle:
+        if _schreibend(aufruf):
+            befunde.extend(_freitext(aufruf))
+        befunde.extend(_ziel(aufruf))
+    befunde.extend(_reihenfolge(bestand))
+    return befunde
+
+
+def test_der_bestand_erfuellt_alle_invarianten() -> None:
+    """Der lebende Bestand haelt jede Invariante; die Verletzungsfaelle belegt `mutationen.py`."""
+    befunde = pruefe(Bestand.aus_arbeitsbaum())
+
+    assert not befunde, "Befehlsform-Befunde: " + "; ".join(f.meldung for f in befunde)
