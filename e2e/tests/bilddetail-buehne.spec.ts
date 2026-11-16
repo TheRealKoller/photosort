@@ -26,6 +26,7 @@
  */
 import type { Locator, Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
@@ -108,11 +109,8 @@ test.describe('Bilddetail: die Bühne', () => {
       await oeffneFoto(page, projectId, index)
 
       const bild = page.locator('[data-testid="photo-detail-stage-photo"] img')
-      await expect(bild, `Foto ${index}`).toBeVisible()
       // Erst messen, wenn das Bild seine natürlichen Maße kennt - sonst ist das Format NaN.
-      await expect
-        .poll(() => bild.evaluate((node) => (node as HTMLImageElement).naturalWidth))
-        .toBeGreaterThan(0)
+      await warteAufBilder(bild, { flaeche: `Bühne, Foto ${index}`, was: 'Foto', bild: null })
 
       const sicht = page.viewportSize()!
       const scrollY = await page.evaluate(() => window.scrollY)

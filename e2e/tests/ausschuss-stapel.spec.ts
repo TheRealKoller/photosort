@@ -9,6 +9,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
@@ -25,6 +26,8 @@ async function openStacks(page: Page): Promise<Locator> {
   // automatisch entschiedene (Spec 0639). Weniger hiesse, dass die Uebersicht nicht gruppiert;
   // mehr, dass eine Gruppe ueber zwei Eintraege zerfaellt.
   await expect(stapel, 'Stapel der Demo-Duplikate').toHaveCount(3)
+  // Jede Messung am Stapel erst im gefuellten Zustand: das vordere Titelbild jedes Stapels.
+  await warteAufBilder(stapel, { flaeche: 'Duplikat-Stapel', was: 'Titelbild', bild: 'img' })
   return stapel
 }
 

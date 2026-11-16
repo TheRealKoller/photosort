@@ -18,6 +18,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
@@ -189,10 +190,7 @@ test('das Foto wird im Inhaltsrechteck an allen vier Ecken selbst getroffen', as
   await openSeededReview(page)
 
   const bild = page.getByRole('img', { name: /^Foto \d+ von \d+$/ }).first()
-  await expect(bild, 'Bild der Fallansicht').toBeVisible()
-  await expect
-    .poll(() => bild.evaluate((element) => (element as HTMLImageElement).naturalWidth))
-    .toBeGreaterThan(0)
+  await warteAufBilder(bild, { flaeche: 'Fallansicht', was: 'Foto', bild: null })
 
   const treffer = await bild.evaluate((element) => {
     const img = element as HTMLImageElement

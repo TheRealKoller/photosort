@@ -25,6 +25,7 @@
  */
 import type { Locator, Page } from '@playwright/test'
 
+import { warteAufBilder } from '../lib/bilder.ts'
 import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
@@ -77,18 +78,13 @@ async function oeffneEntwurf(page: Page): Promise<string> {
 
 /** Wartet, bis das große Bild geladen ist und seine natürlichen Maße kennt. */
 async function bildGeladen(page: Page): Promise<void> {
-  await expect(bild(page)).toBeVisible()
-  await expect
-    .poll(() => bild(page).evaluate((node) => (node as HTMLImageElement).naturalWidth))
-    .toBeGreaterThan(0)
+  await warteAufBilder(bild(page), { flaeche: 'Großansicht', was: 'Bild', bild: null })
 }
 
 /** Das natürliche Format des Kachelbildes hinter einem Auslöser (Vorschau im selben Format). */
 async function kachelFormat(trigger: Locator): Promise<number> {
   const vorschau = trigger.locator('img')
-  await expect
-    .poll(() => vorschau.evaluate((node) => (node as HTMLImageElement).naturalWidth))
-    .toBeGreaterThan(0)
+  await warteAufBilder(vorschau, { flaeche: 'Entwurfskachel', was: 'Vorschaubild', bild: null })
   return vorschau.evaluate((node) => {
     const img = node as HTMLImageElement
     return img.naturalWidth / img.naturalHeight
