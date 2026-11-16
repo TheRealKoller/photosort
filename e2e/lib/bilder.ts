@@ -67,19 +67,24 @@ export interface Bildflaeche {
  * Wartet, bis in JEDER Flaeche des Locators das Bild geladen ist (`complete`, `naturalWidth > 0`).
  *
  * Vorbedingung ist eine sichtbare erste Flaeche - sonst waere eine leere Liste sofort "geladen".
- * Laeuft die Zeitgrenze ab, lautet die Meldung `<flaeche>: <was> nicht geladen` und ist damit von
- * jeder Geometrie-Zusicherung der Pruefdatei unterscheidbar.
+ * Auch sie wartet bis zur gemeinsamen Grenze: Ist die Flaeche selbst das Bild (`bild: null`),
+ * entsteht sie erst nach dem Blob-Abruf. Laeuft die Zeitgrenze ab, lautet die Meldung
+ * `<flaeche>: <was> nicht geladen` (bei einer fehlenden Flaeche mit eigenem Bild-Selektor
+ * `<flaeche> vorhanden`) und ist damit von jeder Geometrie-Zusicherung unterscheidbar.
  */
 export async function warteAufBilder(flaechen: Locator, optionen: Bildflaeche): Promise<void> {
   const { flaeche, was, bild, ohneBildZulaessig = false } = optionen
-  await expect(flaechen.first(), `${flaeche} vorhanden`).toBeVisible()
+  const nichtGeladen = `${flaeche}: ${was} nicht geladen`
+  await expect(flaechen.first(), bild === null ? nichtGeladen : `${flaeche} vorhanden`).toBeVisible(
+    { timeout: IMAGE_LOAD_TIMEOUT_MS },
+  )
   await expect
     .poll(
       async () => {
         const stand = await flaechen.evaluateAll(bildstand, bild)
         return stand.ungeladen + (ohneBildZulaessig ? 0 : stand.ohneBild)
       },
-      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: `${flaeche}: ${was} nicht geladen` },
+      { timeout: IMAGE_LOAD_TIMEOUT_MS, message: nichtGeladen },
     )
     .toBe(0)
 }
