@@ -60,7 +60,11 @@ jobs:
           path: ~/.cache/uv
           key: uv-cache-${{ hashFiles('backend/pyproject.toml') }}
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv export --locked --extra dev --no-hashes --no-emit-project \
+            -o "$RUNNER_TEMP/backend-requirements.txt"
+          uv pip install --system --no-deps \
+            -r "$RUNNER_TEMP/backend-requirements.txt" -e .
       # specs/decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md Abschnitt 11:
       # kein eigener Job - dieser hat ruff nach dem Installationsschritt ohnehin liegen, und ein
       # neuer Job-Name muesste von Hand in required_status_checks.contexts nachgetragen werden und

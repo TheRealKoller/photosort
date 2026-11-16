@@ -6,7 +6,7 @@
 
 ## Ziel
 
-Auf der Kategorie-Kuratierungs-Seite (`/curate`, aus Spec [0037](./0037-gateführte-bewertungs-pipeline-mit-backfill.md)) werden Fotos aktuell nur nach Zeitfenster-Cluster (`cluster_key`) und Kategorie gruppiert, wobei die Cluster-Überschrift der technische, pro Lauf neu vergebene Bezeichner ist (z.B. "cluster-0"). Das sagt weder etwas über den Tag noch über die Tageszeit der Aufnahme aus und macht die Kuratierung schwerer nachvollziehbar.
+Auf der Kategorie-Kuratierungs-Seite (`/curate`, aus Spec [0037](./0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md)) werden Fotos aktuell nur nach Zeitfenster-Cluster (`cluster_key`) und Kategorie gruppiert, wobei die Cluster-Überschrift der technische, pro Lauf neu vergebene Bezeichner ist (z.B. "cluster-0"). Das sagt weder etwas über den Tag noch über die Tageszeit der Aufnahme aus und macht die Kuratierung schwerer nachvollziehbar.
 
 Diese Spec ergänzt eine zusätzliche, übergeordnete Gruppierung nach Kalendertag sowie sprechende Tageszeit-Bezeichnungen samt exakter Uhrzeitspanne für die bestehenden Cluster — rein als Anzeigeverbesserung, ohne die zugrundeliegende Cluster-Bildungslogik zu verändern.
 

@@ -82,3 +82,28 @@ isoliert, (b) den kombinierten Effekt inklusive `uv`-Cache. Beide Zahlen stehen 
 - `docs/architecture.md` bleibt unberührt (keine Systemarchitektur- oder Datenmodell-Änderung).
   `docs/setup.md` bekommt den Hinweis auf den lokalen Parallel-Lauf, sofern der Testschritt lokal
   nachvollzogen werden soll.
+
+## Nachtrag (2026-11-16): Der Installationsschritt liest jetzt `backend/uv.lock`
+
+Die **Entscheidung** bleibt unverändert: Testparallelisierung im bestehenden Job, dasselbe
+Coverage-Gate, `uv`-Cache mit dem Schlüssel `uv-cache-${{ hashFiles('backend/pyproject.toml') }}`.
+Überholt sind zwei Feststellungen im Kontext: „Es gibt kein `uv.lock`" und der Installationsbefehl
+`uv pip install --system -e ".[dev]"`. Seit Spec
+[`0655`](../features/0655-lockdatei-und-dokumentnamen-ohne-sonderzeichen.md) ist `backend/uv.lock`
+versioniert, und nur der `run:`-Rumpf von `Install dependencies` ist gewachsen — Name, Position,
+Installer (`uv pip`), Umgebung (`--system`), Ziel (`-e .`) und die vier Prüfschritte bleiben:
+
+```yaml
+run: |
+  uv export --locked --extra dev --no-hashes --no-emit-project \
+    -o "$RUNNER_TEMP/backend-requirements.txt"
+  uv pip install --system --no-deps \
+    -r "$RUNNER_TEMP/backend-requirements.txt" -e .
+```
+
+`--locked` bricht ab, wenn Manifest und Lock auseinanderlaufen; `--no-deps` verhindert, dass
+`uv pip` beim Installieren des Projekts erneut auflöst. **Der Cache-Schlüssel bleibt bewusst
+unverändert:** Ein Lock-Refresh ohne Manifest-Änderung hält den Cache warm, und weil `uv`s Cache
+inhaltsadressiert ist, ist eine andere Version ein Miss, keine falsche Installation. Gehalten wird
+der Rumpf von `scripts/tests/test_backend_lock_aktuell.py`; `scripts/tests/test_backend_ci_beschleunigung.py`
+bleibt unverändert.

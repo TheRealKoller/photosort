@@ -6,7 +6,7 @@
 
 ## Ziel
 
-Seit Spec [0037](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) berechnet PhotoSort für jedes Foto mehrere Einzelkriterien-Scores, eine abgeleitete Kategorie und eine Rangfolge innerhalb der Kategorie — sichtbar ist davon im UI heute aber nichts. Nutzer sehen nur das Endergebnis (Kategorie-Chip, Ausschuss-Vorschlag), nicht die Begründung dahinter. Diese Spec ergänzt ein Info-Icon an jedem bewerteten Foto, das auf Wunsch die vollständige Aufschlüsselung zeigt — sowohl für die vier heutigen Kriterien als auch automatisch für die vier zusätzlichen aus Spec [0038](./0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md), sobald diese implementiert sind. Spec 0038 hat diese Notwendigkeit selbst bereits vorgesehen ("UI-Exponierung der neuen Kriterien … falls gewünscht, eigene Spec").
+Seit Spec [0037](./0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) berechnet PhotoSort für jedes Foto mehrere Einzelkriterien-Scores, eine abgeleitete Kategorie und eine Rangfolge innerhalb der Kategorie — sichtbar ist davon im UI heute aber nichts. Nutzer sehen nur das Endergebnis (Kategorie-Chip, Ausschuss-Vorschlag), nicht die Begründung dahinter. Diese Spec ergänzt ein Info-Icon an jedem bewerteten Foto, das auf Wunsch die vollständige Aufschlüsselung zeigt — sowohl für die vier heutigen Kriterien als auch automatisch für die vier zusätzlichen aus Spec [0038](./0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md), sobald diese implementiert sind. Spec 0038 hat diese Notwendigkeit selbst bereits vorgesehen ("UI-Exponierung der neuen Kriterien … falls gewünscht, eigene Spec").
 
 ## User Story
 
