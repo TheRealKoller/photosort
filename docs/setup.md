@@ -95,13 +95,23 @@ Zwei Vorbedingungen prüft das Skript selbst und bricht sonst mit einem Hinweis 
   `.venv` — je Baum neu installieren:
 
   ```bash
-  (cd backend && uv pip install -e ".[dev]")
+  (cd backend && uv sync --locked --extra dev)
   (cd scripts && uv pip install -e ".[dev]")
   ```
 
   Die Klammern sind kein Zierrat: Ohne sie stünde man nach der ersten Zeile in `backend/`, und
   die zweite löste `backend/scripts` auf und schlüge fehl — ausgerechnet beim naheliegendsten
   Gebrauch, dem Kopieren des ganzen Blocks.
+
+**Backend-Abhängigkeiten kommen aus `backend/uv.lock`.** Die Datei hält die Auflösung von
+`backend/pyproject.toml` fest; `uv sync --locked --extra dev` installiert lokal genau diese Menge,
+und der CI-Job `backend` liest denselben Lock (`uv export --locked` → `uv pip install --no-deps`).
+`--locked` bricht ab, wenn Manifest und Lock auseinanderlaufen. Deshalb gehört nach **jeder**
+Änderung an `backend/pyproject.toml` ein `(cd backend && uv lock)` dazu, und `backend/uv.lock`
+in denselben Commit; den Lock-Diff vor dem Commit lesen und paketweise statt pauschal
+(`uv lock --upgrade`) aktualisieren. Der Lock fixiert Versionen, nicht Bytes: Geprüft wird kein
+Integritäts-Hash, und `backend/Dockerfile` löst weiterhin frisch aus `pyproject.toml` auf.
+`scripts/` führt bewusst keinen Lock.
 
 Nach `alembic revision --autogenerate` ist die erzeugte Migration unformatiert; der Formatierlauf
 gehört dort zum Anlegen dazu.
@@ -390,7 +400,7 @@ Das ONNX-Modell-Asset selbst ist **nicht** im Repository eingecheckt — wie all
 im Manifest `backend/src/photosort/model_assets.py` (ADR
 [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md)
 Punkt 2) lädt `docker compose up --build` es beim Image-Build und prüft den SHA256. Nur für ein
-Bare-Metal-Dev-Setup ohne Docker (`pip install -e .` direkt im `backend/`-Ordner) einmalig manuell
+Bare-Metal-Dev-Setup ohne Docker (`uv sync --locked --extra dev` direkt im `backend/`-Ordner) einmalig manuell
 nötig, im Ordner `backend/`:
 
 ```bash

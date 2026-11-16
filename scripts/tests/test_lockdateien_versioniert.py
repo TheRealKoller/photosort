@@ -21,6 +21,21 @@ Gelesen wird `git ls-files -z`: `-z` trennt nullterminiert, damit ein Dateiname 
 nicht zerfaellt. `--others --exclude-standard` ist die zweite Haelfte - eine Lockdatei existiert in
 dem Moment, in dem sie angelegt wird, und genau dann soll die Pruefung laut sein, nicht erst nach
 `git add`.
+
+**Wirksamkeitsbeleg, 2026-11-16, `cd scripts && pytest -q tests/test_lockdateien_versioniert.py`.**
+Erster Lauf, als `backend/uv.lock` noch unversioniert im Arbeitsbaum lag:
+
+    FAILED tests/test_lockdateien_versioniert.py::test_die_versionierte_lockmenge_ist_exakt -
+      AssertionError: Die versionierte Lockmenge weicht vom festgelegten Stand ab. Fehlend:
+        backend/uv.lock
+    FAILED tests/test_lockdateien_versioniert.py::test_keine_lockdatei_liegt_unversioniert_und_nicht_ignoriert -
+      AssertionError: Lockdatei im Arbeitsbaum, aber nicht versioniert und nicht ignoriert:
+        backend/uv.lock
+    2 failed, 5 passed
+
+Nach `git add backend/uv.lock`: `7 passed`. Gegenproben mit Ruecknahme: `git rm --cached
+backend/uv.lock` faerbt dieselben zwei Tests rot; ein zusaetzliches `scripts/uv.lock` faerbt
+`test_keine_lockdatei_liegt_unversioniert_und_nicht_ignoriert` rot (`1 failed, 6 passed`).
 """
 
 from __future__ import annotations

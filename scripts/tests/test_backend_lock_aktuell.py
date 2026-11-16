@@ -25,13 +25,26 @@ erzwingen; geprueft sind die tragenden Formen einzeln. Ebenso wird hier **kein**
 Netztest. Den Erzeugungsnachweis fuehren `uv lock --check` lokal und `--locked` im CI-Rumpf; dieser
 Waechter traegt stattdessen die Uebereinstimmung von Deklaration, Aufloesung und Verbraucher.
 
-**Wirksamkeitsbeleg (Mutationsreihe am Bestand, jede Mutation zurueckgenommen).** Der Test ist am
-Bestand von Anfang an gruen, weil Manifest und Lock uebereinstimmen - ein gruener Test ohne
-Rot-Phase traegt nichts, deshalb die Gegenprobe: entnommene Dependency (`numpy`), geaenderter Pin
-(`fastapi>=0.116`), entferntes dev-Extra (`ruff`), nachgezogener `requires-dist` bei unveraenderten
-Kanten, `--frozen` statt `--locked`, entferntes `--no-deps`, abweichender `-r`-Pfad - jeder dieser
-sieben Eingriffe faerbt den Lauf rot; nach der Ruecknahme ist er wieder gruen. Die drei
-Rumpf-Mutationen stehen zusaetzlich als dauerhafte Gegenproben in dieser Datei.
+**Wirksamkeitsbeleg (2026-11-16, Mutationsreihe am Bestand, jede Mutation zurueckgenommen).**
+Zusicherungen 1 und 2 sind am Bestand von Anfang an gruen, weil Manifest und Lock
+uebereinstimmen; Zusicherung 3 war rot, solange `Install dependencies` noch
+`uv pip install --system -e ".[dev]"` trug (`ValueError: Schritt 'Install dependencies' traegt
+keinen run: |-Block`), und wurde mit der CI-Umstellung gruen. Ein gruener Test ohne Rot-Phase
+traegt nichts, deshalb die Gegenprobe, `cd scripts && pytest -q tests/test_backend_lock_aktuell.py`:
+
+| Eingriff | rot in |
+|---|---|
+| `"numpy>=1.26"` aus `[project].dependencies` entnommen | Zusicherung 1 und 2 |
+| `fastapi>=0.115` zu `fastapi>=0.116` | Zusicherung 1 |
+| `"ruff==0.16.4"` aus dem dev-Extra entnommen | Zusicherung 1 und 2 |
+| `requests>=2.32` in Manifest **und** `requires-dist`, Kanten unveraendert | Zusicherung 2 |
+| `uv export --frozen` statt `--locked` | Zusicherung 3 |
+| `--no-deps` entfernt | Zusicherung 3 |
+| `-r "$RUNNER_TEMP/andere.txt"` statt der `-o`-Datei | Zusicherung 3 |
+
+Nach jeder Ruecknahme: `24 passed`, Pruefsummen von `pyproject.toml`, `uv.lock` und `ci.yml`
+unveraendert. Die drei Rumpf-Mutationen stehen zusaetzlich als dauerhafte Gegenproben in dieser
+Datei.
 """
 
 from __future__ import annotations

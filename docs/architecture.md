@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-08 (Spec 0621 — Eyes Albumstufe zählt im Album-Entwurf: das Verfahren friert der Laufstart in `criterion_scoring_runs.album_level_source` ein, die Stufe kommt aus `album_stage.py::load_album_levels` ohne Rückfall, das Urteil nennt bei Eye-Quelle die Herkunft statt einer Begründung; davor 2026-11-07: Spec 0616 — Prüfung zweier Klassifizierungsverfahren in der App: Job `classification_review` mit sechs eigenen Prüftabellen, Router `api/classification_reviews.py`, Prüfseiten als viertes Nebenziel, Kostenposten `review`; davor Spec 0609)
+**Letzte Aktualisierung:** 2026-11-16 (Spec 0655 — die Backend-Auflösung ist als `backend/uv.lock` versioniert, lokal installiert `uv sync --locked --extra dev`, der CI-Job `backend` liest denselben Lock über `uv export --locked`; fixiert sind Versionen, nicht Bytes, und das Image löst weiterhin frisch auf; davor 2026-11-08: Spec 0621 — Eyes Albumstufe zählt im Album-Entwurf: das Verfahren friert der Laufstart in `criterion_scoring_runs.album_level_source` ein, die Stufe kommt aus `album_stage.py::load_album_levels` ohne Rückfall, das Urteil nennt bei Eye-Quelle die Herkunft statt einer Begründung; davor Spec 0616)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -296,6 +296,13 @@ Verarbeitungs-Cache (Thumbnails).
 - **Backend** (`backend/`): FastAPI. REST-API für Projekte, Fotos, Bewertungen; Auth (JWT,
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.
+  - **Abhängigkeiten** (seit Spec
+    [`0655`](../specs/features/0655-lockdatei-und-dokumentnamen-ohne-sonderzeichen.md)):
+    `backend/pyproject.toml` deklariert, `backend/uv.lock` hält die Auflösung fest (versioniert,
+    universell über die Python-Versionen). Lokal installiert `uv sync --locked --extra dev`, der
+    CI-Job `backend` exportiert denselben Lock nach `$RUNNER_TEMP` und installiert ihn mit
+    `uv pip install --system --no-deps`. Fixiert sind Versionen, nicht Bytes: kein
+    Integritäts-Hash; `backend/Dockerfile` liest den Lock nicht und löst frisch auf.
   - `/opencloud/browse` (direkte Unterordner als `name`/`path`/`modified_at`; `modified_at` ist
     `getlastmodified` derselben PROPFIND-Antwort, `null` ohne Angabe — keine Zählung, keine
     zusätzliche WebDAV-Anfrage), `/projects` (CRUD + Scan-Trigger), OpenCloud-Client
