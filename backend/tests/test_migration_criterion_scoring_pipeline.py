@@ -181,7 +181,7 @@ def test_migration_creates_new_tables_and_columns(tmp_path: Path) -> None:
 
 def test_migration_clears_stale_album_worthy_suggested_status(tmp_path: Path) -> None:
     """Copilot-Review-Finding auf PR #80 (specs/features/0037): der alte, jetzt entfernte
-    select_top-Job (worker.py auf main vor dieser Migration) setzte suggested_status=ALBUM_WORTHY.
+    select_top-Job (photosort.worker auf main vor dieser Migration) setzte suggested_status=ALBUM_WORTHY.
     Seit Spec 0037 kennt SuggestionOut nur noch duplicate/low_quality; ein bestehender
     ALBUM_WORTHY-Altwert wuerde ohne Bereinigung nach dem Deploy faelschlich als low_quality-
     Ausschuss-Vorschlag angezeigt. Die Migration muss solche Altwerte auf NULL setzen, waehrend ein

@@ -380,7 +380,11 @@ _ERWARTETE_VERWENDUNGEN = {
     # Eye-Phase: sie wertet DENSELBEN Kandidatenbestand aus wie die Kriterien-Phase, damit
     # ausgeschlossene Aufnahmen auch lokal keine Kopfzeile bekommen (und die Rangfolge nicht
     # zwischen zwei Laeufen ueber verschiedene Mengen spricht).
-    ("worker.py", "survives_ausschuss"): 3,
+    # Seit Spec 0647 steht das Worker-Paket da: die drei Aufrufstellen
+    # stehen je in ihrer Phase, die Summe bleibt 3.
+    ("worker/criterion_scoring.py", "survives_ausschuss"): 1,
+    ("worker/remote_categories.py", "survives_ausschuss"): 1,
+    ("worker/_criterion/eye.py", "survives_ausschuss"): 1,
     # Die Kostenschaetzungen, auf denen die Freigabe eines Laufs beruht: Kategorisierung (Cloud
     # oder Eye), Sehenswuerdigkeits-Erkennung und - seit Spec 0383 - die Eye-Anzahl als EIGENER
     # Anteil der Vorschau (dieselbe Menge wie die Eye-Phase im Lauf). Sie folgen der Auswahl NICHT
@@ -397,15 +401,16 @@ _ERWARTETE_VERWENDUNGEN = {
     ("api/duplicate_decisions.py", "has_open_suggestion"): 1,
     ("api/duplicate_decisions.py", "has_ausschuss_entry"): 1,
     # `is_candidate` - Anzeige, keine Grenze.
-    ("api/photos.py", "survives_ausschuss_for"): 1,
+    ("api/photos/_conversion.py", "survives_ausschuss_for"): 1,
     # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu
     # seit Spec 0525 die projektweite `open_count` des Ausschuss-Lesepfads.
-    ("api/photos.py", "has_open_suggestion"): 2,
-    ("api/photos.py", "has_open_suggestion_for"): 1,
+    ("api/photos/_reads.py", "has_open_suggestion"): 1,
+    ("api/photos/ausschuss.py", "has_open_suggestion"): 1,
+    ("api/photos/_conversion.py", "has_open_suggestion_for"): 1,
     # Spec 0525: der Ausschuss-BESTAND der Uebersicht - die VEREINIGUNG beider Ursachen, eine eigene
     # Praesenzgrenze neben den vier obigen und deshalb hier als eigener Name gefuehrt (Auflage S9:
     # keine zweite, von Hand geschriebene Fassung von `PhotoScore.suggested_status` im Lesepfad).
-    ("api/photos.py", "has_ausschuss_entry"): 1,
+    ("api/photos/ausschuss.py", "has_ausschuss_entry"): 1,
 }
 
 # Die beiden Fassungen, getrennt gezaehlt: Nur die SQL-Fassungen treten als weiterer

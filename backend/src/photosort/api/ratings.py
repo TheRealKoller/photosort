@@ -43,7 +43,7 @@ class RatingWriteOut(BaseModel):
     """Der Zustand der eigenen Bewertungszeile NACH dem Schreibvorgang.
 
     NICHT `RatingOut` - dieser Name gehoert dem Element aus `PhotoOut.ratings[]`
-    (`api/photos.py`) und ist eine ANDERE Form. Zwei gleichnamige Modelle in verschiedenen
+    (`api/photos/`) und ist eine ANDERE Form. Zwei gleichnamige Modelle in verschiedenen
     Modulen benennt FastAPI in der OpenAPI-Beschreibung auf beiden Seiten um
     (`photosort__api__photos__RatingOut`, `photosort__api__ratings__RatingOut`) - eine stille
     Aenderung an der Beschreibung eines Endpunkts, der gar nicht angefasst wurde.

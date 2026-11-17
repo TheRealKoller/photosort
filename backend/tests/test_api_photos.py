@@ -605,7 +605,7 @@ async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(
     """Spec-Akzeptanzkriterium: der suggested-Filter deckt beide Ausschuss-Vorschlagsarten
     (Duplikat/geringe Qualitaet) gemeinsam ab, keine serverseitige Unterteilung nach reason. Der
     fruehere dritte "top_pick"-Fall (Spec 0024) ist mit Spec 0037 entfallen - siehe SuggestionOut-
-    Docstring in api/photos.py."""
+    Docstring in api/photos/."""
     project = await _make_project(db_session)
     duplicate = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     low_quality = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
@@ -1180,7 +1180,7 @@ class TestTheAlbumDraft:
     async def test_requires_authentication(
         self, api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """S1: `api/photos.py` hat kein Vollstaendigkeitsnetz - ein vergessenes
+        """S1: `api/photos/` hat kein Vollstaendigkeitsnetz - ein vergessenes
         `Depends(get_current_user)` machte den Entwurf still oeffentlich."""
         project = await _make_project(db_session)
 
@@ -3002,7 +3002,7 @@ class TestDraftAlternatives:
     async def test_requires_authentication(
         self, api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage S1: `api/photos.py` verzichtet bewusst auf eine Router-weite Auth-Dependency,
+        """Auflage S1: `api/photos/` verzichtet bewusst auf eine Router-weite Auth-Dependency,
         und `_protected_router_operations()` in `test_auth_guard.py` fuehrt diesen Router nicht -
         fuer ihn gibt es KEIN Vollstaendigkeitsnetz. Ein neuer Endpunkt, der
         `Depends(get_current_user)` vergisst, ist STILL OEFFENTLICH: kein Fehler, keine 401, nur
@@ -4085,7 +4085,7 @@ class TestPhotoLocationAndClusterPlace:
     # Gefuehrt wird der Nachweis am AUFRUFER, nicht an `infer_locations`: die reine Funktion
     # kennt den Versatz nicht: sie bekommt `taken_at` uebergeben. Die Entscheidung, WELCHE
     # Spalte die Inferenzbasis speist, liegt hier (`_event_and_location_by_photo_id`) und in
-    # `worker.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
+    # `worker/_criterion/ranking.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
     # `taken_at_original` plausibel formuliert und fachlich falsch.
     async def _inheritance_fixture(
         self, db_session: AsyncSession, *, offset_minutes: int

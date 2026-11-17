@@ -1051,9 +1051,9 @@ class TestPostVisionRequest:
 
 class TestWaitBudgetStaysUnderTheStallThreshold:
     """K7 als INVARIANTENTEST (Bauform wie die Registry-Preistabelle-Invariante in
-    test_pricing.py): der Test importiert `STALL_THRESHOLD` aus `worker.py` und die vier
+    test_pricing.py): der Test importiert `STALL_THRESHOLD` aus `worker/stall_reaper.py` und die vier
     Konstanten aus `cloud_vision.py`. Im Produktivcode gibt es diese Verbindung bewusst NICHT -
-    `cloud_vision.py` darf `worker.py` nicht importieren."""
+    `cloud_vision.py` darf `photosort.worker` nicht importieren."""
 
     # Benannter Sicherheitsabstand: was zwischen dem schlimmsten Wartefall und der Schwelle des
     # Fortschritts-Watchdogs mindestens frei bleiben muss.

@@ -3,7 +3,7 @@ Aehnlichkeitsabwertung.
 
 REIN und DB-FREI - dasselbe Muster wie `ranking.py`/`quality.py`/`events.py`: keine Session, kein
 Modell, kein SQL-Ausdruck. Die Kandidatenmenge kommt fertig herein; wer auswahlfaehig ist,
-entscheidet der Aufrufer (`worker.py`).
+entscheidet der Aufrufer (`photosort.worker`).
 
 DETERMINISMUS IST STRUKTURELL, nicht zugesichert: Kandidaten werden beim Eintritt nach `photo_id`
 sortiert, Events nach `position` durchlaufen, und jede Wahl des groessten Werts bricht Gleichstand
@@ -48,7 +48,7 @@ def motif_is_present(strength: float, threshold: float | None = None) -> bool:
     nichts laut, obwohl gerade die Inklusivitaet die Zusage ist. Gehalten in
     `tests/test_selection.py::TestTheStructuralGuardAgainstReadingTheDisplayBands`.
 
-    Zweiter Leser ausserhalb der Auswahl ist `api/photos.py::_motifs_out`
+    Zweiter Leser ausserhalb der Auswahl ist `api/photos/_conversion.py::_motifs_out`
     (`MotifStrengthOut.present`) - die Grenze verlaesst das Backend ausschliesslich als dieses
     Ja/Nein, nie als Zahl.
 

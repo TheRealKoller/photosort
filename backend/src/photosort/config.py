@@ -60,10 +60,10 @@ class Settings(BaseSettings):
     # Obergrenze für die begrenzte Parallelisierung von Download + Thumbnail-Erzeugung in Phase
     # 2b des Scans. Echter Betriebsparameter (Überlastschutz für den
     # Einzelnutzer-Homeserver-OpenCloud), deshalb ein env-überschreibbares Settings-Feld statt
-    # einer reinen Modul-Konstante wie worker.py::SCAN_COMMIT_BATCH_SIZE (reiner
+    # einer reinen Modul-Konstante wie worker/scan.py::SCAN_COMMIT_BATCH_SIZE (reiner
     # Test-Kalibrierungswert). `Field(ge=1)`: eine fehlerhafte .env-Konfiguration (0/negativ)
     # fällt bereits beim Prozessstart auf, statt sich erst mitten im nächsten Scan-Lauf als
-    # range(step=0)-Crash zu äußern - worker.py verlässt sich direkt auf diesen validierten Wert,
+    # range(step=0)-Crash zu äußern - photosort.worker verlässt sich direkt auf diesen validierten Wert,
     # ohne eigenen Laufzeit-Clamp.
     scan_download_concurrency: int = Field(default=4, ge=1)
 

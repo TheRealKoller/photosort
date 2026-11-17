@@ -26,7 +26,9 @@ from photosort.thumbnails import (
     measure_cache_usage,
     thumbnail_path,
 )
+from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scan
+from photosort.worker import scan as worker_scan
 from tests.time_offset_invariant import assert_time_offset_invariant
 
 DRIVE = Drive(
@@ -185,7 +187,7 @@ class DownloadRaisesCancelledErrorClient(FakeOpenCloudClient):
     einen Abbruch NICHT beim Walk (siehe WalkFailsWithCancelledErrorClient oben), sondern in einer
     der parallel laufenden Phase-2b-I/O-Coroutinen selbst - genau der Fall, den
     asyncio.gather(..., return_exceptions=True) OHNE explizite Sonderbehandlung verschlucken
-    wuerde (siehe worker.py::_process_scan_block, Kommentar zur CancelledError-Pruefung)."""
+    wuerde (siehe worker/scan.py::_process_scan_block, Kommentar zur CancelledError-Pruefung)."""
 
     def __init__(self, *args: object, cancel_path: str, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
@@ -553,7 +555,7 @@ async def test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_downloa
     CancelledError, das eine EINZELNE Kind-Coroutine wirft (statt einer echten aeusseren
     Task-Cancellation), NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
     Ergebnisliste durch (await gather(...) wirft in diesem Fall NICHTS) - siehe
-    worker.py::_process_scan_block, das genau deshalb die Ergebnisliste explizit auf
+    worker/scan.py::_process_scan_block, das genau deshalb die Ergebnisliste explizit auf
     CancelledError-Instanzen prueft und sie manuell erneut wirft. Ohne diese explizite Pruefung
     wuerde dieser Test fehlschlagen (kein pytest.raises(CancelledError), Scan faelschlich SUCCESS
     oder FAILED mit generischer Fehlermeldung statt des korrekten Watchdog-Schicht-1-Pfads)."""
@@ -590,7 +592,7 @@ async def test_scan_phase_one_failure_leaves_total_files_unset_and_no_photos_pro
     photos`, dessen Erwartung (3 bereits verarbeitete Photo-Zeilen bleiben trotz Fehler committet)
     auf dem alten, einphasigen interleaved Loop beruhte und mit der neuen Architektur nicht mehr
     zutrifft - Phase 1 legt selbst nie Photo-Zeilen an, das war schon immer Aufgabe von Phase 2."""
-    monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_scan, "SCAN_COMMIT_BATCH_SIZE", 1)
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = WalkFailsMidwayClient(
@@ -618,7 +620,7 @@ async def test_scan_commits_files_found_progress_during_enumeration_at_productio
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): bewusst
-    OHNE monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) - prueft den echten
+    OHNE monkeypatch.setattr(worker_scan, "SCAN_COMMIT_BATCH_SIZE", ...) - prueft den echten
     Produktivwert nach dem Fix (1), jetzt fuer die Enumerationsphase (Phase 1, specs/features/0036).
 
     Verifiziert ueber eine ZWEITE, unabhaengige Session auf demselben In-Memory-Engine (geteilte
@@ -668,7 +670,7 @@ async def test_scan_updates_last_progress_at_at_each_checkpoint(
     reap_stalled_runs (Schicht 2) spaeter liest - verifiziert ueber einen kontrollierten "Uhr"-Wert
     statt einer echten Wartezeit."""
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker, "_now_utc", lambda: sentinel)
+    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)
 
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
@@ -1417,7 +1419,7 @@ class TestResumeIdempotency:
         ]
 
         # Un-expired `project` fuer den zweiten Scan-Aufruf unten (rollback() in _fail_run hat es
-        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (worker.py).
+        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (photosort.worker).
         await db_session.refresh(project)
         recovering_client = FakeOpenCloudClient(entries=entries)
         second_run = await run_project_scan(
@@ -1953,7 +1955,7 @@ async def test_a_failing_cleanup_leaves_the_run_successful_and_the_session_usabl
         await session.execute(select(Photo))
         raise RuntimeError("Cache-Verzeichnis nicht lesbar")
 
-    monkeypatch.setattr(worker, "cleanup_orphaned_cache", _cleanup_that_queries_and_then_fails)
+    monkeypatch.setattr(worker_scan, "cleanup_orphaned_cache", _cleanup_that_queries_and_then_fails)
 
     with caplog.at_level("WARNING"):
         scan_run = await run_project_scan(
@@ -2551,13 +2553,13 @@ async def test_a_photo_without_a_cache_file_stays_null_and_is_tried_again_next_r
     project = await _make_project(db_session)
     photo = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
     attempts: list[Path] = []
-    original = worker.aspect_ratio_of_cached_thumbnail
+    original = worker_scan.aspect_ratio_of_cached_thumbnail
 
     def _spy(path: Path) -> float | None:
         attempts.append(path)
         return original(path)
 
-    monkeypatch.setattr(worker, "aspect_ratio_of_cached_thumbnail", _spy)
+    monkeypatch.setattr(worker_scan, "aspect_ratio_of_cached_thumbnail", _spy)
     entries = _unchanged_entries("CostaRica/img001.jpg")
 
     for _ in range(2):
@@ -2618,7 +2620,7 @@ async def test_the_ratio_read_from_the_preview_matches_the_original_within_a_tol
     await db_session.refresh(photo)
     assert photo.aspect_ratio != original_ratio
     assert photo.aspect_ratio == pytest.approx(
-        original_ratio, rel=worker.ASPECT_RATIO_PREVIEW_TOLERANCE
+        original_ratio, rel=worker_scan.ASPECT_RATIO_PREVIEW_TOLERANCE
     )
 
 
@@ -2648,7 +2650,7 @@ class TestCatchUpRoundProgressStamps:
     ) -> None:
         project = await _make_project(db_session)
         run = await self._run_with_ratios(db_session, project, tmp_path, 3)
-        monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", 1)
+        monkeypatch.setattr(worker_scan, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", 1)
         stamps: list[datetime] = []
         original_commit = db_session.commit
 
@@ -2658,7 +2660,7 @@ class TestCatchUpRoundProgressStamps:
 
         monkeypatch.setattr(db_session, "commit", _recording_commit)
 
-        await worker._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+        await worker_scan._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
 
         # Drei Bloecke, drei Commits - und der Stempel ist bei jedem VOR dem Commit gesetzt
         # worden, also (schwach) aufsteigend statt ein einziges Mal am Ende.
@@ -2676,7 +2678,7 @@ class TestCatchUpRoundProgressStamps:
         run = await self._run_with_ratios(db_session, project, tmp_path, 1)
 
         with _recorded_photo_selects() as statements:
-            await worker._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+            await worker_scan._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
 
         assert statements, "Die Runde muss die Arbeitsmenge ueber `photos` bestimmen"
         for statement in statements:

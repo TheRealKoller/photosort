@@ -1,6 +1,6 @@
 """Der Aufbau der `EventCandidate`-Menge eines Kriterien-Laufs - REIN LESEND.
 
-ZWEI AUFRUFER, EIN WEG: der Lauf (`worker.py::_build_grouping_and_rankings`) und das rein lesende
+ZWEI AUFRUFER, EIN WEG: der Lauf (`worker/_criterion/ranking.py`) und das rein lesende
 Messkommando (`event_probe.py`). Eine zweite, nachbildende Fassung maesse etwas anderes, als der
 Lauf tatsaechlich tut, waehrend beide fuer sich gruen blieben (ADR 0117 Punkt 5).
 
@@ -13,7 +13,7 @@ Sammlungs-Methoden) und wuerde dann entschaerft. Der Preis ist, dass diese Datei
 Auflage gegen eine lueckenlose Zusage.
 
 Die Import-Graph-Zusage von ``place_probe.py`` gilt hier AUSDRUECKLICH NICHT: dieses Modul liegt
-per Konstruktion im Graphen von ``worker.py``, und genau diese Richtung pinnt eine Gegenprobe.
+per Konstruktion im Graphen von ``photosort.worker``, und genau diese Richtung pinnt eine Gegenprobe.
 
 LOGGING-AUFLAGE (S8) fuer jede kuenftige Logzeile dieses Moduls: weder eine Koordinate noch ein
 Orts- oder Sehenswuerdigkeit-Name gehoert hinein, nur ein festes Grund-Token und eine Id.

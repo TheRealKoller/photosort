@@ -77,12 +77,17 @@ from photosort.places import PlaceAnswer, PlaceResolver, landmark_place_cell, pl
 from photosort.pricing import compute_cost_usd
 from photosort.quality import LOCAL_CORRECTION_SPAN
 from photosort.thumbnails import display_path
+from photosort.worker import _runs as worker_runs
 from photosort.worker import (
     _select_landmark_candidates,
     rebuild_run_grouping,
     run_criterion_scoring,
     run_project_scoring,
 )
+from photosort.worker import criterion_scoring as worker_criterion_scoring
+from photosort.worker._criterion import landmark as worker_landmark
+from photosort.worker._criterion import local as worker_local
+from photosort.worker._criterion import ranking as worker_ranking
 from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
@@ -173,7 +178,7 @@ def _flat_image(color: tuple[int, int, int] = (100, 100, 100), size: int = 160) 
 
 class NoFaceDetector:
     """Faket den mediapipe FaceDetector so, dass nie ein Gesicht gefunden wird - der injizierte
-    build_detector-Callable ersetzt worker.py::build_face_detector, kein echtes .tflite-Modell in
+    build_detector-Callable ersetzt den Builder aus classification.py, kein echtes .tflite-Modell in
     Tests (Teststrategie-Abschnitt der Spec)."""
 
     def detect(self, image: object) -> object:
@@ -186,7 +191,7 @@ def _no_face_detector() -> NoFaceDetector:
 
 class NoAnimalDetector:
     """Faket den mediapipe ObjectDetector so, dass nie ein Tier gefunden wird - der injizierte
-    build_animal_detector-Callable ersetzt worker.py::build_object_detector (specs/features/0038:
+    build_animal_detector-Callable ersetzt den Builder aus classification.py (specs/features/0038:
     build_object_detector darf wie build_face_detector NIE in einem automatisierten Test
     aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
 
@@ -200,7 +205,7 @@ def _no_animal_detector() -> NoAnimalDetector:
 
 class NoSceneLabels:
     """Faket den mediapipe ImageClassifier so, dass keine Szenen-Kategorie gefunden wird - der
-    injizierte build_classifier-Callable ersetzt worker.py::build_scene_classifier
+    injizierte build_classifier-Callable ersetzt den Builder aus classification.py
     (specs/features/0038: build_scene_classifier darf wie build_face_detector NIE in einem
     automatisierten Test aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
 
@@ -215,7 +220,7 @@ def _no_scene_classifier() -> NoSceneLabels:
 class NeutralAestheticsModel:
     """Faket das Keras-Modell so, dass eine neutrale, gleichverteilte NIMA-Ratingverteilung
     zurueckgegeben wird - der injizierte build_aesthetics-Callable ersetzt
-    worker.py::build_aesthetics_model (specs/features/0038: build_aesthetics_model darf wie
+    den Builder aus aesthetics.py (specs/features/0038: build_aesthetics_model darf wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
     tensorflow-Modell in Tests)."""
 
@@ -229,7 +234,7 @@ def _no_aesthetics_model() -> NeutralAestheticsModel:
 
 class NoFaceLandmarker:
     """Faket den mediapipe FaceLandmarker so, dass nie ein Gesicht gefunden wird - der injizierte
-    build_landmarker-Callable ersetzt worker.py::build_face_landmarker (specs/features/0048-
+    build_landmarker-Callable ersetzt den Builder aus classification.py (specs/features/0048-
     kompositions-kriterien-symmetrie-horizont-freiraum.md: build_face_landmarker darf wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
     .task-Modell in Tests)."""
@@ -1461,9 +1466,9 @@ async def test_partitions_are_isolated_by_event(db_session: AsyncSession, tmp_pa
 async def test_progress_is_committed_periodically(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: object
 ) -> None:
-    import photosort.worker as worker_module
+    import photosort.worker._criterion.local as worker_local
 
-    monkeypatch.setattr(worker_module, "CRITERION_SCORING_COMMIT_BATCH_SIZE", 1)  # type: ignore[attr-defined]
+    monkeypatch.setattr(worker_local, "CRITERION_SCORING_COMMIT_BATCH_SIZE", 1)  # type: ignore[attr-defined]
 
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -1493,11 +1498,12 @@ async def test_progress_is_committed_periodically(
 async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: object
 ) -> None:
-    import photosort.worker as worker_module
+    import photosort.worker._criterion.local as worker_local
+    import photosort.worker._runs as worker_runs
 
-    monkeypatch.setattr(worker_module, "CRITERION_SCORING_COMMIT_BATCH_SIZE", 1)  # type: ignore[attr-defined]
+    monkeypatch.setattr(worker_local, "CRITERION_SCORING_COMMIT_BATCH_SIZE", 1)  # type: ignore[attr-defined]
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_module, "_now_utc", lambda: sentinel)  # type: ignore[attr-defined]
+    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)  # type: ignore[attr-defined]
 
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -1751,7 +1757,7 @@ class RecordingLandmarkClient:
         # bleiben.
         self.hints: list[PlaceHint | None] = []
         # Review-Fund (ship-feature-Runde): kein bisheriger Fake bot aclose() an, der
-        # worker.py::run_criterion_scoring's `getattr(landmark_client, "aclose", None)`-Zweig
+        # `run_criterion_scoring`'s `getattr(landmark_client, "aclose", None)`-Zweig
         # nahm deshalb immer den None-Pfad - ein versehentlich falsch benannter/entfernter Aufruf
         # waere unbemerkt geblieben. Zaehlt Aufrufe statt nur bool, damit ein Doppel-Close
         # ebenfalls auffiele.
@@ -2325,7 +2331,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
 
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2/3 ab hier: worker.py::_record_cloud_vision_error/
+# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::_record_cloud_vision_error/
 # _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
 # (Teststrategie-Abschnitt der Spec).
 
@@ -2850,8 +2856,8 @@ async def test_classify_scene_is_called_exactly_once_per_photo_for_both_criteria
 
 
 def test_landschaft_is_part_of_the_image_analysis_criterion_keys() -> None:
-    assert "landschaft" in worker._IMAGE_ANALYSIS_CRITERION_KEYS
-    assert worker._IMAGE_ANALYSIS_CRITERION_SOURCES["landschaft"] == CriterionSource.LOCAL_ML
+    assert "landschaft" in worker_local._IMAGE_ANALYSIS_CRITERION_KEYS
+    assert worker_local._IMAGE_ANALYSIS_CRITERION_SOURCES["landschaft"] == CriterionSource.LOCAL_ML
 
 
 async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
@@ -2863,7 +2869,7 @@ async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
     def _boom(labels: object) -> float:
         raise RuntimeError("Landschafts-Score kaputt")
 
-    monkeypatch.setattr(worker, "compute_landschaft_score", _boom)
+    monkeypatch.setattr(worker_local, "compute_landschaft_score", _boom)
 
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -2899,7 +2905,7 @@ async def test_a_failing_gebaeude_score_leaves_landschaft_untouched(
     def _boom(labels: object) -> float:
         raise RuntimeError("Gebaeude-Score kaputt")
 
-    monkeypatch.setattr(worker, "compute_gebaeude_score", _boom)
+    monkeypatch.setattr(worker_local, "compute_gebaeude_score", _boom)
 
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -3289,7 +3295,7 @@ async def test_costs_survive_a_run_that_fails_after_the_landmark_block(
     def _explode(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("simulierter Fehlschlag nach der Cloud-Phase")
 
-    monkeypatch.setattr(worker, "rank_photos", _explode)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _explode)
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
 
@@ -3462,7 +3468,7 @@ async def test_the_model_column_survives_a_run_that_fails_after_the_landmark_blo
     monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
     project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
-    monkeypatch.setattr(worker, "rank_photos", _raise_after_landmark_phase, raising=True)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _raise_after_landmark_phase, raising=True)
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
 
@@ -3644,7 +3650,7 @@ class TestLandmarkPhaseLiveCounters:
         liest ausschliesslich `last_progress_at`, ein Test dort verdoppelte diese Zusage."""
         monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
         ticks = iter(datetime(2030, 1, 1, 12, 0, second) for second in range(0, 60))
-        monkeypatch.setattr(worker, "_now_utc", lambda: next(ticks))
+        monkeypatch.setattr(worker_runs, "_now_utc", lambda: next(ticks))
 
         project, scoring_run, _photos = await _landmark_cost_setup(
             db_session, tmp_path, photo_count=3
@@ -3887,7 +3893,7 @@ class TestLandmarkCallBookkeepingInvariant:
         def _explode(*args: object, **kwargs: object) -> NoReturn:
             raise RuntimeError("simulierter Fehlschlag nach der Cloud-Phase")
 
-        monkeypatch.setattr(worker, "rank_photos", _explode)
+        monkeypatch.setattr(worker_ranking, "rank_photos", _explode)
 
         run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
 
@@ -4098,7 +4104,7 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
     ) -> CriterionScoringRun:
         # Etablierte Konvention (vgl. test_worker_reap_stalled_runs.py): Worker und injizierter
         # Client muessen DENSELBEN Schrittmacher sehen, sonst misst die Zusammenfassung nichts.
-        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        monkeypatch.setattr(worker_landmark, "throttle_for_provider", lambda _provider: throttle)
         project = await _make_project(db_session)
         project.cloud_vision_detection_enabled = True
         await db_session.commit()
@@ -4141,7 +4147,7 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
         """Zugleich der Grund, warum alle BESTEHENDEN Worker-Tests still bleiben: sie arbeiten mit
         Test-Doubles und beruehren den Schrittmacher nie."""
         throttle = _throttle_recording_waits([])
-        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        monkeypatch.setattr(worker_landmark, "throttle_for_provider", lambda _provider: throttle)
         project = await _make_project(db_session)
         project.cloud_vision_detection_enabled = True
         await db_session.commit()
@@ -5455,7 +5461,7 @@ class TestWhatIsNotMeasurable:
         face_detector: object | None,
         face_landmarker: object | None,
         animal_detector: object | None = None,
-    ) -> worker.ContentCriteria:
+    ) -> worker_local.ContentCriteria:
         return worker._compute_content_criteria(
             cache_dir,
             photo,
@@ -6215,7 +6221,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         """Ein SYNTAXBAUM-Waechter, und er hat einen Grund (S3): Ein hinzugefuegter
         `infer_locations`-Aufruf roetet keinen Verhaltenstest, solange die Messlage echte
         Koordinaten traegt - genau dann waere die Zusage aber gebrochen."""
-        path = module_file("photosort.worker")
+        path = module_file("photosort.worker.criterion_scoring")
         assert path is not None
         tree = ast.parse(path.read_text(encoding="utf-8"))
         phase = next(
@@ -7099,7 +7105,7 @@ async def test_a_failed_run_leaves_the_old_default_proposal_untouched(
     first_id, project_id = first.id, project.id
     await _seed_old_default_proposal(db_session, first_id, 1)
     before = await _positions_of(db_session, first_id)
-    monkeypatch.setattr(worker, "_recognize_persons", failing_phase)
+    monkeypatch.setattr(worker_criterion_scoring, "_recognize_persons", failing_phase)
 
     await _run_classification(db_session, project, scoring_run, tmp_path)
 

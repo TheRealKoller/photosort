@@ -26,7 +26,7 @@ def assert_phase_binding(run: CriterionScoringRun) -> None:
     assert (run.phase is None) == (run.phase_started_at is None), (
         f"Lauf {run.id} verletzt die Bindung aus ADR 0116 Punkt 1: phase={run.phase!r}, "
         f"phase_started_at={run.phase_started_at!r}. Beide Spalten werden ausschliesslich "
-        "gemeinsam gesetzt (worker.py::_set_phase)."
+        "gemeinsam gesetzt (worker/_runs.py::_set_phase)."
     )
 
 

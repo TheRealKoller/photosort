@@ -1644,7 +1644,7 @@ class TestMainAbortsWithoutTouchingAnything:
 
 
 class TestNoCallPathFromTheRunningApplication:
-    """M3: kein Import aus main.py/worker.py. Als Test festgehalten statt behauptet - geprueft
+    """M3: kein Import aus main.py/photosort.worker. Als Test festgehalten statt behauptet - geprueft
     ueber den statischen Import-Graphen des Quellbaums (kein Laufzeit-Import noetig)."""
 
     def test_import_graph_of_the_api_does_not_contain_the_seeder(self) -> None:

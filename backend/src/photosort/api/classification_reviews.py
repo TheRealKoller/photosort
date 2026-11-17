@@ -207,8 +207,8 @@ class ResolvedSide:
 
 class ReviewUserOut(BaseModel):
     """Der Nutzer als AUSDRUECKLICHE Projektion auf zwei Spalten (Muster
-    `api/photos.py::_participants`): nie `model_validate(User)`, `password_hash` erreicht keinen
-    Lesepfad (S1)."""
+    `api/photos/album_selection.py::_participants`): nie `model_validate(User)`,
+    `password_hash` erreicht keinen Lesepfad (S1)."""
 
     user_id: int
     username: str

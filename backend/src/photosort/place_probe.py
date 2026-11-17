@@ -10,7 +10,7 @@ Fassung driftete, und dann maesse dieses Kommando etwas anderes, als der Lauf ta
 waehrend beide fuer sich gruen blieben.
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
-``DELETE``, kein Aufrufpfad aus ``main.py``/``worker.py``, kein Endpunkt, kein
+``DELETE``, kein Aufrufpfad aus ``main.py``/``photosort.worker``, kein Endpunkt, kein
 Compose-``command``. Kein Lauf hinterlaesst eine geaenderte, geloeschte oder neue Zeile.
 ``tests/test_place_probe.py`` haelt das dreifach fest - Import-Graph, Syntaxbaum-Waechter gegen
 jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Tabelle davor und danach.

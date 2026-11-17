@@ -9,7 +9,7 @@ Durchlauf (``events.py::explain_events``), derselbe Auflöser. Eine zweite, nach
 maesse etwas anderes, als der Lauf tatsaechlich tut, waehrend beide fuer sich gruen blieben.
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
-``DELETE``, kein Aufrufpfad aus ``main.py``/``worker.py``, kein Endpunkt, kein
+``DELETE``, kein Aufrufpfad aus ``main.py``/``photosort.worker``, kein Endpunkt, kein
 Compose-``command``. Kein Lauf hinterlaesst eine geaenderte, geloeschte oder neue Zeile.
 ``tests/test_event_probe.py`` haelt das dreifach fest - Import-Graph, Syntaxbaum-Waechter gegen
 jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Tabelle davor und danach.
@@ -364,7 +364,7 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
     DIE KANDIDATENMENGE SIND DIE FOTOS DER RANGZEILEN des letzten erfolgreichen Kriterien-Laufs,
     nicht die aktuellen Ausschuss-Ueberlebenden: Ein zwischenzeitliches Re-Scoring darf die
     Zusammensetzung dieses Laufs nicht nachtraeglich veraendern (dieselbe Wahl wie
-    `worker.py::rebuild_run_grouping`).
+    `worker/criterion_scoring.py::rebuild_run_grouping`).
 
     Alles Weitere kommt aus `event_inputs.py` - derselben Stelle, aus der auch der Lauf es bezieht
     (ADR 0117 Punkt 5)."""

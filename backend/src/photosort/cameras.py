@@ -2,7 +2,7 @@
 Zeitversatz je Kamera.
 
 REIN und DB-FREI, Muster `events.py`. Die eine Stelle, die `taken_at` aus `taken_at_original`
-errechnet: `shifted` ist die Funktion, ueber die BEIDE Schreibstellen (`worker.py`-Scan und
+errechnet: `shifted` ist die Funktion, ueber die BEIDE Schreibstellen (`worker/scan.py` und
 `api/cameras.py`) laufen - eine dritte Schreibstelle auf `Photo.taken_at` gibt es nicht
 (ADR 0090, Punkt 1).
 

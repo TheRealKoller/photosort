@@ -186,7 +186,7 @@ def test_extract_gps_returns_none_for_garbage_bytes() -> None:
 
 
 def test_returns_none_for_truncated_bytes_without_propagating_an_error() -> None:
-    """Das Range-Read-Fenster (`worker.py::_EXIF_RANGE_BYTES`) kann mitten im Datenstrom enden -
+    """Das Range-Read-Fenster (`worker/scan.py::_EXIF_RANGE_BYTES`) kann mitten im Datenstrom enden -
     ein einzelnes unlesbares Foto darf einen Scan-Lauf nie abbrechen."""
     jpeg_bytes = _make_jpeg_with_gps({1: "N", 2: _EIFFEL_LAT_DMS, 3: "E", 4: _EIFFEL_LON_DMS})
 

@@ -413,7 +413,7 @@ class ProjectOut(BaseModel):
     taken_at_latest: datetime | None
 
 
-# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::MAX_QUERY_POSITION`:
+# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos/_reads.py::MAX_QUERY_POSITION`:
 # ein Pydantic-`int` ist unbeschraenkt, der Wert wird in eine INTEGER-Spalte geschrieben und geht
 # in `⌈0,25·T⌉`/`⌈T/m⌉`/`T − m`; jenseits von 2^63 ergibt das unter SQLite einen `OverflowError`
 # und damit eine 500 statt einer 422.
@@ -753,10 +753,10 @@ def _estimate_part(
 
 async def _count_remote_category_candidates(session: AsyncSession, project_id: int) -> int:
     """Ermittelt über dieselbe Kandidaten-Selektion wie der tatsächliche Lauf
-    (worker.py::select_remote_category_candidates), als eigenstaendige kleine Query HIER
+    (worker/remote_categories.py::select_remote_category_candidates), als eigenstaendige kleine Query HIER
     dupliziert: die API-Schicht (reine HTTP-/Validierungs-/Lese-Zustaendigkeit) importiert
-    worker.py nicht, sondern loest Jobs ausschliesslich ueber den stringbasierten JobEnqueuer
-    aus. `api/photos.py` ist die eine bewusste Ausnahme davon.
+    das Worker-Paket nicht, sondern loest Jobs ausschliesslich ueber den stringbasierten JobEnqueuer
+    aus. `api/photos/` ist die eine bewusste Ausnahme davon.
 
     Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
     verlaesst die Datenbank, auch nicht bei einem grossen Projekt.
@@ -799,7 +799,7 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
     Zaehlt Ausschuss-Ueberlebende, deren BEREITS GESPEICHERTE Kriterien-Werte
     `criteria.py::is_landmark_candidate` erfuellen und die noch keine `landmark`-Zeile haben -
     dieselbe reine Schwellenwert-Funktion, die auch der Live-Lauf ueber
-    worker.py::_select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender Grenzwert).
+    worker/_criterion/landmark.py::_select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender
 
     STRUKTURELL EINE SCHAETZUNG, keine Vorausberechnung: die Landmark-Kandidaten des kommenden
     Laufs ergeben sich aus Kriterien-Werten, die genau dieser Lauf erst neu berechnet. Vor dem
@@ -846,9 +846,9 @@ async def _count_eye_candidates(session: AsyncSession, project_id: int) -> int:
     """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile, die noch
     KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand (Spec 0621).
 
-    Dieselbe Bedingung wie `worker.py::_run_eye_phase`, als eigenstaendige kleine Query HIER
+    Dieselbe Bedingung wie `worker/_criterion/eye.py::_run_eye_phase`, als eigenstaendige kleine Query HIER
     dupliziert - dieselbe Begruendung wie bei `_count_remote_category_candidates`: die
-    API-Schicht importiert worker.py nicht. Eine Schaetzung, die eine andere Menge zaehlt als
+    API-Schicht importiert das Worker-Paket nicht. Eine Schaetzung, die eine andere Menge zaehlt als
     der Lauf, waere eine falsche Grundlage: Sie verspraeche Kosten fuer Fotos, die der Lauf gar
     nicht mehr an den Dienst schickt."""
     result = await session.execute(
@@ -1213,7 +1213,7 @@ async def trigger_classify(
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
     """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet den gewaehlten Weg mit
-    der Kriterien- und der Rangfolge-Phase (worker.py: run_classification).
+    der Kriterien- und der Rangfolge-Phase (worker/classification.py: run_classification).
 
     Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0609 S5, Spec 0383 API-Punkt 4) -
     jede Zeile hier hat einen Grund, genau an dieser Stelle zu stehen:
@@ -1242,7 +1242,7 @@ async def trigger_classify(
     `FAILED` enden.
 
     Legt die wartende `CriterionScoringRun`-Zeile VOR dem Einreihen an (Felder wie
-    `worker.py::_start_criterion_scoring_run`); der Job uebernimmt sie. Den
+    `worker/criterion_scoring.py::_start_criterion_scoring_run`); der Job uebernimmt sie. Den
     `RemoteCategoryClassificationRun` legt weiterhin erst der Worker an."""
     if not settings.category_selection_enabled:
         raise HTTPException(

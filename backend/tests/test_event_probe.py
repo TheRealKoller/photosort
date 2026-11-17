@@ -87,6 +87,7 @@ from photosort.models import (
 )
 from photosort.place_dataset import extract_line, write_extracts
 from photosort.selection import carried_motifs, effective_target
+from photosort.worker._criterion import ranking as worker_ranking
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -313,7 +314,7 @@ class TestTheReadPath:
     ) -> None:
         """Beides speist den Album-Richtwert, und beides kommt aus DEM Projekt: `NULL` heisst
         "nicht selbst eingestellt", und die Bilderzahl ist jedes Foto des Projekts - dieselbe
-        Menge, die auch `worker.py` zaehlt, nicht die Kandidatenmenge des Laufs."""
+        Menge, die auch `photosort.worker` zaehlt, nicht die Kandidatenmenge des Laufs."""
         project_id = await _project(db_session)
         ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
         await _photo(db_session, project_id, minutes=5, gps=(43.52, 16.45))
@@ -2738,7 +2739,7 @@ class TestTheProbeIsReadOnly:
 
     def test_the_inputs_module_lies_in_the_graph_of_the_run(self) -> None:
         """DIE GEGENPROBE ZUR IMPORT-GRAPH-ZUSAGE: `event_inputs.py` MUSS im Graphen von
-        `worker.py` liegen - sonst waere aus dem gemeinsamen Modul still wieder eine Kopie
+        `photosort.worker` liegen - sonst waere aus dem gemeinsamen Modul still wieder eine Kopie
         geworden, und das Messkommando maesse etwas anderes als der Lauf (ADR 0117 Punkt 5)."""
         assert "photosort.event_inputs" in import_closure("photosort.worker")
         assert "photosort.event_inputs" in import_closure("photosort.event_probe")
@@ -3096,7 +3097,7 @@ class TestBothPathsSeeTheSameCandidates:
     ) -> None:
         project_id = await _seed_measured_project(db_session)
         captured: list[tuple[EventCandidate, ...]] = []
-        through_the_run = worker.read_event_inputs
+        through_the_run = worker_ranking.read_event_inputs
 
         async def recording(
             session: AsyncSession, seen_project_id: int, photo_ids: Collection[int]
@@ -3105,7 +3106,7 @@ class TestBothPathsSeeTheSameCandidates:
             captured.append(inputs.candidates)
             return inputs
 
-        monkeypatch.setattr(worker, "read_event_inputs", recording)
+        monkeypatch.setattr(worker_ranking, "read_event_inputs", recording)
 
         # Der Neuaufbau ist der Lauf-Pfad: er ermittelt die Kandidatenmenge selbst und ruft
         # `_build_grouping_and_rankings` - genau wie der Kriterien-Lauf.

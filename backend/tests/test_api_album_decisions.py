@@ -6,7 +6,7 @@ besonders: Seine Authentifizierung ist an der Funktionssignatur nicht sichtbar -
 `current_user`, dessen Fehlen auffiele. Der Torwaechter haengt deshalb am ROUTER, der Router steht
 in `test_auth_guard.py::_protected_router_operations()`, UND es gibt zusaetzlich den eigenen,
 pfadbenannten 401-Fall hier (Auflage S1). Die Doppelung traegt, weil der Listeneintrag weder sein
-eigenes Vergessen noch eine spaetere Verschiebung des Endpunkts nach `api/photos.py` ueberlebt.
+eigenes Vergessen noch eine spaetere Verschiebung des Endpunkts nach `api/photos/` ueberlebt.
 
 Vier Aussagen brechen ohne eigenen Fall still:
 

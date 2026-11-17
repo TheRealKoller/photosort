@@ -88,7 +88,7 @@ def extract_camera(content: bytes, photo_id: int | None = None) -> CameraIdentit
     - liefert die normalisierte Identitaet oder `None`.
 
     Liest aus demselben bereits per Range-Read geladenen Byte-Fenster wie die beiden Nachbarn
-    (`worker.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusaetzlichen Netzwerkzugriff.
+    (`worker/scan.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusaetzlichen Netzwerkzugriff.
 
     Best-effort wie die Nachbarn: KEIN Lesefehler bricht einen Scan ab - ein abgeschnittenes
     Fenster, undekodierbare Bytes und ein Rohwert fremden Typs ergeben alle "keine Kamera", und
@@ -212,7 +212,7 @@ def extract_gps(content: bytes, photo_id: int | None = None) -> tuple[float, flo
     `(lat, lon)` in Dezimalgrad oder `None`.
 
     Liest aus demselben bereits per Range-Read geladenen Byte-Fenster wie `extract_taken_at`
-    (`worker.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusätzlichen Netzwerkzugriff.
+    (`worker/scan.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusätzlichen Netzwerkzugriff.
 
     PAAR-INVARIANTE: BEIDE Werte oder KEINER. Scheitert eine Komponente, sind beide
     verworfen - sonst stünde in der Datenbank ein halbes Koordinatenpaar und jede spätere

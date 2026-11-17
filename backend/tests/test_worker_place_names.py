@@ -1483,7 +1483,7 @@ class TestTheRequestPathAsksNobody:
     authentifizierte Anfrage - auch eine mit gestohlenem JWT - Arbeit an einem Dritten aus."""
 
     def _call_arguments(self, function_name: str) -> list[ast.expr]:
-        path = module_file("photosort.worker")
+        path = module_file("photosort.worker.criterion_scoring")
         assert path is not None
         tree = ast.parse(path.read_text(encoding="utf-8"))
         function = next(

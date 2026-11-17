@@ -5,7 +5,7 @@ Migrationsschritt leitet welche aus dem Bestand ab. Das Log haelt, DASS korrigie
 Bestand haelt nur den heutigen Stand und traegt die Information nicht.
 
 `event_id` traegt KEINEN Fremdschluessel, obwohl die Spalte wie eine Referenz aussieht:
-`worker.py::rebuild_run_grouping` loescht die `Event`-Zeilen eines Laufs und legt sie neu an. Ein
+`worker/criterion_scoring.py` loescht die `Event`-Zeilen eines Laufs und legt sie neu an. Ein
 echter Fremdschluessel hielte den Neuaufbau an oder risse Log-Zeilen mit - beides braeche die
 Append-only-Zusage. Die vier Nachweise dieser Zusage stehen verteilt: am Modell und als
 AST-Waechter in `test_feedback_event_model.py`, an der gerenderten Postgres-DDL in

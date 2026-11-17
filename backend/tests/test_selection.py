@@ -1309,18 +1309,45 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
     ein Band waere eine Rangfolge zwischen Motiven durch die Hintertuer."""
 
     _SOURCE_DIR = Path(photosort.__file__).resolve().parent
-    # `api/photos.py` steht seit Spec 0430 dabei: der Lesepfad liefert `MotifStrengthOut.present`
-    # und liest damit erstmals eine AUSWAHLGRENZE - die Datei faellt ab hier unter denselben
+    # `api/photos/` steht seit Spec 0430 dabei: der Lesepfad liefert `MotifStrengthOut.present`
+    # und liest damit erstmals eine AUSWAHLGRENZE - das Paket faellt ab hier unter denselben
     # Waechter wie die auswaehlenden Module. Der Eintrag ist ein PFAD relativ zu `_SOURCE_DIR`,
-    # kein flacher Dateiname.
+    # kein flacher Dateiname; seit Spec 0647 dateiweise ausgeschrieben statt per Glob.
     # `events.py` steht seit Spec 0477 dabei: der Motivwechsel als Trennsignal liest ueber
     # `carried_motifs` erstmals eine AUSWAHLGRENZE und faellt ab hier unter denselben Waechter.
     _SELECTING_MODULES = (
         "selection.py",
         "ranking.py",
         "quality.py",
-        "worker.py",
-        "api/photos.py",
+        # Das Worker-Paket steht seit Spec 0647 da und wird deshalb dateiweise aufgezaehlt -
+        # ausgeschrieben, nicht per Glob: eine neu hinzukommende Datei soll bewusst hier
+        # eingetragen werden muessen, statt still unter denselben Waechter zu fallen.
+        "worker/__init__.py",
+        "worker/_runs.py",
+        "worker/_criterion/__init__.py",
+        "worker/_criterion/eye.py",
+        "worker/_criterion/landmark.py",
+        "worker/_criterion/local.py",
+        "worker/_criterion/persons.py",
+        "worker/_criterion/ranking.py",
+        "worker/classification.py",
+        "worker/criterion_scoring.py",
+        "worker/export.py",
+        "worker/remote_categories.py",
+        "worker/scan.py",
+        "worker/scoring.py",
+        "worker/stall_reaper.py",
+        # Das API-Paket wird wie das Worker-Paket dateiweise aufgezaehlt - eine neu
+        # hinzukommende Datei soll bewusst hier eingetragen werden muessen.
+        "api/photos/__init__.py",
+        "api/photos/_conversion.py",
+        "api/photos/_reads.py",
+        "api/photos/album_draft.py",
+        "api/photos/album_selection.py",
+        "api/photos/ausschuss.py",
+        "api/photos/draft_exchange.py",
+        "api/photos/duplicate_groups.py",
+        "api/photos/image.py",
         "events.py",
     )
     _DISPLAY_BANDS = ("MOTIF_STRENGTH_BAND_STRONG", "MOTIF_STRENGTH_BAND_MEDIUM")

@@ -1,13 +1,13 @@
 """Bereinigung verwaister Bildkopien nach jedem erfolgreichen Scan.
 
-Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `worker.py`: die async-Klammer um den
+Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `photosort.worker`: die async-Klammer um den
 Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenbankabfrage, und
-`worker.py` ist bereits gross genug. Die reine, DB-freie Mechanik darunter
+`photosort.worker` ist bereits gross genug. Die reine, DB-freie Mechanik darunter
 (`collect_cache_entries`/`delete_orphaned_entries`) lebt in `thumbnails.py`, wo auch die
 Pfadbildung liegt, die das Muster wiedererkennt.
 
 `cache_key` ist `sha256(f"{photo_id}:{etag}")`. Dieselbe Rechnung, die eine alte Fassung
-unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos.py`,
+unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos/`,
 `measure_cache_usage` und `delete_cached_variants` rechnen alle drei aus VORHANDENEN Zeilen. Was zu
 keiner Zeile mehr gehoert, ist deshalb weder sichtbar noch loeschbar. Wer diese Dateien finden
 will, muss das Verzeichnis lesen - genau einmal, an genau dieser Stelle.

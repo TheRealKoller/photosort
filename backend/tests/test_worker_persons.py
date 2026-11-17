@@ -24,7 +24,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import photosort.worker as worker
 from photosort.api.stats import get_project_stats
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.face_analysis import MODEL_KEY, FaceAnalyzerLike, FaceBox
@@ -58,7 +57,9 @@ from photosort.persons import (
     set_correction,
 )
 from photosort.remote_classification import RemoteClassification
+from photosort.worker import criterion_scoring as worker_criterion_scoring
 from photosort.worker import run_classification
+from photosort.worker._criterion import persons as worker_persons_module
 from tests.face_fakes import (
     SENTINEL_TEXT,
     Color,
@@ -69,7 +70,7 @@ from tests.face_fakes import (
     sentinel_box,
     write_display_variant,
 )
-from tests.import_closure import module_file
+from tests.import_closure import package_files
 from tests.phase_binding import assert_phase_binding
 
 ANNA = "Annabell-Merkname"
@@ -334,13 +335,15 @@ async def test_the_phase_runs_after_ranking_and_before_success(
     order: list[str] = []
     observed: list[tuple[ClassificationPhase | None, ScanStatus]] = []
 
-    original_rankings = worker._build_grouping_and_rankings
+    original_rankings = worker_criterion_scoring._build_grouping_and_rankings
 
     async def recording_rankings(*args: Any, **kwargs: Any) -> Any:
         order.append("ranking")
         return await original_rankings(*args, **kwargs)
 
-    monkeypatch.setattr(worker, "_build_grouping_and_rankings", recording_rankings)
+    monkeypatch.setattr(
+        worker_criterion_scoring, "_build_grouping_and_rankings", recording_rankings
+    )
 
     def on_detect(color: Color) -> None:
         order.append("persons")
@@ -389,7 +392,7 @@ async def test_every_photo_of_the_project_is_recognised_including_the_ausschuss(
 async def test_progress_and_watchdog_are_written_per_block(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(worker, "PERSONS_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_persons_module, "PERSONS_COMMIT_BATCH_SIZE", 1)
     lay = await _Lay(db_session, tmp_path).build()
     for index, color in enumerate((RED, GREEN, BLUE)):
         await _photo(db_session, lay.project, tmp_path, f"p{index}", color)
@@ -558,7 +561,7 @@ async def test_a_person_deleted_mid_run_leaves_no_row_and_the_other_blocks_are_w
 ) -> None:
     """S10: Die Loeschung laeuft ueber eine ZWEITE Verbindung, waehrend der Lauf rechnet. Das
     Schreiben des Blocks scheitert am echten Fremdschluessel; die Phase verwirft nur ihn."""
-    monkeypatch.setattr(worker, "PERSONS_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_persons_module, "PERSONS_COMMIT_BATCH_SIZE", 1)
     database = tmp_path / "lauf.db"
     cache_dir = tmp_path / "cache"
     async with _fresh_session(f"sqlite+aiosqlite:///{database}") as session:
@@ -659,26 +662,29 @@ async def test_no_run_writes_or_deletes_a_correction(
 def test_the_worker_names_the_correction_table_nowhere() -> None:
     """Kein Lauf schreibt oder loescht `photo_person_corrections` - der Worker nennt das Modell
     nicht einmal."""
-    path = module_file("photosort.worker")
-    assert path is not None
+    paths = package_files("photosort.worker")
+    assert paths
     names = {
         node.id
+        for path in paths
         for node in ast.walk(ast.parse(path.read_text("utf-8")))
         if isinstance(node, ast.Name)
     }
 
     assert "PhotoPersonCorrection" not in names
-    assert "photo_person_corrections" not in path.read_text("utf-8")
+    for path in paths:
+        assert "photo_person_corrections" not in path.read_text("utf-8")
 
 
 def test_the_worker_never_reads_a_person_name() -> None:
-    """S6: `worker.py` importiert beide Seiten. Die Phase liest nur Id und Schwerpunkt ueber
+    """S6: `photosort.worker` importiert beide Seiten. Die Phase liest nur Id und Schwerpunkt ueber
     `current_centroids` - das Modell `Person` kommt im Worker nicht vor."""
-    path = module_file("photosort.worker")
-    assert path is not None
-    tree = ast.parse(path.read_text("utf-8"))
+    paths = package_files("photosort.worker")
+    assert paths
+    trees = [ast.parse(path.read_text("utf-8")) for path in paths]
     imported = {
         alias.name
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module == "photosort.models"
         for alias in node.names
@@ -687,6 +693,7 @@ def test_the_worker_never_reads_a_person_name() -> None:
     assert "Person" not in imported
     assert "current_centroids" in {
         alias.name
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module == "photosort.persons"
         for alias in node.names

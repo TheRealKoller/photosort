@@ -20,7 +20,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import events as events_module
-from photosort import worker
 from photosort.cameras import shifted
 from photosort.models import (
     CategoryMethod,
@@ -39,10 +38,29 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.thumbnails import display_path
+from photosort.worker import criterion_scoring as worker_criterion_scoring
 from photosort.worker import rebuild_run_grouping, run_criterion_scoring
+from photosort.worker._criterion import eye as worker_eye
 from tests.import_closure import module_file
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
+
+
+def _function_of(module: str, name: str) -> ast.AsyncFunctionDef | ast.FunctionDef:
+    """Die Funktion `name` aus der Datei, die sie DEFINIERT.
+
+    Nach der Paket-Aufteilung (Spec 0647) liegen die Lauf-Funktionen in verschiedenen Dateien;
+    ein Waechter, der eine Funktion prueft, sucht sie dort, wo sie steht, statt ueber eine
+    namensbasierte Vereinigung mehrerer Dateien zu gehen.
+    """
+    path = module_file(module)
+    assert path is not None
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef) and node.name == name
+    )
 
 
 def _section_gap() -> timedelta:
@@ -600,7 +618,7 @@ class TestTheRebuildLoadsNoEmbeddingModel:
         def _explode() -> NoReturn:
             pytest.fail("rebuild_run_grouping darf kein Einbettungsmodell bauen (S10)")
 
-        monkeypatch.setattr(worker, "build_label_embedder", _explode)
+        monkeypatch.setattr(worker_criterion_scoring, "build_label_embedder", _explode)
 
         await rebuild_run_grouping(db_session, project.id)
 
@@ -608,14 +626,7 @@ class TestTheRebuildLoadsNoEmbeddingModel:
         """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass der
         Bau ueber genau diesen Modulnamen laeuft. Ein direkt importierter zweiter Bauweg roetete
         ihn nicht."""
-        path = module_file("photosort.worker")
-        assert path is not None
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        rebuild = next(
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == "rebuild_run_grouping"
-        )
+        rebuild = _function_of("photosort.worker.criterion_scoring", "rebuild_run_grouping")
 
         mentioned = {node.id for node in ast.walk(rebuild) if isinstance(node, ast.Name)}
 
@@ -794,7 +805,7 @@ class TestTheRebuildNeverCallsTheEyeService:
         def _explode() -> NoReturn:
             pytest.fail("rebuild_run_grouping darf keinen Eye-Client bauen (S5)")
 
-        monkeypatch.setattr(worker, "build_eye_client", _explode)
+        monkeypatch.setattr(worker_eye, "build_eye_client", _explode)
 
         await rebuild_run_grouping(db_session, project.id)
 
@@ -805,24 +816,14 @@ class TestTheRebuildNeverCallsTheEyeService:
         """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass ein Bau
         ueber den Modulnamen laeuft. Ein Weg ueber einen Default-Parameter (`_run_eye_phase`
         bindet `build_eye_client` beim Import) roetete ihn nicht."""
-        path = module_file("photosort.worker")
-        assert path is not None
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        functions = {
-            node.name: node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)
-        }
-        mentioned = {
-            node.id
-            for node in ast.walk(functions["rebuild_run_grouping"])
-            if isinstance(node, ast.Name)
-        }
+        rebuild = _function_of("photosort.worker.criterion_scoring", "rebuild_run_grouping")
+        classification = _function_of("photosort.worker.classification", "run_classification")
+        mentioned = {node.id for node in ast.walk(rebuild) if isinstance(node, ast.Name)}
 
         assert "build_eye_client" not in mentioned
         assert "_run_eye_phase" not in mentioned
         # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
         assert "_build_grouping_and_rankings" in mentioned
         assert "_run_eye_phase" in {
-            node.id
-            for node in ast.walk(functions["run_classification"])
-            if isinstance(node, ast.Name)
+            node.id for node in ast.walk(classification) if isinstance(node, ast.Name)
         }

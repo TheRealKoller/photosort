@@ -211,7 +211,7 @@ def _usage_from_response(
     KEIN Fehler - eine erfolgreiche Klassifizierung darf niemals daran scheitern, dass die
     Abrechnungsangabe fehlt. Der Aufruf trägt dann nichts zur Kostensumme bei; sichtbar wird die
     Lücke über die WARNING-Zeile hier UND nutzerseitig über Befund (b) des
-    Unvollständigkeits-Hinweises, da worker.py die Aufrufzahl unabhängig vom Tokenbeitrag
+    Unvollständigkeits-Hinweises, da photosort.worker die Aufrufzahl unabhängig vom Tokenbeitrag
     hochzählt.
 
     SICHERHEIT: die Logzeile enthält ausschließlich eine feste Meldung, `type(exc).__name__` und
@@ -358,7 +358,7 @@ class CloudRequestThrottle:
     @property
     def min_interval_seconds(self) -> float:
         """Der gehaltene Mindestabstand - lesbar herausgegeben für den Invariantentest, der die
-        Einreihung eines vollen Anfrage-Blocks gegen worker.py::STALL_THRESHOLD rechnet."""
+        Einreihung eines vollen Anfrage-Blocks gegen worker/stall_reaper.py::STALL_THRESHOLD rechnet."""
         return self._min_interval_seconds
 
     @property
@@ -541,9 +541,9 @@ DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER: dict[str, int] = {
 # (CLOUD_VISION_REQUESTS_PER_MINUTE).
 #
 # Schlimmster Fall je Anfrage: 120 s Warten + 5 x 60 s (VISION_REQUEST_TIMEOUT_SECONDS) = 420 s
-# gegen worker.py::STALL_THRESHOLD von 15 Minuten. Diese Rechnung ist als Invariantentest
+# gegen worker/stall_reaper.py::STALL_THRESHOLD von 15 Minuten. Diese Rechnung ist als Invariantentest
 # festgeschrieben (tests/test_cloud_vision.py) - im Produktivcode gibt es die Verbindung nicht,
-# cloud_vision.py darf worker.py nicht importieren.
+# cloud_vision.py darf photosort.worker nicht importieren.
 VISION_MAX_RATE_LIMIT_ATTEMPTS = 5  # Versuche INSGESAMT, nicht Wiederholungen
 VISION_RETRY_BUDGET_SECONDS = 120.0  # summierte Wartezeit EINER Anfrage
 VISION_MAX_SINGLE_WAIT_SECONDS = 60.0  # je einzelnem Wartevorgang

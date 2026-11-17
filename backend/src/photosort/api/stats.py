@@ -259,7 +259,7 @@ async def _local_database_bytes_estimate(
 
 
 async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project:
-    """Reine Existenzpruefung (dasselbe Muster wie in api/projects.py/api/photos.py) - KEINE
+    """Reine Existenzpruefung (dasselbe Muster wie in api/projects.py/api/photos/) - KEINE
     Autorisierungsgrenze: es gibt kein projektbezogenes Berechtigungsmodell, beide Nutzer duerfen
     alle Projekte sehen. Die Authentifizierung sitzt am Router."""
     project = await session.get(Project, project_id)
@@ -275,7 +275,7 @@ def _photos_of_project(project_id: int) -> Select[tuple[int]]:
 async def _latest_successful_criterion_scoring_run_id(
     session: AsyncSession, project_id: int
 ) -> int | None:
-    """Bewusst identisch zu api/photos.py::_latest_successful_criterion_scoring_run_id (dort
+    """Bewusst identisch zu api/photos/_reads.py::_latest_successful_criterion_scoring_run_id (dort
     ebenfalls lokal gehalten): sortiert nach `started_at DESC`, damit ein neuerer FEHLGESCHLAGENER
     Lauf den aelteren erfolgreichen nicht verdraengt."""
     return (

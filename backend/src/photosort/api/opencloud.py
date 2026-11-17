@@ -17,7 +17,7 @@ router = APIRouter(
 
 # Reiner Anzeige-/UX-Wert ohne betriebliche Tuning-Notwendigkeit - anders als
 # settings.opencloud_folder_count_concurrency deshalb eine Modul-Konstante statt eines
-# Settings-Felds, analog worker.py::SCAN_COMMIT_BATCH_SIZE.
+# Settings-Felds, analog worker/scan.py::SCAN_COMMIT_BATCH_SIZE.
 FOLDER_COUNT_LIMIT = 500
 
 
@@ -123,7 +123,7 @@ async def folder_counts(
         return_exceptions=True,
     )
 
-    # Verifizierter Python-Async-Fallstrick (siehe worker.py::_process_scan_block):
+    # Verifizierter Python-Async-Fallstrick (siehe worker/scan.py::_process_scan_block):
     # return_exceptions=True faengt ein CancelledError einer einzelnen Kind-Coroutine NICHT als
     # Exception ab, sondern reicht es als gewoehnliches Ergebniselement durch - das muss weiterhin
     # propagieren (z.B. bei einem echten Request-Abbruch), statt als error=True verschluckt zu

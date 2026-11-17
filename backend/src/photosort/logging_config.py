@@ -9,7 +9,7 @@ import sys
 # horizon.py).
 #
 # Aufgerufen an BEIDEN Prozess-Einstiegspunkten (main.py::create_app() fuer den API-Prozess,
-# worker.py::WorkerSettings.on_startup fuer den Worker-Prozess) - beide Prozesse bekommen
+# worker/__init__.py::WorkerSettings.on_startup fuer den Worker-Prozess) - beide Prozesse bekommen
 # dieselbe Konfiguration, obwohl nur der Worker sie heute tatsaechlich braucht, damit ein
 # kuenftiges Feature mit API-seitigem Logging-Bedarf nicht erneut eine Konfigurationsentscheidung
 # treffen muss.

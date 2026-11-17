@@ -49,6 +49,7 @@ from photosort.models import (
     User,
 )
 from tests.event_rows import event_id_of_run, event_of_run
+from tests.import_closure import package_files
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -665,7 +666,7 @@ async def test_deleting_event_cascades_to_photo_rankings(db_session: AsyncSessio
 async def test_deleting_photo_cascades_to_photo_rankings(db_session: AsyncSession) -> None:
     """specs/features/0044-projekte-loeschen.md, AK "Voraussetzung (Cascade-Fix)", Foto-Seite.
 
-    Das ist der Re-Scan-Defekt aus worker.py::run_project_scan: verschwindet ein Foto auf
+    Das ist der Re-Scan-Defekt aus worker/scan.py::run_project_scan: verschwindet ein Foto auf
     OpenCloud, loescht der Scan die Photo-Zeile - ohne diese Relationship bleibt ihre
     photo_rankings-Zeile stehen (und scheitert unter echtem Postgres am Fremdschluessel)."""
     _run, photo = await _make_ranking_graph(db_session)
@@ -850,7 +851,7 @@ async def test_photo_landmark_detection_has_a_provider_column(db_session: AsyncS
 # specs/architecture/0002-testkonzept.md ab hier: Cascade-Tests fuer die drei neuen Tabellen
 # (fine_labels, photo_fine_labels, remote_category_classification_runs) - Review-Fund
 # (test-engineer): fehlten trotz explizitem Testkonzept-Verweis. Realer Codepfad, der das
-# betrifft: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
+# betrifft: worker/scan.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
 # ein bereits remote-klassifiziertes Foto mit photo_fine_labels-Zeilen durchlaeuft diesen
 # Pfad tatsaechlich.
 
@@ -1039,7 +1040,7 @@ async def test_photo_cloud_vision_error_duplicate_phase_for_same_photo_conflicts
 ) -> None:
     # Kein Verlauf (ADR 0035 Punkt 2): eine zweite Zeile fuer dasselbe (photo_id, phase) verletzt
     # den Composite-PK - ein erneuter Fehlschlag muss stattdessen ueber ein Upsert
-    # (worker.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
+    # (worker/_runs.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
     # Zeile einfuegen.
     photo = await _make_photo(db_session)
     now = datetime.now(UTC)
@@ -1455,7 +1456,7 @@ async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
 
 
 # Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1).
-_ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker.py", "api/cameras.py"})
+_ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker/scan.py", "api/cameras.py"})
 
 _TAKEN_AT = "taken_at"
 
@@ -1467,7 +1468,7 @@ def _writes_taken_at(source: str) -> bool:
     DREI Schreibformen, weil die beiden erlaubten Stellen zwei VERSCHIEDENE benutzen und die
     dritte im Projekt naheliegt:
 
-    1. Attributzuweisung `photo.taken_at = ...` (`worker.py::_process_scan_block`).
+    1. Attributzuweisung `photo.taken_at = ...` (`worker/scan.py::_process_scan_block`).
     2. `taken_at` als Schluessel eines Dict-Literals - die Form des gebuendelten Bulk-Updates
        `session.execute(update(Photo), [{"id": ..., "taken_at": ...}])` (`api/cameras.py`).
     3. `taken_at` als Schluesselwort eines `.values(...)`-Aufrufs - die dritte im Projekt
@@ -1559,7 +1560,7 @@ def test_the_guard_ignores_reading_the_column() -> None:
 
 # specs/features/0429-auswahl-richtwert-und-mischung.md: die EINE Schreibstelle auf
 # `PhotoRanking.selection_position`.
-_ALLOWED_SELECTION_POSITION_WRITERS = frozenset({"worker.py"})
+_ALLOWED_SELECTION_POSITION_WRITERS = frozenset({"worker/_criterion/ranking.py"})
 
 _SELECTION_POSITION = "selection_position"
 
@@ -1639,7 +1640,7 @@ def test_the_selection_guard_sees_every_write_form_it_claims_to_cover(snippet: s
 
 def test_the_selection_guard_ignores_reading_and_comparing() -> None:
     """Zwei Gegenproben: Lesen und Vergleichen zaehlen nie. Ohne sie waere jeder Lesepfad
-    (api/photos.py) ein Befund."""
+    (api/photos/) ein Befund."""
     assert not _writes_selection_position(
         "select(PhotoRanking.photo_id).order_by(PhotoRanking.selection_position)"
     )
@@ -2087,8 +2088,8 @@ _DECISION_MODEL = "FinalSelectionDecision"
 # GLEICHHEIT: Findet der Waechter eine erlaubte Stelle nicht mehr, prueft er fuer sie nichts.
 _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
-        "api/photos.py::_final_selection_decisions",
-        "api/photos.py::album_selection",
+        "api/photos/_reads.py::_final_selection_decisions",
+        "api/photos/album_selection.py::album_selection",
         # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
         # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
         # bestimmen - die Menge, die der Export nimmt. Kein Entwurfszweig, keine zweite Ebene.
@@ -2337,7 +2338,7 @@ _ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"_set_phase"})
 # Spec 0641 freigegeben: `demo_state.py` schreibt einen FABRIZIERTEN Endzustand (abgebrochener
 # Lauf) - beide Spalten zusammen im Konstruktor, kein Uebergang und kein `_set_phase`; ein
 # zweiter Schreiber im laufenden Betrieb bleibt damit weiterhin ausgeschlossen.
-_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker.py", "demo_state.py"})
+_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker/_runs.py", "demo_state.py"})
 
 _PHASE = "phase"
 _PHASE_STARTED_AT = "phase_started_at"
@@ -2436,7 +2437,7 @@ def _functions_writing(source: str, field: str) -> set[str]:
     nicht stiller Eintrag.
 
     Feiner als der Modulwaechter unten, und das ist der Punkt: Waeren nur die MODULE geprueft,
-    duerfte eine beliebige zweite Funktion in `worker.py` die Phase setzen, ohne den Zeitstempel
+    duerfte eine beliebige zweite Funktion in `photosort.worker` die Phase setzen, ohne den Zeitstempel
     mitzufuehren - der Modulwaechter bliebe gruen.
 
     Ein Name gilt nur dann als `ClassificationReview`, wenn ihn die Funktion selbst nachweist:
@@ -2482,8 +2483,18 @@ def _writes_a_phase_field(source: str) -> bool:
     return bool(_functions_writing(source, _PHASE) or _functions_writing(source, _PHASE_STARTED_AT))
 
 
-def _worker_source() -> str:
-    return (Path(photosort.__file__).resolve().parent / "worker.py").read_text(encoding="utf-8")
+def _worker_sources() -> list[str]:
+    """Die Quelldateien des Worker-PAKETS (Spec 0647), jede fuer sich.
+
+    Dateiweise und nicht zusammengezogen: ein Zusammenzug mehrerer Module waere kein gueltiges
+    Python (`from __future__ import annotations` steht in jeder Datei), und Funktionen gleichen
+    Namens aus zwei Dateien verschmoelzen still zu einer."""
+    return [path.read_text(encoding="utf-8") for path in package_files("photosort.worker")]
+
+
+def _worker_writers(field: str) -> set[str]:
+    """Die Funktionen des Worker-Pakets, die `field` schreiben - ueber alle Dateien vereinigt."""
+    return set().union(*(_functions_writing(source, field) for source in _worker_sources()))
 
 
 def test_exactly_one_function_writes_the_phase() -> None:
@@ -2494,10 +2505,10 @@ def test_exactly_one_function_writes_the_phase() -> None:
 
     Geprueft wird GLEICHHEIT, nicht Teilmenge: Findet der Waechter die erlaubte Stelle nicht mehr,
     prueft er fuer sie nichts - so bliebe er gruen, nachdem die Bindung ausgebaut wurde."""
-    writers = _functions_writing(_worker_source(), _PHASE)
+    writers = _worker_writers(_PHASE)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
-        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase` setzen, weicht "
+        "Die Menge der Funktionen in photosort.worker, die `CriterionScoringRun.phase` setzen, weicht "
         f"von der genau einen erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
         f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
         f"{sorted(set(_ALLOWED_PHASE_WRITER_FUNCTIONS) - writers)}"
@@ -2508,10 +2519,10 @@ def test_exactly_one_function_writes_the_phase_start() -> None:
     """Dieselbe Pruefung fuer die zweite Spalte. Sie steht EINZELN da, weil die erste allein auch
     gegen ein `_set_phase` bestuende, das `phase_started_at` gar nicht mehr anfasst - dann gaebe
     es schlicht keine zweite Schreibstelle, und die erste Zusicherung bliebe gruen."""
-    writers = _functions_writing(_worker_source(), _PHASE_STARTED_AT)
+    writers = _worker_writers(_PHASE_STARTED_AT)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
-        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase_started_at` "
+        "Die Menge der Funktionen in photosort.worker, die `CriterionScoringRun.phase_started_at` "
         f"setzen, weicht von der genau einen erlaubten ab "
         f"({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
         f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
@@ -2522,15 +2533,13 @@ def test_exactly_one_function_writes_the_phase_start() -> None:
 def test_the_one_phase_writer_sets_both_columns() -> None:
     """Die dritte Zusicherung, und die eigentliche Bindung: DIESELBE Funktion setzt beide. Ohne
     sie waeren die beiden Mengen oben auch dann erfuellt, wenn sie leer waeren."""
-    source = _worker_source()
-
-    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE)
-    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE_STARTED_AT)
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _worker_writers(_PHASE)
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _worker_writers(_PHASE_STARTED_AT)
 
 
 def test_exactly_the_known_modules_write_a_phase_field() -> None:
     """PAKETWEIT, nicht nur modulintern: Ohne diese Pruefung wanderte die Schreibstelle nach
-    `api/projects.py` ab, und der Funktionswaechter oben bliebe gruen, weil er nur `worker.py`
+    `api/projects.py` ab, und der Funktionswaechter oben bliebe gruen, weil er nur `photosort.worker`
     liest.
 
     Der Suchraum wird GEMESSEN (`rglob`), nicht gelistet - eine neu hinzukommende Datei ist sonst
@@ -2593,7 +2602,7 @@ def test_the_phase_guard_does_not_confuse_the_two_columns() -> None:
 
 def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
     """Gegenprobe: `PhotoCloudVisionError` und `CloudVisionStatusOut` fuehren eine gleichnamige
-    Spalte. Zaehlten sie mit, waeren `worker.py::_record_cloud_vision_error` und `api/photos.py`
+    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::_record_cloud_vision_error` und `api/photos/`
     Befunde - und der Waechter waere nur noch abzuschalten."""
     assert (
         _functions_writing(
@@ -2611,7 +2620,7 @@ def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
 
 def test_the_phase_guard_ignores_a_parameter_or_a_local_variable() -> None:
     """Gegenprobe: ein gleichnamiger Funktionsparameter und eine gleichnamige lokale Variable
-    sind keine Spaltenzuweisung. `worker.py` fuehrt beides."""
+    sind keine Spaltenzuweisung. `photosort.worker` fuehrt beides."""
     assert _functions_writing("def f(phase: str) -> None:\n    pass", _PHASE) == set()
     assert _functions_writing("def f():\n    phase = compute()", _PHASE) == set()
 

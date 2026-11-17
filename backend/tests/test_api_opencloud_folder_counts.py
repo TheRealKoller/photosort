@@ -390,7 +390,7 @@ async def test_folder_counts_endpoint_respects_concurrency_limit(
 
 
 async def test_folder_counts_repropagates_cancelled_error_from_a_single_subfolder_count() -> None:
-    """Verifizierter Python-Async-Fallstrick (siehe worker.py::_process_scan_block, ADR 0020,
+    """Verifizierter Python-Async-Fallstrick (siehe worker/scan.py::_process_scan_block, ADR 0020,
     test_worker_scan_project.py::
     test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_download): ein CancelledError
     aus EINER einzelnen Zaehl-Coroutine wird von asyncio.gather(..., return_exceptions=True) NICHT

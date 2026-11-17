@@ -50,6 +50,7 @@ from photosort.remote_classification import (
     RemoteClassification,
 )
 from photosort.thumbnails import display_path
+from photosort.worker import remote_categories as worker_remote_categories
 from photosort.worker import run_remote_category_classification, select_remote_category_candidates
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
@@ -708,7 +709,7 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
 
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2/3 ab hier: worker.py::_record_cloud_vision_error/
+# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::_record_cloud_vision_error/
 # _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
 # (Teststrategie-Abschnitt der Spec), analog test_worker_criterion_scoring.py.
 
@@ -937,7 +938,7 @@ async def test_cancelled_error_propagates_and_fails_the_run(
     # _fail_run ausgeloesten session.rollback() best-effort abgelaufen; ein direkter Attributzugriff
     # ausserhalb eines aktiven Session-await-Kontexts wuerde sonst denselben MissingGreenlet-
     # Fallstrick ausloesen, den _fail_run fuer `run` bereits per session.refresh(run) vermeidet
-    # (siehe worker.py::_fail_run-Kommentar) - hier reicht die ungefilterte Abfrage aus.
+    # (siehe worker/_runs.py::_fail_run-Kommentar) - hier reicht die ungefilterte Abfrage aus.
     run_row = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().first()
     assert run_row is not None
     assert run_row.status == ScanStatus.FAILED
@@ -1680,7 +1681,7 @@ async def test_a_failure_before_the_counters_keeps_the_original_error_message(
     def _explode(**kwargs: object) -> NoReturn:
         raise RuntimeError("simulierter Fehler beim Laden des Feinlabel-Snapshots")
 
-    monkeypatch.setattr(worker, "FineLabelSnapshotEntry", _explode)
+    monkeypatch.setattr(worker_remote_categories, "FineLabelSnapshotEntry", _explode)
 
     run = await run_remote_category_classification(
         db_session,
@@ -2261,7 +2262,9 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         throttle = _throttle_recording_waits([])
-        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        monkeypatch.setattr(
+            worker_remote_categories, "throttle_for_provider", lambda _provider: throttle
+        )
         project = await _make_project(db_session)
         project.cloud_vision_detection_enabled = True
         await db_session.commit()
@@ -2292,7 +2295,9 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         throttle = _throttle_recording_waits([])
-        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        monkeypatch.setattr(
+            worker_remote_categories, "throttle_for_provider", lambda _provider: throttle
+        )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
             run, _photo = await _run_with_real_category_client(
@@ -2326,7 +2331,9 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         throttle = _throttle_recording_waits([])
         throttle.record_retry_wait(41.0)
         throttle.record_retry_wait(1.0)
-        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        monkeypatch.setattr(
+            worker_remote_categories, "throttle_for_provider", lambda _provider: throttle
+        )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
             await _run_with_real_category_client(

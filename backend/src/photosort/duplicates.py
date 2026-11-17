@@ -305,8 +305,8 @@ def _group_slot(
 # SICHERHEITSAUFLAGE (S1) - DASSELBE PRAEDIKAT IST DIE GRENZE DES HOMESERVERS. Es begrenzt, welche
 # Fotos den Homeserver Richtung Cloud-Anbieter verlassen duerfen, und gilt fuer JEDE Abfrage, die
 # Cloud-Kandidaten bestimmt. Das sind VIER, nicht eine: die beiden Laeufe
-# (`worker.py::run_criterion_scoring`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
-# `worker.py::select_remote_category_candidates`) und die beiden vorgelagerten Kostenschaetzungen
+# (`worker/criterion_scoring.py`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
+# `worker/remote_categories.py`) und die beiden vorgelagerten Kostenschaetzungen
 # (`api/projects.py::_count_remote_category_candidates`, `_count_landmark_candidates`). Die
 # Schaetzungen folgen der Auswahl nicht von selbst, sondern sind eigene Anweisungen; sie zaehlen
 # dieselbe Menge, die der Lauf sendet. Untersagte Alternative ist die naheliegende Teilumsetzung -
@@ -314,8 +314,8 @@ def _group_slot(
 # `suggested_status IS NULL` zu belassen. Bei Verletzung verlassen ausdruecklich verworfene
 # Aufnahmen den Homeserver, behaltene fehlen in der Bewertung, und die Schaetzung nennt eine andere
 # Zahl als der Lauf sendet - ohne Fehler, ohne Meldung, sichtbar erst an der Abrechnung des
-# Anbieters. Der fuenfte Ort (`api/photos.py::_cloud_vision_status_out`) traegt dieselbe Bedingung,
-# ist aber Anzeige und keine Grenze.
+# Anbieters. Der fuenfte Ort (`api/photos/_conversion.py::_cloud_vision_status_out`) traegt dieselbe
+# Bedingung, ist aber Anzeige und keine Grenze.
 #
 # DIE ASYMMETRIE ZWISCHEN DEN BEIDEN WERTEN IST DIE ENTSCHEIDUNG, NICHT EIN DETAIL (S3).
 # `suggested_status = REJECTED` traegt zwei Gruende - Duplikat-Verlierer UND Unschaerfe unterhalb
@@ -330,7 +330,7 @@ def _decision_subquery() -> ColumnElement[DuplicateDecision | None]:
 
     Skalar und nicht als Join, damit keine Aufrufstelle eine Join-Buchfuehrung erbt: Die
     SQL-Fassungen treten an jeder ihrer Aufrufstellen als weiterer Konjunktionsteil in die
-    BESTEHENDE Anweisung. Die beiden Objektfassungen in `api/photos.py` tun das gerade nicht - sie
+    BESTEHENDE Anweisung. Die beiden Objektfassungen in `api/photos/` tun das gerade nicht - sie
     lesen ein bereits geladenes Foto und kommen hier nie vorbei."""
     return (
         select(PhotoDuplicateDecision.decision)

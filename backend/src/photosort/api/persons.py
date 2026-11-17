@@ -75,7 +75,7 @@ from photosort.thumbnails import variant_path
 
 logger = logging.getLogger(__name__)
 
-# Dieselbe Obergrenze wie `api/photos.py::MAX_QUERY_POSITION` - hier als Wert, weil `api/photos`
+# Dieselbe Obergrenze wie `api/photos/_reads.py::MAX_QUERY_POSITION` - hier als Wert, weil `api/photos`
 # dieses Modul importiert und nicht umgekehrt.
 MAX_ID = 1_000_000_000
 # Eine Seite "Ohne Namen": hoechstens so viele Fotos, und Schluss nach dem Foto, mit dem so viele

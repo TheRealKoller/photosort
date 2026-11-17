@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import photosort.worker as worker_module
 from photosort.db import make_session_factory
 from photosort.models import PhotoScore, Project, ScanRun, ScanStatus, ScoringRun
+from photosort.worker import _runs as worker_runs
+from photosort.worker import scoring as worker_scoring
 from tests.test_worker_score_project import (
     _add_photo,
     _blurry_photo_image,
@@ -38,7 +40,7 @@ def _cancel_after(
 ) -> list[float]:
     """Ersetzt die Schaerfe-Berechnung durch eine zaehlende Huelle, die nach dem n-ten Foto den
     Merker ueber eine zweite Session setzt."""
-    original = worker_module.compute_sharpness
+    original = worker_scoring.compute_sharpness
     calls: list[float] = []
     factory = make_session_factory(session.bind)
 
@@ -52,7 +54,7 @@ def _cancel_after(
         return value
 
     pending: list[int] = []
-    original_check = worker_module._raise_if_cancel_requested
+    original_check = worker_runs._raise_if_cancel_requested
 
     async def _check(check_session: AsyncSession, run: object) -> None:
         if pending:
@@ -64,15 +66,15 @@ def _cancel_after(
                 await other.commit()
         await original_check(check_session, run)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(worker_module, "compute_sharpness", _counting)
-    monkeypatch.setattr(worker_module, "_raise_if_cancel_requested", _check)
+    monkeypatch.setattr(worker_scoring, "compute_sharpness", _counting)
+    monkeypatch.setattr(worker_runs, "_raise_if_cancel_requested", _check)
     return calls
 
 
 async def test_a_cancel_stops_at_the_next_batch_and_confirms_nothing(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 2)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 2)
     project = await _make_project(db_session)
     await _blurry_photos(db_session, project, tmp_path, 6)
     calls = _cancel_after(db_session, monkeypatch, after=1)
@@ -98,7 +100,7 @@ async def test_a_cancel_after_the_last_photo_still_skips_the_gate(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Rennen: Abbruch nach dem letzten Element, vor dem Abschluss - `cancelled`, kein Gate."""
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 10)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 10)
     project = await _make_project(db_session)
     await _blurry_photos(db_session, project, tmp_path, 2)
     _cancel_after(db_session, monkeypatch, after=2)
@@ -176,7 +178,7 @@ async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
 
     stand_at_abort: list[int] = []
     factory = make_session_factory(db_session.bind)
-    original = worker_module.compute_sharpness
+    original = worker_scoring.compute_sharpness
     calls: list[float] = []
     pending: list[int] = []
 
@@ -187,7 +189,7 @@ async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
             pending.append(1)
         return value
 
-    original_check = worker_module._raise_if_cancel_requested
+    original_check = worker_runs._raise_if_cancel_requested
 
     async def _check(check_session: AsyncSession, run: object) -> None:
         if pending:
@@ -208,8 +210,8 @@ async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
                 await other.commit()
         await original_check(check_session, run)
 
-    monkeypatch.setattr(worker_module, "compute_sharpness", _counting)
-    monkeypatch.setattr(worker_module, "_raise_if_cancel_requested", _check)
+    monkeypatch.setattr(worker_scoring, "compute_sharpness", _counting)
+    monkeypatch.setattr(worker_runs, "_raise_if_cancel_requested", _check)
 
     result = await worker_module.run_project_scoring(db_session, project, cache_dir=tmp_path)
 

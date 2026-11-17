@@ -5,14 +5,15 @@ ist ihre DB-gestuetzte Anwendung: Es laedt die Kandidaten eines Projekts (vorges
 entschieden ODER jemals mit einer Albumentscheidung versehen), rechnet je Foto den Zustand und
 liefert die inkludierte Menge zurueck.
 
-GENAU EINE STELLE (Auflage S9 der Spec 0431): Der Lesepfad `api/photos.py::album_selection` und
-der Export-Worker rufen dieselbe Regel ueber denselben Einstiegspunkt. Eine zweite Ableitung
+GENAU EINE STELLE (Auflage S9 der Spec 0431): Der Lesepfad
+`api/photos/album_selection.py::album_selection` und der Export-Worker rufen dieselbe Regel ueber
+denselben Einstiegspunkt. Eine zweite Ableitung
 lieferte still eine andere, plausibel aussehende Menge - ein falsch abgeleiteter Zielordner oder
 eine still abgeflachte Dateistruktur wirft keine Ausnahme, sie liefert ein plausibel aussehendes
 Ergebnis.
 
 Dieses Modul importiert AUSDRUECKLICH NICHTS aus `api/` (dieselbe Regel wie `client.py` gegenueber
-`worker.py`): `final_selection` wird sowohl vom API-Prozess als auch vom Worker importiert, und ein
+`photosort.worker`): `final_selection` wird sowohl vom API-Prozess als auch vom Worker importiert, und ein
 `api/`-Import zoegte die gesamte Request-Schicht (und ihre Abhaengigkeiten) in den Worker-Pfad.
 """
 
@@ -71,7 +72,7 @@ def selection_state_of(
 async def included_photos(session: AsyncSession, project_id: int) -> list[IncludedPhoto]:
     """Die inkludierte Endauswahlmenge eines Projekts, deterministisch nach `photo_id`.
 
-    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos.py::_user_count`),
+    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos/_reads.py::_user_count`),
     der Vorschlagsbezug der letzte erfolgreiche Kriterien-Lauf. Ohne einen solchen Lauf gibt es
     weder Vorschlag noch Einigkeit - die Menge ist leer."""
     user_count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
@@ -89,7 +90,8 @@ async def included_photos(session: AsyncSession, project_id: int) -> list[Includ
     if latest_run_id is None:
         return []
 
-    # DIE KANDIDATENMENGE, dieselbe Ableitung wie `api/photos.py::album_selection`: vorgeschlagen
+    # DIE KANDIDATENMENGE, dieselbe Ableitung wie
+    # `api/photos/album_selection.py::album_selection`: vorgeschlagen
     # ODER entschieden ODER jemals mit einer Albumentscheidung versehen. `Rating.status.is_not(None)`
     # und nicht das Vorhandensein der Zeile.
     ranking = aliased(PhotoRanking)

@@ -4,7 +4,7 @@
 erreicht, enthaelt damit den Cloud-Client. Transitiv pruefbar ist deshalb nur: die reinen
 Personenmodule erreichen nichts davon, und die Cloud-Module erreichen kein Personenmodul. Fuer die
 Module mit Datenbankbezug gilt die Aussage je Modul ueber die direkten Importe. Die
-Verbindungsstelle beider Seiten ist `worker.py`; dort traegt der Nutzlast-Nachweis in
+Verbindungsstelle beider Seiten ist `photosort.worker`; dort traegt der Nutzlast-Nachweis in
 `test_worker_persons.py`, kein Graph.
 
 `model_assets.py` ist rein, aber KEIN Personenmodul: Es ist das gemeinsame Manifest aller geladenen
@@ -95,7 +95,7 @@ def test_the_walker_finds_the_network_client_where_it_is() -> None:
 
 
 def test_the_walker_finds_person_modules_where_they_are() -> None:
-    """Gegenprobe Cloud -> Personen: `worker.py` verbindet beide Seiten."""
+    """Gegenprobe Cloud -> Personen: `photosort.worker` verbindet beide Seiten."""
     closure = import_closure("photosort.worker")
 
     assert "photosort.face_analysis" in closure

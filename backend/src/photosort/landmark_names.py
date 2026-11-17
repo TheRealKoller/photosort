@@ -1,7 +1,7 @@
 """Das projektgebundene Namensregister der Sehenswuerdigkeiten - REIN und DB-FREI.
 
 Dieses Modul beantwortet ausschliesslich "welcher Registereintrag meint diesen Rohnamen" und kennt
-weder Sitzung noch Tabelle; der Datenbankzugriff liegt in `worker.py` (Muster `places.py`).
+weder Sitzung noch Tabelle; der Datenbankzugriff liegt in `photosort.worker` (Muster `places.py`).
 
 LOGGING-AUFLAGE fuer jede kuenftige Logzeile dieses Moduls: weder ein Ortsname noch ein
 Sehenswuerdigkeitsname noch ein Einbettungsvektor gehoert je in ein Log. Der Vektor ist eine
@@ -29,7 +29,7 @@ LANDMARK_NAME_SIMILARITY_THRESHOLD = 0.88
 class LandmarkNameEntry:
     """Ein Eintrag des In-Memory-Schnappschusses der `landmark_names`-Tabelle.
 
-    Bewusst NICHT frozen (Muster `FineLabelSnapshotEntry`): `worker.py` setzt nach dem
+    Bewusst NICHT frozen (Muster `FineLabelSnapshotEntry`): `photosort.worker` setzt nach dem
     Datenbank-Einfuegen die echte `id` auf genau dieser Instanz nach. `id is None` heisst "in
     diesem Lauf neu entstanden, noch nicht geschrieben".
 

@@ -352,7 +352,7 @@ def geonames_match_distances(entries: Iterable[GeoNamesEntry], cell: Cell) -> di
     EIN EIGENER RUECKGABEWEG, ausschliesslich fuer das Messkommando (Spec 0506 Block C2,
     Sicherheitsauflage S4). Die Zahl kommt AUSDRUECKLICH NICHT auf `PlaceAnswer`: Deren
     geschlossener Stufenvorrat ist selbst eine Zusage, und ein Feld dort waere der Weg an den
-    `PlaceLookup`-Schreibrand in `worker.py`. Sie wird nicht persistiert, erreicht weder
+    `PlaceLookup`-Schreibrand in `photosort.worker`. Sie wird nicht persistiert, erreicht weder
     `PlaceInfo` noch `place_hint_for` und keinen Modell-Prompt.
 
     GRUND: Die Entfernung zu einem benannten, oeffentlich enumerierbaren Eintrag ist ein

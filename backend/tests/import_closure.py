@@ -24,6 +24,21 @@ def module_file(module: str) -> Path | None:
     return None
 
 
+def package_files(module: str) -> list[Path]:
+    """Alle Quelldateien eines `photosort.*`-Moduls, sortiert.
+
+    Genau eine Datei fuer ein Modul; fuer ein Paket jedes `.py` darunter, rekursiv und
+    `__init__.py` eingeschlossen. Ein struktureller Waechter, der "das Modul" als Ganzes liest,
+    meint bei einem Paket die Vereinigung seiner Dateien und prueft JEDE einzeln - sonst waere ein
+    Verstoss in einem Untermodul unsichtbar."""
+    path = module_file(module)
+    if path is None:
+        return []
+    if path.name != "__init__.py":
+        return [path]
+    return sorted(path.parent.rglob("*.py"))
+
+
 def import_closure(entry_module: str) -> set[str]:
     """Statischer Import-Graph des Quellbaums ab `entry_module`, auf `photosort.*` beschraenkt.
 

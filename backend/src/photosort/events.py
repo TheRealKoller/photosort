@@ -30,7 +30,7 @@ from photosort.selection import carried_motifs
 
 # Die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): Name -> Gazetteer-Fundorte, geschluesselt
 # mit GENAU dem Namen, den `_name_of` liefert (also der bereits sanierte Rohname des Kandidaten) -
-# die Faltung liegt auf der Abfrage- und Ablageseite in `worker.py::_landmark_points_by_name`.
+# die Faltung liegt auf der Abfrage- und Ablageseite in `worker/_criterion/ranking.py`.
 # `None` als Ganzes heisst "keine Auskunft vorhanden"; ein Eintrag mit leerer Punktmenge heisst
 # "nachgeschlagen, ohne Fund" - die beiden duerfen nie zusammenfallen (ADR 0123 Punkt 2).
 LandmarkPointsByName = Mapping[str, tuple[tuple[float, float], ...]]
@@ -422,7 +422,7 @@ def event_for_time(spans: Iterable[EventSpan], taken_at: datetime) -> int | None
 
     REIN und ohne Uhr; die Reihenfolge der uebergebenen Spannen wirkt sich nicht aus.
 
-    Aufrufer ist der Entwurfszweig von `api/photos.py` fuer die vom Nutzer aufgenommenen Fotos
+    Aufrufer ist der Entwurfszweig von `api/photos/` fuer die vom Nutzer aufgenommenen Fotos
     ohne Rangzeile. Die Spannenliste wird dort EINMAL geladen und fuer alle Fotos wiederverwendet
     (Auflage S14) - nie eine Abfrage je Foto."""
     ordered = sorted(spans, key=_span_order)

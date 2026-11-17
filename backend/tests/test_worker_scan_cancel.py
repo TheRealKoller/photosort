@@ -18,6 +18,7 @@ from photosort.db import make_session_factory
 from photosort.models import Photo, Project, ScanRun, ScanStatus
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.worker import run_project_scan
+from photosort.worker import scan as worker_scan
 from tests.test_worker_scan_project import FakeOpenCloudClient, _entry
 
 MODIFIED = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
@@ -93,7 +94,7 @@ async def test_a_cancelled_scan_removes_no_vanished_photos_and_cleans_no_cache(
     async def _recording_cleanup(session: AsyncSession, cache_dir: Path) -> None:
         cleanups.append(cache_dir)
 
-    monkeypatch.setattr(worker, "cleanup_orphaned_cache", _recording_cleanup)
+    monkeypatch.setattr(worker_scan, "cleanup_orphaned_cache", _recording_cleanup)
     client = _cancelling_client(db_session, count=3, after=1)
 
     scan_run = await run_project_scan(db_session, client, project, None, cache_dir=tmp_path)

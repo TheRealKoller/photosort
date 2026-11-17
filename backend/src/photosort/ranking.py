@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 # Reine, DB-freie Rangfolgen-Funktion, analog scoring.py::assign_clusters. Operiert auf EINER
 # Partition (event_id) pro Aufruf - der Worker ruft sie je Partition auf und ergaenzt event_id
-# erst beim Persistieren der PhotoRanking-Zeilen (siehe worker.py::run_criterion_scoring).
+# erst beim Persistieren der PhotoRanking-Zeilen (siehe worker/criterion_scoring.py).
 #
 # REINE SORTIERUNG: der Qualitaetswert entsteht in `quality.py` und kommt hier fertig herein.
 # Gewichte und Renormierung liegen dort an EINER Stelle; eine zweite hier waere die zweite

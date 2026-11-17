@@ -14,8 +14,8 @@ gezaehlt. Liefert eine Seite auf KEINEM Foto ein Ergebnis, endet die Pruefung `F
 einer leeren Uebersicht. `error_message` traegt ausschliesslich einen festen deutschen Satz aus
 `ERROR_MESSAGES` - nie `str(exc)` eines fremden Systems.
 
-Zyklus: `worker.py` registriert diesen Job in `WorkerSettings.functions` und importiert das Modul
-deshalb am Modulanfang. Der umgekehrte Import (zwei reine Helfer aus `worker.py`) steht deshalb
+Zyklus: `photosort.worker` registriert diesen Job in `WorkerSettings.functions` und importiert das Modul
+deshalb am Modulanfang. Der umgekehrte Import (zwei reine Helfer aus `photosort.worker`) steht deshalb
 INNERHALB des Laufs, nicht am Modulanfang - sonst waere der Importring geschlossen.
 """
 
@@ -208,7 +208,7 @@ async def _run_eye_sides(
     Fassung zu pruefen, die niemand gewaehlt hat.
     """
     # Zyklus wie in `execute_classification_review` unten: der Pruefpunkt steht genau einmal in
-    # `worker.py`.
+    # `photosort.worker`.
     from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
 
     versions: list[tuple[str, str]] = []
@@ -353,7 +353,7 @@ async def _run_cloud_side(
 ) -> set[int]:
     """Die kostenpflichtige Seite. Der Client wird nur gebaut, wenn die Einwilligung des Projekts
     vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall (ADR 0139 Punkt 5)."""
-    # Zyklus wie oben: der Pruefpunkt steht genau einmal in `worker.py`.
+    # Zyklus wie oben: der Pruefpunkt steht genau einmal in `photosort.worker`.
     from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
 
     if not project.cloud_vision_detection_enabled:
@@ -572,9 +572,9 @@ async def execute_classification_review(
     """Der pruefbare Kern des Jobs. `review` ist der bereits angelegte Lauf (`RUNNING`).
 
     Die Modell-Builder der lokalen Seite sind injizierbar; ohne Angabe kommen die echten Builder
-    aus `worker.py` - in keinem automatisierten Test werden sie aufgerufen.
+    aus `photosort.worker` - in keinem automatisierten Test werden sie aufgerufen.
     """
-    # Zyklus: worker.py importiert dieses Modul fuer `WorkerSettings.functions`. Der Gegenimport
+    # Zyklus: photosort.worker importiert dieses Modul fuer `WorkerSettings.functions`. Der Gegenimport
     # steht deshalb hier drin - und nur fuer diese reinen Helfer.
     from photosort.worker import (  # noqa: PLC0415
         _compute_content_criteria,
@@ -682,8 +682,8 @@ async def _fail(session: AsyncSession, review: ClassificationReview, message: st
     """Setzt den Lauf auf `FAILED` mit einem Satz aus der geschlossenen Menge und raeumt den
     Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
     behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
-    Ursache sichtbar (derselbe Grundsatz wie `worker.py::_commit_phase_costs`)."""
-    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in worker.py.
+    Ursache sichtbar (derselbe Grundsatz wie `worker/_runs.py::_commit_phase_costs`)."""
+    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in photosort.worker.
     from photosort.worker import _finish_cancelled  # noqa: PLC0415
 
     assert message in ERROR_MESSAGES
