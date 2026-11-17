@@ -51,7 +51,7 @@ _ABGELOESTE_BEGRIFFE = (
 _BANDKONSTANTEN = ("MOTIF_STRENGTH_BAND_STRONG", "MOTIF_STRENGTH_BAND_MEDIUM")
 
 # Die EINZIGEN beiden Module, die die Baender lesen durften: die Registry, die sie definiert, und
-# die beiden Antwortbausteine, die sie ausliefern. Kein Modul der Auswahl (`worker.py`,
+# die beiden Antwortbausteine, die sie ausliefern. Kein Modul der Auswahl (`photosort.worker`,
 # `ranking.py`, `motif_strengths.py`, `criteria.py`, `scoring.py`, `events.py`,
 # `api/photos.py`) steht hier.
 _ERLAUBTE_BANDLESER = frozenset(
