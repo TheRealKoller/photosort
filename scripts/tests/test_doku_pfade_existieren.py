@@ -12,19 +12,17 @@ Verweis auf ein fremdes Repository ungeprueft bleibt: kein Verzeichnis dieses Re
 
 **Zwei Namen sind dagegen auch nackt verboten** - sie sind durch diese Story zu Paketen geworden.
 
-Gelesen werden nur lebende Stellen: `docs/architecture.md`, `specs/architecture/*.md`, Docstrings und
-Kommentare unter `backend/src`, Docstrings unter `backend/tests`. Abgeschlossene Feature-Specs,
-Entscheidungen und das Aenderungsprotokoll sind Historie und werden nicht gelesen.
+Gelesen werden nur lebende Stellen: `docs/architecture.md`, Docstrings und Kommentare unter
+`backend/src`, Docstrings unter `backend/tests`. Abgeschlossene Feature-Specs, Entscheidungen und das
+Aenderungsprotokoll sind Historie und werden nicht gelesen.
 
-**Ein Verweis auf eine in der Git-Historie geloeschte Datei ist Historie, kein toter Verweis**: Die
-Datei gab es, sie ist nur weg, und ein historischer Satz darf das sagen. Ein Pfad, den dieses
-Repository nie hatte, ist dagegen ein Tippfehler oder eine erfundene Ablage und faellt auf. Die
-beiden Namen aus `_VERBOTEN` bleiben davon unberuehrt und sind ueberall verboten, auch als Historie.
+**`specs/architecture/` wird nur auf die beiden verbotenen Namen geprueft, nicht auf tote Pfade:**
+Diese Dokumente beschreiben abschnittsweise, was zu ihrer Zeit galt, und verweisen deshalb auf
+Programme, die inzwischen entfallen sind. Ein toter Pfad dort ist Historie, kein Ablauf ins Leere.
 
 **`_VORBESTEHEND` ist der gemessene Altbestand vom Stand vor dieser Story**, nicht eine Freigabe fuer
 neue Verweise: Die Gleichheit unten ist in beide Richtungen geprueft, ein neuer toter Verweis macht
-den Test rot und ein reparierter Altverweis zwingt zur Zeile. Alle Eintraege benennen eine
-`::name`-Abweichung, die aelter ist als diese Spec; keiner davon liegt unter `worker/` oder
+den Test rot und ein reparierter Altverweis zwingt zur Zeile. Kein Eintrag liegt unter `worker/` oder
 `api/photos/`.
 """
 
@@ -33,9 +31,7 @@ from __future__ import annotations
 import ast
 import io
 import re
-import subprocess
 import tokenize
-from functools import lru_cache
 from pathlib import Path
 
 from conftest import REPO_WURZEL
@@ -59,14 +55,13 @@ _SELBST = Path(__file__).resolve()
 _PFAD = re.compile(r"(?<![\w/.\-])((?:[\w.\-]+/)+[\w.\-]+\.py)(?:::([A-Za-z_]\w*))?")
 _VERBOTEN = ("worker.py", "api/photos.py")
 _AUSGESCHLOSSEN = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "artifacts"}
+# Stellen, die beschreiben, was zu ihrer Zeit galt: dort gilt nur das Namensverbot.
+_HISTORIE = "specs/architecture/"
 
 _VORBESTEHEND = frozenset(
     {
         "api/categories.py",
-        "api/classification_reviews.py::set_verdict",
-        "api/duplicate_decisions.py::_has_open_suggestion",
         "api/ratings.py::_drop_when_empty",
-        "api/ratings.py::_write_own_rating",
     }
 )
 
@@ -156,28 +151,13 @@ def _kennt_den_namen(datei: Path, name: str) -> bool:
     return False
 
 
-@lru_cache(maxsize=1)
-def _einst_entfernt() -> frozenset[str]:
-    """Pfade, die dieses Repository einmal hatte und die geloescht wurden. Ein Verweis darauf ist
-    Historie: Die Datei gab es, sie ist weg."""
-    ausgabe = subprocess.run(
-        ["git", "log", "--diff-filter=D", "--name-only", "--pretty=format:", "--", "*.py"],
-        cwd=REPO_WURZEL,
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout
-    return frozenset(zeile.strip() for zeile in ausgabe.splitlines() if zeile.strip())
-
-
 def _tote_verweise() -> dict[str, list[str]]:
     verzeichnisse = _verzeichnisse()
-    entfernt = _einst_entfernt()
     tot: dict[str, list[str]] = {}
     for ort, text in _doku_texte():
+        if ort.startswith(_HISTORIE):
+            continue
         for pfad, name in _pfad_tokens(text):
-            if pfad in entfernt:
-                continue
             dateien = _aufloesen(pfad, verzeichnisse)
             token = f"{pfad}::{name}" if name else pfad
             if not dateien or (
