@@ -1,6 +1,6 @@
 # 0647 - Jeder Lauf hat seine eigene Datei
 
-**Status:** Accepted
+**Status:** Implemented ([PR #658](https://github.com/TheRealKoller/photosort/pull/658))
 **Erstellt:** 2026-11-17
 **Bezug:** Issue [#647](https://github.com/TheRealKoller/photosort/issues/647)
 
