@@ -250,7 +250,7 @@ async def test_list_folder_raises_opencloud_error_for_malformed_xml_body() -> No
     # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): eine
     # syntaktisch kaputte WebDAV-Antwort (z.B. abgeschnittenes Tag) darf list_folder() nicht als
     # rohe ElementTree.ParseError verlassen - sonst laeuft die Exception ungefangen bis in
-    # worker.py::run_project_scan durch und der zugehoerige ScanRun bleibt dauerhaft auf
+    # worker/scan.py::run_project_scan durch und der zugehoerige ScanRun bleibt dauerhaft auf
     # "running" haengen. Analog zum bestehenden Muster in _drive_from_graph_api_item.
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -326,10 +326,10 @@ async def test_walk_terminates_when_a_child_entry_points_at_an_already_visited_p
 
 
 def test_image_extensions_contains_expected_set() -> None:
-    # specs/features/0050-dateianzahl-im-ordner-browser.md: Umzug von worker.py::_IMAGE_EXTENSIONS
+    # specs/features/0050-dateianzahl-im-ordner-browser.md: Umzug aus dem Worker
     # (dort privat) hierher (oeffentlich) - ein einziger Ort fuer "was zaehlt als Bild", den sowohl
-    # worker.py als auch api/opencloud.py importieren koennen, ohne dass api/opencloud.py
-    # worker.py (und damit dessen mediapipe-/tensorflow-Abhaengigkeiten) importieren muss.
+    # photosort.worker als auch api/opencloud.py importieren koennen, ohne dass api/opencloud.py
+    # photosort.worker (und damit dessen mediapipe-/tensorflow-Abhaengigkeiten) importieren muss.
     assert IMAGE_EXTENSIONS == {".jpg", ".jpeg", ".png", ".heic", ".heif"}
 
 

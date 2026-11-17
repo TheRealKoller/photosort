@@ -695,7 +695,7 @@ class TestComputeLandmarkScore:
 
 class TestIsLandmarkCandidate:
     """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
-    attempt-fehler-persistierung.md Punkt 4: extrahiert aus worker.py::_select_landmark_candidates
+    attempt-fehler-persistierung.md Punkt 4: extrahiert aus worker/_criterion/landmark.py
     - reine Schwellenwert-Pruefung (kein Skip-bereits-gescort, das bleibt worker-spezifisch), von
     Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt.
 

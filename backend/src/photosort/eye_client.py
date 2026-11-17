@@ -6,7 +6,7 @@ feste Zeitgrenze, Antwortdeckel - die Regeln stehen an EINER Stelle.
 
 Das Modul ist reine I/O ohne Datenbank und ohne Jobwissen: es kennt weder `Photo` noch
 `CriterionScoringRun`. Damit bleibt die Layering-Regel des Projekts intakt, dass die API-Schicht
-`worker.py` nicht importiert.
+`photosort.worker` nicht importiert.
 """
 
 from __future__ import annotations

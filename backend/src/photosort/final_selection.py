@@ -12,7 +12,7 @@ eine still abgeflachte Dateistruktur wirft keine Ausnahme, sie liefert ein plaus
 Ergebnis.
 
 Dieses Modul importiert AUSDRUECKLICH NICHTS aus `api/` (dieselbe Regel wie `client.py` gegenueber
-`worker.py`): `final_selection` wird sowohl vom API-Prozess als auch vom Worker importiert, und ein
+`photosort.worker`): `final_selection` wird sowohl vom API-Prozess als auch vom Worker importiert, und ein
 `api/`-Import zoegte die gesamte Request-Schicht (und ihre Abhaengigkeiten) in den Worker-Pfad.
 """
 

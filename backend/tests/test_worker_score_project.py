@@ -281,7 +281,7 @@ async def test_scoring_run_suggestions_found_not_persisted_when_final_commit_fai
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Copilot-Review-Fund (PR #38): suggestions_found wird VOR dem finalen Erfolgs-Commit
-    gesetzt (worker.py). Faellt genau dieser Commit fehl, greift derselbe bereits etablierte
+    gesetzt (photosort.worker). Faellt genau dieser Commit fehl, greift derselbe bereits etablierte
     Rollback-Mechanismus wie fuer photos_processed (session.rollback() expired das ORM-Objekt,
     der noch nicht committete In-Memory-Wert geht verloren, der anschliessende FAILED-Commit
     schreibt daher keinen len(rejected_ids)-Teilstand) - kein Sonderfall noetig."""

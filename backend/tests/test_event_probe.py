@@ -314,7 +314,7 @@ class TestTheReadPath:
     ) -> None:
         """Beides speist den Album-Richtwert, und beides kommt aus DEM Projekt: `NULL` heisst
         "nicht selbst eingestellt", und die Bilderzahl ist jedes Foto des Projekts - dieselbe
-        Menge, die auch `worker.py` zaehlt, nicht die Kandidatenmenge des Laufs."""
+        Menge, die auch `photosort.worker` zaehlt, nicht die Kandidatenmenge des Laufs."""
         project_id = await _project(db_session)
         ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
         await _photo(db_session, project_id, minutes=5, gps=(43.52, 16.45))
@@ -2739,7 +2739,7 @@ class TestTheProbeIsReadOnly:
 
     def test_the_inputs_module_lies_in_the_graph_of_the_run(self) -> None:
         """DIE GEGENPROBE ZUR IMPORT-GRAPH-ZUSAGE: `event_inputs.py` MUSS im Graphen von
-        `worker.py` liegen - sonst waere aus dem gemeinsamen Modul still wieder eine Kopie
+        `photosort.worker` liegen - sonst waere aus dem gemeinsamen Modul still wieder eine Kopie
         geworden, und das Messkommando maesse etwas anderes als der Lauf (ADR 0117 Punkt 5)."""
         assert "photosort.event_inputs" in import_closure("photosort.worker")
         assert "photosort.event_inputs" in import_closure("photosort.event_probe")

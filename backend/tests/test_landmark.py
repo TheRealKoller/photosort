@@ -43,7 +43,7 @@ def _field_lines(prompt: str) -> list[str]:
 
 
 def _info(answer: PlaceAnswer) -> PlaceInfo:
-    """Die Lesesicht auf eine abgelegte Auskunft - so, wie `worker.py::_place_infos` sie bildet,
+    """Die Lesesicht auf eine abgelegte Auskunft - so, wie `worker/_criterion/ranking.py` sie bildet,
     einschliesslich der Sanitisierung JE STUFE am Schreibrand."""
     from photosort.places import sanitize_place_name
 
@@ -154,7 +154,7 @@ async def test_detect_clamps_a_confidence_above_one_from_the_raw_api_response() 
     # Copilot-Review-Fund (PR #181): das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt -
     # LandmarkDetection.confidence muss bereits HIER (nicht erst in criteria.py::
     # compute_landmark_score) geklemmt sein, sonst divergieren photo_landmark_detections.confidence
-    # (worker.py schreibt detection.confidence direkt) und PhotoCriterionScore.value (geklemmt ueber
+    # (photosort.worker schreibt detection.confidence direkt) und PhotoCriterionScore.value (geklemmt ueber
     # compute_landmark_score), obwohl beide laut ADR 0025 Punkt 6 atomar aus derselben Antwort
     # stammen sollen.
     def handler(request: httpx.Request) -> httpx.Response:

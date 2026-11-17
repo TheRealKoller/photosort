@@ -30,7 +30,7 @@ Eigenschaften halten das zusammen:
   ``(photo_id, etag)``-Paaren BERECHNETEN Pfade. Kein ``glob``, kein ``rmtree`` - die
   Cache-Dateinamen sind flache Hash-Schluessel ohne Projektzuordnung, bei einem geteilten Volume
   traefe ein Glob echte Familien-Thumbnails.
-* **Kein Aufrufpfad aus der laufenden Anwendung (M3):** kein Import aus ``main.py``/``worker.py``,
+* **Kein Aufrufpfad aus der laufenden Anwendung (M3):** kein Import aus ``main.py``/``photosort.worker``,
   kein Endpunkt, kein Compose-``command``. Ein Test haelt das ueber den Import-Graphen fest.
 
 Fehlermeldungen nennen nur Bedingung und Status, nie Konfigurationswerte (M2).
@@ -234,7 +234,7 @@ _IMAGE_SIZES = (
 
 # Feste Zeit-Anker: alle Zeitstempel sind deterministisch daraus abgeleitet, damit Sortierung,
 # Zeit-Cluster und angezeigte Daten zwischen zwei Laeufen identisch bleiben. Naiv/UTC wie im
-# uebrigen Backend (worker.py: `datetime.now(UTC).replace(tzinfo=None)`).
+# uebrigen Backend (photosort.worker: `datetime.now(UTC).replace(tzinfo=None)`).
 _BASE_TAKEN_AT = datetime(2024, 5, 1, 9, 0, 0)
 _BASE_SCAN_AT = datetime(2024, 6, 1, 10, 0, 0)
 _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
@@ -712,7 +712,7 @@ def demo_relative_path(slug: str, index: int) -> str:
 
 def demo_taken_at(index: int) -> datetime:
     """Aufnahmezeitpunkt, streng monoton mit dem Index. Naiv/UTC wie im uebrigen Backend
-    (worker.py: `datetime.now(UTC).replace(tzinfo=None)`)."""
+    (photosort.worker: `datetime.now(UTC).replace(tzinfo=None)`)."""
     return _BASE_TAKEN_AT + timedelta(minutes=17 * index)
 
 
@@ -1353,7 +1353,7 @@ async def _seed_rated_project(
 
     # Der Remote-Lauf DIESES Durchlaufs. Er entsteht vor dem Klassifizierungslauf, damit dessen
     # Fremdschluessel ihn treffen kann - dieselbe Reihenfolge wie im produktiven Pfad
-    # (worker.py::run_classification).
+    # (worker/classification.py::run_classification).
     #
     # SAEMTLICHE Zahlen hier sind frei erfunden (nur synthetische Demo-Daten - das Repository ist
     # oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus keinem echten Lauf
@@ -1409,7 +1409,7 @@ async def _seed_rated_project(
     session.add(criterion_run)
     await session.flush()
 
-    # DIESELBE Herkunft der Gewichte wie im Lauf (`worker.py`), einmal gelesen und an der
+    # DIESELBE Herkunft der Gewichte wie im Lauf (`photosort.worker`), einmal gelesen und an der
     # Lauf-Zeile belegt: Eine hier stehengebliebene Modulkonstante zeigte auf der Demo-Instanz
     # Zahlen, die die Anwendung nach der naechsten Anpassung nie wieder erzeugte - und die Demo
     # darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe.
@@ -2235,7 +2235,7 @@ async def _seed_operations_project(
     reiht keinen Job ein - der Lauf bleibt also wartend, bis jemand ihn abbricht.
 
     Die abgebrochene Klassifizierung steht hinter einem erfolgreichen, bestaetigten Ausschuss -
-    nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker.py::_finish_cancelled`
+    nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker/_runs.py::_finish_cancelled`
     hinterliesse: Merker, Endzeit, die letzte `phase` samt ihrem Beginn (ADR 0116 Punkt 1), einen
     eingefrorenen Teilstand und KEINE Fehlermeldung."""
     project = await _create_project(session, spec)

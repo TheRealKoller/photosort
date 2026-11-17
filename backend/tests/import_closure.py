@@ -23,6 +23,7 @@ def module_file(module: str) -> Path | None:
             return candidate
     return None
 
+
 def package_files(module: str) -> list[Path]:
     """Alle Quelldateien eines `photosort.*`-Moduls, sortiert.
 

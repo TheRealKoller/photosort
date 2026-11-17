@@ -363,7 +363,7 @@ Verarbeitungs-Cache (Thumbnails).
     `OpenCloudClient.walk()` (`api/opencloud.py::_count_images_up_to_limit`, Obergrenze
     `FOLDER_COUNT_LIMIT = 500`). `IMAGE_EXTENSIONS`
     liegt öffentlich in `opencloud/client.py`: Der Request-Pfad (`api/opencloud.py`) darf
-    strukturell nicht von `worker.py` abhängen, das `mediapipe`/`tensorflow` nachzieht. `PUT
+    strukturell nicht von `photosort.worker` abhängen, das `mediapipe`/`tensorflow` nachzieht. `PUT
     /projects/{id}/cloud-vision-consent` (`api/projects.py`, Body `{"enabled": bool}`, am
     Router-Level-Auth-Guard) setzt
     `Project.cloud_vision_detection_enabled`/`.cloud_vision_consent_at` synchron (Zeitstempel bei
@@ -432,7 +432,7 @@ Verarbeitungs-Cache (Thumbnails).
     damit im Lesepfad jeder Projektantwort: Die Zuordnung Teilschritt → Zähler steht serverseitig
     und läuft über die bereits geladenen Werte, ohne zusätzliche Abfrage je Projekt (ADR 0103
     Punkt 1). Der naive-UTC-Zeitpunkt hat seither genau eine Definition (`clock.py::now_utc`), von
-    der `worker.py::_now_utc` und der Lesepfad gleichermaßen lesen — zwei Uhren mit verschiedener
+    der `worker/_runs.py::_now_utc` und der Lesepfad gleichermaßen lesen — zwei Uhren mit verschiedener
     Zeitzonenbehandlung ergäben eine Restdauer, die um den Zonenversatz danebenliegt, ohne dass
     etwas fehlschlägt.
   - neues Router-Modul `api/stats.py` mit dem einzigen Endpunkt `GET /projects/{project_id}/stats` —
@@ -605,7 +605,7 @@ Verarbeitungs-Cache (Thumbnails).
     - `PUT /projects/{id}/selection-target` (`api/projects.py`, am Router-weiten Auth-Guard, Body
       `{"target": int | null}` mit `ge=1` und statischem Deckel `MAX_SELECTION_TARGET`) setzt den
       Richtwert und rechnet den Vorschlag des letzten erfolgreichen Laufs **synchron in derselben
-      Transaktion** neu (`worker.py::rebuild_run_selection`, ohne Cloud-Aufruf und ohne
+      Transaktion** neu (`worker/criterion_scoring.py::rebuild_run_selection`, ohne Cloud-Aufruf und ohne
       Bildverarbeitung; Events und Rangzeilen bleiben unangetastet), Antwort ist `ProjectOut`.
       Reihenfolge der Prüfungen: `404` → `409`, solange der neueste `CriterionScoringRun` des
       Projekts `RUNNING` ist (enger als der Versatz-Wächter: nur dieser Lauftyp schreibt
@@ -963,8 +963,8 @@ Verarbeitungs-Cache (Thumbnails).
       zerfällt in zwei Funktionen („überlebt" und „offener Vorschlag", seit ADR 0104 nicht mehr
       komplementär), und „der Vorschlags-Zweig" war schon vorher eine SQL- und eine Objektfassung.
       **Vier** Aufrufstellen bestimmen unmittelbar, welche Fotos den Homeserver
-      Richtung Cloud-Anbieter verlassen: `worker.py::run_criterion_scoring` (speist zugleich den
-      Sehenswürdigkeits-Teilschritt), `worker.py::select_remote_category_candidates` und die beiden
+      Richtung Cloud-Anbieter verlassen: `worker/criterion_scoring.py::run_criterion_scoring` (speist zugleich den
+      Sehenswürdigkeits-Teilschritt), `worker/remote_categories.py::select_remote_category_candidates` und die beiden
       **vorgelagerten Kostenschätzungen** in `api/projects.py`. Die Schätzungen folgen der Auswahl
       nicht von selbst — sie sind eigene Anweisungen und müssen dieselbe Menge zählen, die der Lauf
       sendet, sonst beruht die Freigabe eines kostenpflichtigen Laufs auf einer Zahl, die nicht
@@ -1316,7 +1316,7 @@ Verarbeitungs-Cache (Thumbnails).
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
-  - `score_criteria`-Job (`worker.py::run_criterion_scoring`) bekommt eine neue, consent-gegate
+  - `score_criteria`-Job (`worker/criterion_scoring.py::run_criterion_scoring`) bekommt eine neue, consent-gegate
     Cloud-Phase nach der bestehenden lokalen Foto-Schleife — erste tatsächlich produktive
     `CriterionSource.CLOUD`-Anbindung im Projekt (`landmark.py::AnthropicLandmarkClient`, direkter
     `httpx`-REST-Aufruf gegen die Anthropic Messages API, kein SDK). Vorfilterung auf
@@ -1343,7 +1343,7 @@ Verarbeitungs-Cache (Thumbnails).
     (`tier`/`gebaeude`/`goldener_schnitt`/`aesthetics`) über `classification.py` (erweitert um
     `detect_animals`/`classify_scene`, zwei weitere mediapipe-Task-APIs neben `FaceDetector`) und
     das neue, eigenständige Modul `aesthetics.py` (NIMA/MobileNet über `tensorflow`).
-    `worker.py::_compute_content_criteria` ruft `detect_person`/`detect_animals` je Foto höchstens
+    `worker/_criterion/local.py::_compute_content_criteria` ruft `detect_person`/`detect_animals` je Foto höchstens
     einmal auf und teilt sich das Ergebnis zwischen mehreren abhängigen Kriterien, statt pro
     Kriterium neu zu detektieren.
   - `scan_project`/`run_project_scan` läuft jetzt zweiphasig — eine reine Enumerationsphase
@@ -1356,7 +1356,7 @@ Verarbeitungs-Cache (Thumbnails).
   - `scan_project`/`score_project`/`select_top_photos` sind über `arq.worker.func(fn, timeout=86400,
     max_tries=1)` registriert (24h-Not-Anker statt arq-Default 300s, kein automatischer
     Hintergrund-Retry); neuer periodischer `arq`-Cron-Job `reap_stalled_runs`
-    (`worker.py::WorkerSettings.cron_jobs`, alle 5 Minuten, `run_at_startup=True`) markiert
+    (`worker/__init__.py::WorkerSettings.cron_jobs`, alle 5 Minuten, `run_at_startup=True`) markiert
     dauerhaft hängende `RUNNING`-Läufe als `FAILED` — erste Nutzung von `arq`s Cron-Mechanismus im
     Projekt, siehe ADR
     [`decisions/0019-job-lauf-heartbeat-watchdog.md`](../specs/decisions/0019-job-lauf-heartbeat-watchdog.md)
@@ -1374,11 +1374,11 @@ Verarbeitungs-Cache (Thumbnails).
     mit `RunCancelled` ab. Ist der Merker gesetzt, hat `CANCELLED` Vorrang vor `FAILED` — in den
     Fehlerpfaden, in Schicht 1 und in `reap_stalled_runs`; dieser finalisiert hängende
     `QUEUED`-Läufe erst nach `QUEUED_STALL_THRESHOLD` (24 h).
-  - `scan_project`-Job (`worker.py`) für Foto-Ingest.
+  - `scan_project`-Job (`photosort.worker`) für Foto-Ingest.
   - Thumbnail-/Display-Erzeugung (`thumbnails.py`, Pillow) beim Scan, Ablage im lokalen Cache
     (Docker-Volume `photo_cache`), Dateiname deterministisch aus `photo_id`+`etag` (kein neues
     DB-Feld).
-  - `score_project`-Job (`worker.py::run_project_scoring`, analog zu `scan_project`), reine
+  - `score_project`-Job (`worker/scoring.py::run_project_scoring`, analog zu `scan_project`), reine
     Heuristik-Funktionen in `scoring.py` (analog zu `thumbnails.py`:
     Schärfe/Belichtung, dreistufige Duplikaterkennung (grober 64-Bit-dHash als Kandidatenfilter,
     feiner 256-Bit-dHash und 32×32-Graugitter für „praktisch identisch", Zeitfenster und
@@ -1386,7 +1386,7 @@ Verarbeitungs-Cache (Thumbnails).
     bereits vom Scan gecachten `display`-Variante — kein erneuter OpenCloud-Download für Phase A.
     Details siehe
     [`decisions/0006-local-scoring-datamodel.md`](../specs/decisions/0006-local-scoring-datamodel.md).
-  - `score_criteria`-Job (`worker.py::run_criterion_scoring`, ersetzt
+  - `score_criteria`-Job (`worker/criterion_scoring.py::run_criterion_scoring`, ersetzt
     `select_top_photos`/`run_top_selection`) mit der Kriterien-Registry `criteria.py` (bewusst
     getrennt von `scoring.py` — die `mediapipe`-Abhängigkeit soll nicht in den Phase-A-Importpfad
     einsickern, wie schon zu Spec-0024-Zeiten) und der reinen Rangfolgen-Funktion
@@ -1425,7 +1425,7 @@ Verarbeitungs-Cache (Thumbnails).
     `score_criteria`-Lauf, projektweit über alle Kandidaten-Fotos (nicht pro `cluster_key`), welche
     `category_eligible`-Kriterien im jeweiligen Lauf überhaupt eine eigene Kategorie bilden dürfen
     (Anteil der Fotos, die die jeweilige `category_presence_threshold` erreichen, `>=
-    threshold_fraction`) — läuft in `worker.py::run_criterion_scoring` nach der bestehenden
+    threshold_fraction`) — läuft in `worker/criterion_scoring.py::run_criterion_scoring` nach der bestehenden
     Foto-Schleife (auf dem dort ohnehin vollständig im Speicher gehaltenen `candidate_values`), das
     Ergebnis wird an die geänderte `criteria.py::derive_category_key(criterion_values,
     active_criteria)` durchgereicht (ersetzt die bisherige fest codierte Prioritätskette
@@ -1436,14 +1436,14 @@ Verarbeitungs-Cache (Thumbnails).
     `"people"`/`"landscape"`/`"detail"` sind keine bevorzugten Standardkategorien mehr, unterliegen
     derselben Häufigkeitsregel wie jedes andere Inhalts-Kriterium. Keine Migration
     (`PhotoRanking.category_key` war bereits ein freier String).
-    `worker.py::_CONTENT_CRITERION_KEYS`/`_CONTENT_CRITERION_SOURCES` (bildbasiert berechnete
+    `worker/_criterion/local.py::_CONTENT_CRITERION_KEYS`/`_CONTENT_CRITERION_SOURCES` (bildbasiert berechnete
     Kriterien für Upsert-Buchhaltung, fachlich unabhängig von `category_eligible`) rein kosmetisch
     umbenannt zu `_IMAGE_ANALYSIS_CRITERION_KEYS`/`_IMAGE_ANALYSIS_CRITERION_SOURCES`, um
     Verwechslung zu vermeiden. Kein neuer Endpunkt, kein Frontend-Effekt außer einem
     Anzeigenamen-Mapping für Sonderzeichen (`frontend/src/utils/categoryLabels.ts`: `"gebaeude"` →
     `"Gebäude"`). Siehe Feature-Branch `feature/0045-kategorien-aus-statistiken-ableiten`.
   - neuer, eigenständiger Job
-    `classify_categories_remote`/`worker.py::run_remote_category_classification` (KEIN Teil von
+    `classify_categories_remote`/`worker/remote_categories.py::run_remote_category_classification` (KEIN Teil von
     `score_criteria`, eigene Run-Tabelle `remote_category_classification_runs`, eigenes
     Concurrency-Setting `settings.remote_category_classification_concurrency`, Default 2) —
     Kandidatenmenge ist der komplette Ausschuss-Überlebender-Bestand OHNE Vorfilter (anders als
@@ -1458,19 +1458,19 @@ Verarbeitungs-Cache (Thumbnails).
     `category_labels`-Registry auf einen kanonischen Eintrag auf). Neues, isoliertes Modul
     `label_embedding.py` (analog `aesthetics.py`): lokales, gepinntes Text-Embedding-Modell über
     `onnxruntime`+`tokenizers` (neue Backend-Abhängigkeiten, CPU-only), SHA256-gepinnte Assets (kein
-    Laufzeit-Download). `worker.py::run_criterion_scoring` merged vor dem bestehenden
+    Laufzeit-Download). `worker/criterion_scoring.py::run_criterion_scoring` merged vor dem bestehenden
     `derive_active_categories`/`derive_category_key`-Aufruf bereits vorhandene
     Remote-Label-Ergebnisse als zusätzliche `f"remote:{canonical_key}"`-Pseudo-Kriterien in dieselbe
-    `candidate_values`-Struktur (`worker.py::_merge_remote_category_labels`, kein neuer Cloud-Aufruf
+    `candidate_values`-Struktur (`photosort.worker`, kein neuer Cloud-Aufruf
     an dieser Stelle) — `criteria.py::derive_active_categories`/`derive_category_key` bekommen dafür
     einen neuen, optionalen `dynamic_keys: frozenset[str]`-Parameter (Default `frozenset()`,
-    bestehende Aufrufer bleiben unverändert). Neue Funktion `worker.py::reassign_photo_category`
+    bestehende Aufrufer bleiben unverändert). Neue Funktion im Worker
     verschiebt ein Foto bei einem manuellen Override sofort im selben API-Request zwischen zwei
     `(event_id, category_key)`-Partitionen (`ranking.py::rank_photos` nur für diese zwei
     Partitionen erneut aufgerufen, kein neuer Ranking-Algorithmus, kein voller Re-Scoring-Lauf).
     `reap_stalled_runs` bekommt einen vierten, eigenständigen Tabellen-Block für
     `remote_category_classification_runs`.
-  - neue Helfer `worker.py::_record_cloud_vision_error`/`_clear_cloud_vision_error` an vier
+  - neue Helfer `worker/_runs.py::_record_cloud_vision_error`/`_clear_cloud_vision_error` an vier
     Call-Sites in `run_criterion_scoring`/`run_remote_category_classification`, neue reine Funktion
     `criteria.py::is_landmark_candidate` (extrahiert aus `_select_landmark_candidates`).
   - `run_criterion_scoring` vergibt die Kategorie über die reine Pro-Foto-Funktion
@@ -1482,7 +1482,7 @@ Verarbeitungs-Cache (Thumbnails).
     `reassign_photo_category` unverändert. `classification.py::detect_animals` → `detect_objects`
     (derselbe COCO-Detektor, genau ein Aufruf pro Foto, jetzt für `tier`/`fahrzeug`/`essen_trinken`
     ausgewertet).
-  - neuer Orchestrator `worker.py::run_classification` und der einzige verbleibende
+  - neuer Orchestrator `worker/classification.py::run_classification` und der einzige verbleibende
     Klassifizierungs-Job `classify` — die Jobs `score_criteria` und `classify_categories_remote`
     sind ersatzlos entfallen (`WorkerSettings.functions` registriert seither genau
     `scan_project`/`score_project`/`classify`). Ablauf: Lauf-Datensatz anlegen → bei aktiver
@@ -1713,14 +1713,14 @@ loggen will, holt sich `logger = logging.getLogger(__name__)` als Modul-Konstant
 Imports, kein Logger-Objekt wird injiziert/durchgereicht. Zentrale, einmalige Konfiguration über
 `logging_config.py::configure_logging()` (`logging.basicConfig`, Level `WARNING`, Format
 `%(asctime)s %(levelname)s %(name)s: %(message)s`), aufgerufen an beiden Prozess-Einstiegspunkten —
-`main.py::create_app()` (API-Prozess) und `worker.py::WorkerSettings.on_startup` (Worker-Prozess,
+`main.py::create_app()` (API-Prozess) und `worker/__init__.py::WorkerSettings.on_startup` (Worker-Prozess,
 erste Nutzung von arqs `on_startup`-Mechanismus im Projekt). `WARNING` bleibt reserviert für
 erwartetes, best-effort behandeltes Verhalten (z.B. ein einzelner fehlgeschlagener
 Cloud-Vision-Aufruf, der den Lauf nicht abbricht); `ERROR` bleibt an die tatsächliche
 `FAILED`-Semantik eines Laufs gebunden (`_fail_run`/Watchdog, ADR 0019). Kein
 `exc_info=True`/Traceback, kein Rohtext von API-Antworten/Secrets im Log — nur `type(exc).__name__`,
 die bereits sanitierte `str(exc)` sowie Foto-Kontext (`photo.id`/`relative_path`). Erste Anwendung:
-`worker.py::_log_cloud_vision_failure`, aufgerufen in der Landmark- und der Remote-Kategorie-Phase
+`worker/_runs.py::_log_cloud_vision_failure`, aufgerufen in der Landmark- und der Remote-Kategorie-Phase
 direkt vor dem jeweils bestehenden best-effort-`continue`.
 
 ## Datenmodell (Skizze, wird pro Feature-Spec verfeinert)
@@ -1880,7 +1880,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     - **Invariante, im Schreibpfad gehalten:** `taken_at == taken_at_original + offset_minutes` der
       Kamera dieses Fotos in genau diesem Projekt; ohne Kamera oder bei `offset_minutes = 0` sind
       beide Werte gleich. Es gibt **genau zwei** Schreibstellen —
-      `worker.py::_process_scan_block` und `api/cameras.py` —, beide über die eine reine Funktion
+      `worker/scan.py::_process_scan_block` und `api/cameras.py` —, beide über die eine reine Funktion
       `cameras.py::shifted` und beide ausschließlich aus `taken_at_original` gerechnet, nie durch
       Addition auf den bestehenden Wert. Eine dritte Schreibstelle gibt es nicht; ein struktureller
       Wächtertest hält das fest, weil sie keinen Verhaltenstest röten würde. Bei Verletzung zeigt,
@@ -1933,7 +1933,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
       `None` (dieselbe Begründung wie bei `gps_lat`) — ausgenommen ein `probe_only`-Arbeitsposten,
       der die Datei gar nicht gelesen hat und deshalb nichts über ihre Form weiß.
     - **Nachhol-Regel des Scans:** Zu Beginn **jedes** Projekt-Scans, vor Phase 1 und vor jedem
-      Netzzugriff, läuft `worker.py::_catch_up_aspect_ratios` über die Fotos des Projekts mit
+      Netzzugriff, läuft `worker/scan.py::_catch_up_aspect_ratios` über die Fotos des Projekts mit
       `aspect_ratio IS NULL` und liest das Verhältnis aus dem **lokal zwischengespeicherten
       Vorschaubild** — ohne Netz, ohne OpenCloud-Abruf, ohne das Original. Fehlt die Cache-Datei
       oder ist sie unlesbar, bleibt der Wert `NULL` und der nächste Scan versucht es erneut. Es
@@ -1952,16 +1952,16 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   (`running`/`success`/`failed`), Zähler (`files_found`, `photos_added`, `photos_updated`,
   `photos_removed`, `files_skipped`), `error_message` bei Fehlern. `files_found` wird seit
   [`features/0022-scan-live-fortschrittszaehler.md`](../specs/features/0022-scan-live-fortschrittszaehler.md)
-  periodisch zwischen-committet (`worker.py::run_project_scan`, `SCAN_COMMIT_BATCH_SIZE`) statt nur
+  periodisch zwischen-committet (`worker/scan.py::run_project_scan`, `SCAN_COMMIT_BATCH_SIZE`) statt nur
   einmal am Ende, damit die Projekt-Detailseite einen live wachsenden Zähler zeigen kann. Liefert
   die Zusammenfassung, die über `GET /projects/{id}` als `last_scan` ausgegeben wird.
   - additiv `last_progress_at: datetime` (`server_default=func.now()`, analog `started_at`), an
     denselben Stellen wie `files_found` zwischen-committet — rein interne Watchdog-Buchhaltung
-    (`worker.py::reap_stalled_runs`), kein API-Response-Delta.
+    (`worker/stall_reaper.py::reap_stalled_runs`), kein API-Response-Delta.
   - additiv `total_files: int | None` (`None` = Enumerationsphase noch nicht abgeschlossen,
     unterscheidet sich explizit von `0` = leeres Projekt — überall `is not None` statt truthy
     geprüft) — wird nach Abschluss der neuen Enumerationsphase
-    (`worker.py::_enumerate_scan_entries`) einmalig gesetzt; `files_found` wechselt danach die
+    (`worker/scan.py::_enumerate_scan_entries`) einmalig gesetzt; `files_found` wechselt danach die
     Bedeutung von "in Phase 1 gelistet" auf "in Phase 2 verarbeitet" (kein zweites Zählerfeld, siehe
     ADR
     [`decisions/0020-scan-enumeration-und-parallele-verarbeitung.md`](../specs/decisions/0020-scan-enumeration-und-parallele-verarbeitung.md)).
@@ -2000,7 +2000,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   strukturell durch `PhotoCriterionScore`/`PhotoRanking` übernommen wird.
   - additiv `category_override: str | None` (ein beliebiger `canonical_key` statt eines von drei
     festen Werten) — dauerhafte manuelle Übersteuerung des sonst automatisch abgeleiteten
-    `category_key`, `worker.py::run_criterion_scoring` verwendet `category_key =
+    `category_key`, `worker/criterion_scoring.py::run_criterion_scoring` verwendet `category_key =
     score.category_override or <abgeleitete Kategorie>` bei jeder künftigen Partitionsbildung.
   - der Wertebereich ist seither das feste Kategorien-Set (`categories.py::CATEGORY_REGISTRY`,
     dreizehn Werte) statt eines offenen Vokabulars; die Ableitung ist
@@ -2220,7 +2220,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     bereits lief, trägt `phase` schon und bekommt keinen erfundenen Beginn; er fällt bis zum
     nächsten Teilschritt in den regulären `null`-Zweig.
     **`phase` und `phase_started_at` werden ausschließlich gemeinsam gesetzt**, über die eine
-    Funktion `worker.py::_set_phase` — auch die erste Phase jedes Laufs, die vorher als
+    Funktion `worker/_runs.py::_set_phase` — auch die erste Phase jedes Laufs, die vorher als
     Konstruktor-Schlüsselwort mitlief. Bricht die Bindung, rechnet die Messung den Beginn des
     vorigen Teilschritts gegen den Fortschritt des aktuellen: Die Restdauer ist dann zu groß, ohne
     Fehler und ohne roten Verhaltenstest. Festgehalten wird das von einem Quelltext-Wächter
@@ -2262,7 +2262,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Nebenzeilen entstehen erst in einem neuen Lauf, `downgrade()` löscht sie vor dem
     Zurücktauschen). Genau eine Zeile je (Lauf, Foto) trägt `is_primary=true`; diese zweite
     Invariante ist **keine** Datenbankbedingung und wird im Schreibpfad gehalten
-    (`worker.py::reassign_photo_category` stellt die gesamte Zugehörigkeitsmenge her, die
+    (`photosort.worker` stellt die gesamte Zugehörigkeitsmenge her, die
     Override-Endpunkte sperren dafür vorher die `photo_scores`-Zeile mit `with_for_update()`; ein
     `IntegrityError` aus dem neuen Constraint wird zu `409`, nie zu einer 500). **Die Ableitung
     liegt in zwei reinen Funktionen:** `categories.py::secondary_categories(confidences,
@@ -2367,7 +2367,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     eigene Menge neben den Motiven, ändern weder Kontingente noch das Ähnlichkeitsmaß, und ohne
     Person in einem Event ist die Vergabe dort unverändert.
     Auswahlfähig ist eine Rangzeile mit `rank_score IS NOT NULL` und ohne `excluded_document` am
-    Foto. **Geschrieben an genau einer Stelle** (`worker.py::_apply_run_selection`, ein
+    Foto. **Geschrieben an genau einer Stelle** (`worker/_criterion/ranking.py::_apply_run_selection`, ein
     struktureller Wächter in `test_models.py` hält das fest), mit drei Auslösern: dem Kriterien-Lauf
     (nach der Phase `persons`, vor dem Erfolgsvermerk), dem Neuaufbau nach einer Versatz-Änderung
     (`rebuild_run_grouping`, hinter `_build_grouping_and_rankings`) — **kein** neuer
@@ -2389,7 +2389,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Lauf-Artefakt wie `PhotoRanking`, kein reiner Funktionswert über `photos`; der Ortswert eines
     einzelnen Fotos bleibt unpersistiert.
   - **Gebildet wird in EINEM sortierten Durchlauf** (`events.py::build_events`, aufgerufen in
-    `worker.py::_build_grouping_and_rankings` an der Stelle der früheren Landmark-Verfeinerung —
+    `worker/_criterion/ranking.py::_build_grouping_and_rankings` an der Stelle der früheren Landmark-Verfeinerung —
     nach der Cloud-Phase, vor dem Aufbau der Partitionen), dem seit Spec
     [`0477`](../specs/features/0477-motivwechsel-trennsignal.md) / ADR
     [`0109`](../specs/decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md) eine
@@ -2416,8 +2416,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - **Zwei Aufrufer, EIN Weg zur Gliederung** *(Spec
     [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))*: Event-Bildung, Partitionen,
     Kategorieableitung und Rangzeilen stehen seither gemeinsam in
-    `worker.py::_build_grouping_and_rankings`. Aufrufer sind der Kriterien-Lauf
-    (`run_criterion_scoring`) **und** `worker.py::rebuild_run_grouping`, das der Versatz-Endpunkt
+    `worker/_criterion/ranking.py::_build_grouping_and_rankings`. Aufrufer sind der Kriterien-Lauf
+    (`run_criterion_scoring`) **und** `worker/criterion_scoring.py::rebuild_run_grouping`, das der Versatz-Endpunkt
     nach einer Änderung ausführt: Reihenfolge, Anzeige und Ortsherleitung sind mit der Bedeutung
     von `taken_at` sofort richtig, die **Events** sind dagegen persistierte Lauf-Artefakte und
     wären es nicht. Der Neuaufbau **löscht und schreibt neu** statt umzuhängen —
@@ -2528,7 +2528,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Sehenswürdigkeit bekommt keinen Ortsnamen und löst auch bei keinem anderen die Viertel-Ergänzung
     aus" ist entfallen — `landmark_name` wird an keiner Stelle dieses Wegs mehr gelesen. Der
     Ortsname eines benannten Events ist derselbe, den dasselbe Event ohne den Namen trüge. Daraus
-    folgt für den Lauf, dass `worker.py::_build_grouping_and_rankings` die Zellen **auch** der
+    folgt für den Lauf, dass `worker/_criterion/ranking.py::_build_grouping_and_rankings` die Zellen **auch** der
     benannten Events auflöst; verdrängt bleibt allein die **Koordinatenstufe** — ein Event mit
     tragendem Namen bleibt `place_kind='landmark'` mit `place_lat`/`place_lon = NULL`. In der
     Überschrift steht der Name **neben** dem Ortsnamen, nie darin: `events.place_name` führt
@@ -2592,7 +2592,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   "warum landete das Foto hier?" die wahrscheinlichste Frage und sonst unbeantwortbar), `provider:
   str`, `computed_at`. 1:1 statt 1:N, weil pro Foto genau eine Kategorie entsteht — das Schema
   erzwingt die Kernaussage der Spec, statt sie nur zu befolgen. Existenz dieser Zeile ist zugleich
-  das Skip-Kriterium (`worker.py::select_remote_category_candidates`) und die Erfolgs-Ableitung des
+  das Skip-Kriterium (`worker/remote_categories.py::select_remote_category_candidates`) und die Erfolgs-Ableitung des
   `remote_category`-Cloud-Vision-Status (`api/photos.py::_cloud_vision_status_out`).
   - zwei additive, nullable Spalten (Migration `a3b4c5d6e7f8`). `detected_category_confidences:
     JSON` ist die Abbildung `category_key -> Konfidenz in [0, 1]` — eine ABBILDUNG und kein
@@ -2605,7 +2605,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Statistik-Aggregation in SQL laufen muss (`AVG` über einen aus JSON extrahierten Wert ist in
     SQLite und PostgreSQL unterschiedlich zu schreiben) und alle Klassifizierungszeilen eines
     Projekts nach Python zu laden nicht zur Größenannahme passt. Tragbar, weil es genau EINE
-    schreibende Stelle gibt (`worker.py::run_remote_category_classification`, ein
+    schreibende Stelle gibt (`worker/remote_categories.py::run_remote_category_classification`, ein
     Objekt-Konstruktor); die Invariante wird getestet. Beide Spalten ohne `server_default` und ohne
     Backfill: `NULL` heißt "nicht erhoben", `0.0` hieße "das Modell war sich zu 0 % sicher" —
     dasselbe Muster wie bei den Kostenspalten (ADR 0051). Bestandszeilen bleiben dauerhaft ohne
@@ -2787,7 +2787,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `current_user` entgegen (ADR 0099). Ein Ereignisschreiber, der sich dafür eines besorgte, führte
     das dort verworfene `decided_by` durch die Hintertür ein.
   - **`event_id` trägt keinen Fremdschlüssel**, obwohl die Spalte wie eine Referenz aussieht:
-    `worker.py::rebuild_run_grouping` löscht die `events`-Zeilen eines Laufs und legt sie neu an.
+    `worker/criterion_scoring.py::rebuild_run_grouping` löscht die `events`-Zeilen eines Laufs und legt sie neu an.
     Ein echter Fremdschlüssel hielte den Neuaufbau an oder risse Log-Zeilen mit — beides bräche die
     Append-only-Zusage. Gültig ist die Spalte allein zusammen mit dem `criterion_scoring_run_id`
     derselben Zeile.
@@ -2818,7 +2818,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     diese Gegenrichtung fest.
   - `criterion_scoring_runs.quality_weight_set_id` (nullable) hält fest, **mit welcher Fassung ein
     Lauf gerechnet hat**; `NULL` heißt „Startwerte oder Altzeile". Gelesen und geschrieben wird
-    **einmal je Lauf** vor der Partitionsschleife (`worker.py::_build_grouping_and_rankings`, dazu
+    **einmal je Lauf** vor der Partitionsschleife (`worker/_criterion/ranking.py::_build_grouping_and_rankings`, dazu
     `demo_state.py`) — zuvor stand die Konstante innerhalb der Schleife, je Foto neu. Ohne die
     Spalte wäre ein vergangener `rank_score` nach der nächsten Anpassung nicht mehr nachrechenbar.
 - **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
@@ -2880,7 +2880,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     eine Aussage darüber, wo die Familie war, kein allgemeines Vokabular wie `fine_labels`; sie ist
     damit die **dauerhafteste Ortsspur des Systems** und fällt ausschließlich mit dem Projekt
     (`project_deletion.py`). Es gibt bewusst keinen zweiten Weg, sie loszuwerden.
-  - **Beschafft wird ausschließlich im Worker** (`worker.py::_place_infos`, gebunden an
+  - **Beschafft wird ausschließlich im Worker** (`worker/_criterion/ranking.py::_place_infos`, gebunden an
     `project_id`), seit Spec 0469 an **zwei** Stellen desselben Laufs: vor der Cloud-Phase für die
     Zellen der Landmark-Kandidaten (die Ortsangabe geht dort in die Erkennung ein, siehe
     `landmark.py::place_hint_for`) und danach für die Zellen fertiger Events. Dieselbe Funktion,
@@ -2917,7 +2917,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Zellkoordinate; die Tabelle trägt keine Entfernung, kein Prüfergebnis und keine `event_id` — sonst
     würde aus einer Namensauskunft eine persistierte Aufenthaltsaussage mit feinerer Körnung, als
     `places.PLACE_CELL_DIGITS` sie zusichert.
-  - **Beschafft wird ausschließlich im Worker** (`worker.py::_landmark_points_by_name`, Muster
+  - **Beschafft wird ausschließlich im Worker** (`worker/_criterion/ranking.py::_landmark_points_by_name`, Muster
     `_place_infos`), am Ende der Landmark-Phase und für die **Kandidaten**-, nicht die
     Gewinnernamen — der Gewinner entsteht erst in `events.py::_built`. `rebuild_run_grouping`
     bekommt **kein** Verzeichnis: es läuft in einem Request, liest nur den Bestand und fragt
@@ -3022,9 +3022,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   [`0056`](../specs/features/0056-structured-logging-cloud-vision-errors.md)/ADR 0034 —
   `type(exc).__name__`/`str(exc)`, an der jeweiligen Call-Site einmal berechnet, an Log UND diese
   Tabelle weitergereicht; `error_message` beim Schreiben auf 500 Zeichen gekappt,
-  `worker.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH`), `attempted_at: datetime`. Ein
-  erneuter Fehlschlag überschreibt (Upsert, `worker.py::_record_cloud_vision_error`) die bestehende
-  Zeile, ein erfolgreicher (Retry-)Versuch löscht sie (`worker.py::_clear_cloud_vision_error`) —
+  `worker/_runs.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH`), `attempted_at: datetime`. Ein
+  erneuter Fehlschlag überschreibt (Upsert, `worker/_runs.py::_record_cloud_vision_error`) die bestehende
+  Zeile, ein erfolgreicher (Retry-)Versuch löscht sie (`worker/_runs.py::_clear_cloud_vision_error`) —
   hält die Tabelle konsistent mit ihrer eigenen Bedeutung. Nur diese eine Tabelle ist tatsächlich
   neu: die übrigen fünf möglichen Cloud-Vision-Zustände pro Foto×Lauf-Typ
   (`not_run`/`not_candidate`/`consent_disabled`/`no_result`/`result`) sind bereits vollständig aus

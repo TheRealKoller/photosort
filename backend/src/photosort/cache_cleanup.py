@@ -1,8 +1,8 @@
 """Bereinigung verwaister Bildkopien nach jedem erfolgreichen Scan.
 
-Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `worker.py`: die async-Klammer um den
+Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `photosort.worker`: die async-Klammer um den
 Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenbankabfrage, und
-`worker.py` ist bereits gross genug. Die reine, DB-freie Mechanik darunter
+`photosort.worker` ist bereits gross genug. Die reine, DB-freie Mechanik darunter
 (`collect_cache_entries`/`delete_orphaned_entries`) lebt in `thumbnails.py`, wo auch die
 Pfadbildung liegt, die das Muster wiedererkennt.
 

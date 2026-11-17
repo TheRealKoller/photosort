@@ -666,7 +666,7 @@ async def test_deleting_event_cascades_to_photo_rankings(db_session: AsyncSessio
 async def test_deleting_photo_cascades_to_photo_rankings(db_session: AsyncSession) -> None:
     """specs/features/0044-projekte-loeschen.md, AK "Voraussetzung (Cascade-Fix)", Foto-Seite.
 
-    Das ist der Re-Scan-Defekt aus worker.py::run_project_scan: verschwindet ein Foto auf
+    Das ist der Re-Scan-Defekt aus worker/scan.py::run_project_scan: verschwindet ein Foto auf
     OpenCloud, loescht der Scan die Photo-Zeile - ohne diese Relationship bleibt ihre
     photo_rankings-Zeile stehen (und scheitert unter echtem Postgres am Fremdschluessel)."""
     _run, photo = await _make_ranking_graph(db_session)
@@ -851,7 +851,7 @@ async def test_photo_landmark_detection_has_a_provider_column(db_session: AsyncS
 # specs/architecture/0002-testkonzept.md ab hier: Cascade-Tests fuer die drei neuen Tabellen
 # (fine_labels, photo_fine_labels, remote_category_classification_runs) - Review-Fund
 # (test-engineer): fehlten trotz explizitem Testkonzept-Verweis. Realer Codepfad, der das
-# betrifft: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
+# betrifft: worker/scan.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
 # ein bereits remote-klassifiziertes Foto mit photo_fine_labels-Zeilen durchlaeuft diesen
 # Pfad tatsaechlich.
 
@@ -1040,7 +1040,7 @@ async def test_photo_cloud_vision_error_duplicate_phase_for_same_photo_conflicts
 ) -> None:
     # Kein Verlauf (ADR 0035 Punkt 2): eine zweite Zeile fuer dasselbe (photo_id, phase) verletzt
     # den Composite-PK - ein erneuter Fehlschlag muss stattdessen ueber ein Upsert
-    # (worker.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
+    # (worker/_runs.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
     # Zeile einfuegen.
     photo = await _make_photo(db_session)
     now = datetime.now(UTC)
@@ -1468,7 +1468,7 @@ def _writes_taken_at(source: str) -> bool:
     DREI Schreibformen, weil die beiden erlaubten Stellen zwei VERSCHIEDENE benutzen und die
     dritte im Projekt naheliegt:
 
-    1. Attributzuweisung `photo.taken_at = ...` (`worker.py::_process_scan_block`).
+    1. Attributzuweisung `photo.taken_at = ...` (`worker/scan.py::_process_scan_block`).
     2. `taken_at` als Schluessel eines Dict-Literals - die Form des gebuendelten Bulk-Updates
        `session.execute(update(Photo), [{"id": ..., "taken_at": ...}])` (`api/cameras.py`).
     3. `taken_at` als Schluesselwort eines `.values(...)`-Aufrufs - die dritte im Projekt
@@ -2437,7 +2437,7 @@ def _functions_writing(source: str, field: str) -> set[str]:
     nicht stiller Eintrag.
 
     Feiner als der Modulwaechter unten, und das ist der Punkt: Waeren nur die MODULE geprueft,
-    duerfte eine beliebige zweite Funktion in `worker.py` die Phase setzen, ohne den Zeitstempel
+    duerfte eine beliebige zweite Funktion in `photosort.worker` die Phase setzen, ohne den Zeitstempel
     mitzufuehren - der Modulwaechter bliebe gruen.
 
     Ein Name gilt nur dann als `ClassificationReview`, wenn ihn die Funktion selbst nachweist:
@@ -2508,7 +2508,7 @@ def test_exactly_one_function_writes_the_phase() -> None:
     writers = _worker_writers(_PHASE)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
-        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase` setzen, weicht "
+        "Die Menge der Funktionen in photosort.worker, die `CriterionScoringRun.phase` setzen, weicht "
         f"von der genau einen erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
         f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
         f"{sorted(set(_ALLOWED_PHASE_WRITER_FUNCTIONS) - writers)}"
@@ -2522,7 +2522,7 @@ def test_exactly_one_function_writes_the_phase_start() -> None:
     writers = _worker_writers(_PHASE_STARTED_AT)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
-        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase_started_at` "
+        "Die Menge der Funktionen in photosort.worker, die `CriterionScoringRun.phase_started_at` "
         f"setzen, weicht von der genau einen erlaubten ab "
         f"({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
         f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
@@ -2539,7 +2539,7 @@ def test_the_one_phase_writer_sets_both_columns() -> None:
 
 def test_exactly_the_known_modules_write_a_phase_field() -> None:
     """PAKETWEIT, nicht nur modulintern: Ohne diese Pruefung wanderte die Schreibstelle nach
-    `api/projects.py` ab, und der Funktionswaechter oben bliebe gruen, weil er nur `worker.py`
+    `api/projects.py` ab, und der Funktionswaechter oben bliebe gruen, weil er nur `photosort.worker`
     liest.
 
     Der Suchraum wird GEMESSEN (`rglob`), nicht gelistet - eine neu hinzukommende Datei ist sonst
@@ -2602,7 +2602,7 @@ def test_the_phase_guard_does_not_confuse_the_two_columns() -> None:
 
 def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
     """Gegenprobe: `PhotoCloudVisionError` und `CloudVisionStatusOut` fuehren eine gleichnamige
-    Spalte. Zaehlten sie mit, waeren `worker.py::_record_cloud_vision_error` und `api/photos.py`
+    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::_record_cloud_vision_error` und `api/photos.py`
     Befunde - und der Waechter waere nur noch abzuschalten."""
     assert (
         _functions_writing(
@@ -2620,7 +2620,7 @@ def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
 
 def test_the_phase_guard_ignores_a_parameter_or_a_local_variable() -> None:
     """Gegenprobe: ein gleichnamiger Funktionsparameter und eine gleichnamige lokale Variable
-    sind keine Spaltenzuweisung. `worker.py` fuehrt beides."""
+    sind keine Spaltenzuweisung. `photosort.worker` fuehrt beides."""
     assert _functions_writing("def f(phase: str) -> None:\n    pass", _PHASE) == set()
     assert _functions_writing("def f():\n    phase = compute()", _PHASE) == set()
 

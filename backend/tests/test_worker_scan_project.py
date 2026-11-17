@@ -186,7 +186,7 @@ class DownloadRaisesCancelledErrorClient(FakeOpenCloudClient):
     einen Abbruch NICHT beim Walk (siehe WalkFailsWithCancelledErrorClient oben), sondern in einer
     der parallel laufenden Phase-2b-I/O-Coroutinen selbst - genau der Fall, den
     asyncio.gather(..., return_exceptions=True) OHNE explizite Sonderbehandlung verschlucken
-    wuerde (siehe worker.py::_process_scan_block, Kommentar zur CancelledError-Pruefung)."""
+    wuerde (siehe worker/scan.py::_process_scan_block, Kommentar zur CancelledError-Pruefung)."""
 
     def __init__(self, *args: object, cancel_path: str, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
@@ -554,7 +554,7 @@ async def test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_downloa
     CancelledError, das eine EINZELNE Kind-Coroutine wirft (statt einer echten aeusseren
     Task-Cancellation), NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
     Ergebnisliste durch (await gather(...) wirft in diesem Fall NICHTS) - siehe
-    worker.py::_process_scan_block, das genau deshalb die Ergebnisliste explizit auf
+    worker/scan.py::_process_scan_block, das genau deshalb die Ergebnisliste explizit auf
     CancelledError-Instanzen prueft und sie manuell erneut wirft. Ohne diese explizite Pruefung
     wuerde dieser Test fehlschlagen (kein pytest.raises(CancelledError), Scan faelschlich SUCCESS
     oder FAILED mit generischer Fehlermeldung statt des korrekten Watchdog-Schicht-1-Pfads)."""
@@ -1418,7 +1418,7 @@ class TestResumeIdempotency:
         ]
 
         # Un-expired `project` fuer den zweiten Scan-Aufruf unten (rollback() in _fail_run hat es
-        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (worker.py).
+        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (photosort.worker).
         await db_session.refresh(project)
         recovering_client = FakeOpenCloudClient(entries=entries)
         second_run = await run_project_scan(

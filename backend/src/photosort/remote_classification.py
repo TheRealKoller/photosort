@@ -541,10 +541,10 @@ CATEGORY_LABEL_SIMILARITY_THRESHOLD = 0.78
 @dataclass
 class FineLabelSnapshotEntry:
     """Ein Eintrag des In-Memory-Snapshots der `fine_labels`-Tabelle -
-    worker.py::run_remote_category_classification laedt diesen Snapshot einmal zu Laufbeginn und
+    `worker/remote_categories.py` laedt diesen Snapshot einmal zu Laufbeginn und
     reicht ihn (mutierbar) an resolve_canonical_label weiter; neu angelegte Eintraege werden sofort
     lokal ergaenzt (kein erneutes SELECT, keine Nebenlaeufigkeits-Race). Bewusst NICHT frozen
-    (anders als RemoteClassification) - worker.py setzt nach dem DB-Insert die echte `id` auf
+    (anders als RemoteClassification) - photosort.worker setzt nach dem DB-Insert die echte `id` auf
     genau dieser Instanz nach."""
 
     canonical_key: str

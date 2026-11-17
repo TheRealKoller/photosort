@@ -25,7 +25,7 @@ derselbe Parser (`tests/test_place_dataset.py::TestTheExtractBehavesLikeTheRawFi
 `::TestTheSecondExtractBehavesLikeTheRawFile`).
 
 DIESES KOMMANDO BLEIBT VON JEDEM AUTOMATISCHEN PFAD FERN - kein Aufrufpfad aus `main.py`/
-`worker.py`, kein Endpunkt, kein Compose-`command`, dieselbe Auflage und derselbe Nachweis wie bei
+`photosort.worker`, kein Endpunkt, kein Compose-`command`, dieselbe Auflage und derselbe Nachweis wie bei
 `place_probe.py`. Ein 400-MB-Abruf tritt nur ein, wenn er getippt wird.
 
 KEIN SHELLSKRIPT AUF DEM HOST: Auf dem Server gibt es keine Shell, nur eine Oberfläche für Docker

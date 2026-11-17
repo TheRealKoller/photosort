@@ -677,7 +677,7 @@ def test_the_worker_names_the_correction_table_nowhere() -> None:
 
 
 def test_the_worker_never_reads_a_person_name() -> None:
-    """S6: `worker.py` importiert beide Seiten. Die Phase liest nur Id und Schwerpunkt ueber
+    """S6: `photosort.worker` importiert beide Seiten. Die Phase liest nur Id und Schwerpunkt ueber
     `current_centroids` - das Modell `Person` kommt im Worker nicht vor."""
     paths = package_files("photosort.worker")
     assert paths

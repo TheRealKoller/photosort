@@ -19,7 +19,7 @@ weil die Korrektur ihn gerade verdeckt. Je Person (als "Person 1/2" nach Slot):
 Kein Modell, kein `cv2`, kein Schreibzugriff, kein Log; Ausgabe nur auf stdout, nur Anzahlen, kein
 Name, kein Pfad, keine Zeile je Foto und kein Schalter, der Namen ergaenzt - die Ausgabe geht in
 einen oeffentlichen Pull Request. Kein automatischer Pfad erreicht das Kommando (kein Import aus
-`main.py`/`worker.py`, kein Endpunkt, kein Compose-`command`); `tests/test_person_probe.py` haelt
+`main.py`/`photosort.worker`, kein Endpunkt, kein Compose-`command`); `tests/test_person_probe.py` haelt
 das fest. Ein Datenbankfehler nennt nur seinen Typ, nie die `DATABASE_URL`.
 """
 

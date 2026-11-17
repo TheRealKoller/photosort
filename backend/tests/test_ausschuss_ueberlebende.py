@@ -380,7 +380,7 @@ _ERWARTETE_VERWENDUNGEN = {
     # Eye-Phase: sie wertet DENSELBEN Kandidatenbestand aus wie die Kriterien-Phase, damit
     # ausgeschlossene Aufnahmen auch lokal keine Kopfzeile bekommen (und die Rangfolge nicht
     # zwischen zwei Laeufen ueber verschiedene Mengen spricht).
-    # Seit Spec 0647 steht die ehemals eine Datei `worker.py` als Paket: die drei Aufrufstellen
+    # Seit Spec 0647 steht das Worker-Paket da: die drei Aufrufstellen
     # stehen je in ihrer Phase, die Summe bleibt 3.
     ("worker/criterion_scoring.py", "survives_ausschuss"): 1,
     ("worker/remote_categories.py", "survives_ausschuss"): 1,

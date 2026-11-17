@@ -3,7 +3,7 @@ Aehnlichkeitsabwertung.
 
 REIN und DB-FREI - dasselbe Muster wie `ranking.py`/`quality.py`/`events.py`: keine Session, kein
 Modell, kein SQL-Ausdruck. Die Kandidatenmenge kommt fertig herein; wer auswahlfaehig ist,
-entscheidet der Aufrufer (`worker.py`).
+entscheidet der Aufrufer (`photosort.worker`).
 
 DETERMINISMUS IST STRUKTURELL, nicht zugesichert: Kandidaten werden beim Eintritt nach `photo_id`
 sortiert, Events nach `position` durchlaufen, und jede Wahl des groessten Werts bricht Gleichstand

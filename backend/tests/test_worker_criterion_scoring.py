@@ -178,7 +178,7 @@ def _flat_image(color: tuple[int, int, int] = (100, 100, 100), size: int = 160) 
 
 class NoFaceDetector:
     """Faket den mediapipe FaceDetector so, dass nie ein Gesicht gefunden wird - der injizierte
-    build_detector-Callable ersetzt worker.py::build_face_detector, kein echtes .tflite-Modell in
+    build_detector-Callable ersetzt den Builder aus classification.py, kein echtes .tflite-Modell in
     Tests (Teststrategie-Abschnitt der Spec)."""
 
     def detect(self, image: object) -> object:
@@ -191,7 +191,7 @@ def _no_face_detector() -> NoFaceDetector:
 
 class NoAnimalDetector:
     """Faket den mediapipe ObjectDetector so, dass nie ein Tier gefunden wird - der injizierte
-    build_animal_detector-Callable ersetzt worker.py::build_object_detector (specs/features/0038:
+    build_animal_detector-Callable ersetzt den Builder aus classification.py (specs/features/0038:
     build_object_detector darf wie build_face_detector NIE in einem automatisierten Test
     aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
 
@@ -205,7 +205,7 @@ def _no_animal_detector() -> NoAnimalDetector:
 
 class NoSceneLabels:
     """Faket den mediapipe ImageClassifier so, dass keine Szenen-Kategorie gefunden wird - der
-    injizierte build_classifier-Callable ersetzt worker.py::build_scene_classifier
+    injizierte build_classifier-Callable ersetzt den Builder aus classification.py
     (specs/features/0038: build_scene_classifier darf wie build_face_detector NIE in einem
     automatisierten Test aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
 
@@ -220,7 +220,7 @@ def _no_scene_classifier() -> NoSceneLabels:
 class NeutralAestheticsModel:
     """Faket das Keras-Modell so, dass eine neutrale, gleichverteilte NIMA-Ratingverteilung
     zurueckgegeben wird - der injizierte build_aesthetics-Callable ersetzt
-    worker.py::build_aesthetics_model (specs/features/0038: build_aesthetics_model darf wie
+    den Builder aus aesthetics.py (specs/features/0038: build_aesthetics_model darf wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
     tensorflow-Modell in Tests)."""
 
@@ -234,7 +234,7 @@ def _no_aesthetics_model() -> NeutralAestheticsModel:
 
 class NoFaceLandmarker:
     """Faket den mediapipe FaceLandmarker so, dass nie ein Gesicht gefunden wird - der injizierte
-    build_landmarker-Callable ersetzt worker.py::build_face_landmarker (specs/features/0048-
+    build_landmarker-Callable ersetzt den Builder aus classification.py (specs/features/0048-
     kompositions-kriterien-symmetrie-horizont-freiraum.md: build_face_landmarker darf wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
     .task-Modell in Tests)."""
@@ -1757,7 +1757,7 @@ class RecordingLandmarkClient:
         # bleiben.
         self.hints: list[PlaceHint | None] = []
         # Review-Fund (ship-feature-Runde): kein bisheriger Fake bot aclose() an, der
-        # worker.py::run_criterion_scoring's `getattr(landmark_client, "aclose", None)`-Zweig
+        # `run_criterion_scoring`'s `getattr(landmark_client, "aclose", None)`-Zweig
         # nahm deshalb immer den None-Pfad - ein versehentlich falsch benannter/entfernter Aufruf
         # waere unbemerkt geblieben. Zaehlt Aufrufe statt nur bool, damit ein Doppel-Close
         # ebenfalls auffiele.
@@ -2331,7 +2331,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
 
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2/3 ab hier: worker.py::_record_cloud_vision_error/
+# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::_record_cloud_vision_error/
 # _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
 # (Teststrategie-Abschnitt der Spec).
 

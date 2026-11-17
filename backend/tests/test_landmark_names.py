@@ -238,7 +238,7 @@ class TestTheSimilarityThresholdIsItsOwn:
 
 class TestTheModuleBoundary:
     """Muster `places.py`: die reine Aufloesungslogik ist DB-frei, der Datenbankzugriff bleibt in
-    `worker.py`."""
+    `photosort.worker`."""
 
     def test_the_module_imports_neither_sqlalchemy_nor_the_models(self) -> None:
         closure = import_closure("photosort.landmark_names")

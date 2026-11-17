@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageStat
 
 # Ein eigenes Modul und keine Erweiterung von scoring.py, damit die mediapipe-Abhängigkeit nicht
-# in den leichten Phase-A-Importpfad (worker.py::run_project_scoring, läuft für JEDES gescannte
+# in den leichten Phase-A-Importpfad (worker/scoring.py::run_project_scoring, läuft für JEDES gescannte
 # Foto) einsickert - classification.py wird nur von criteria.py und darüber vom
 # run_criterion_scoring-Job importiert.
 
@@ -331,7 +331,7 @@ def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[Obj
     Konfidenzschwelle, die inhaltliche Filterung liegt bei den Konsumenten
     (criteria.py::compute_tier_score/compute_fahrzeug_score/compute_essen_trinken_score/
     animal_detections), die sie jeweils SELBST durchsetzen. Der Detektorlauf selbst bleibt
-    genau EINER pro Foto (worker.py::_compute_content_criteria)."""
+    genau EINER pro Foto (worker/_criterion/local.py::_compute_content_criteria)."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
     detections: list[ObjectDetection] = []

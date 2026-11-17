@@ -15,13 +15,13 @@ GEZOGEN werden muss, bevor er verschwindet: ``PhotoCriterionScore`` traegt keine
 wird bei jedem Lauf ueberschrieben (``UniqueConstraint(photo_id, criterion_key)``).
 
 Gemessen wird mit den Mitteln des Laufs: ``criteria.py::is_landmark_candidate`` ist dieselbe reine
-Schwellenwert-Pruefung, die auch ``worker.py::_select_landmark_candidates`` nimmt, und
+Schwellenwert-Pruefung, die auch ``worker/_criterion/landmark.py::_select_landmark_candidates`` nimmt, und
 ``api/projects.py::_count_landmark_candidates`` ist woertlich die Funktion hinter dem angezeigten
 ``landmark_candidate_count``. Eine zweite, nachbildende Fassung maesse etwas anderes, als der Lauf
 tatsaechlich tut, waehrend beide fuer sich gruen blieben.
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
-``DELETE``, kein Aufrufpfad aus ``main.py``/``worker.py``, kein Endpunkt, kein
+``DELETE``, kein Aufrufpfad aus ``main.py``/``photosort.worker``, kein Endpunkt, kein
 Compose-``command``. Kein Lauf hinterlaesst eine geaenderte, geloeschte oder neue Zeile.
 ``tests/test_criterion_probe.py`` haelt das dreifach fest - Import-Graph, Syntaxbaum-Waechter
 gegen jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Tabelle davor und

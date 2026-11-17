@@ -305,8 +305,8 @@ def _group_slot(
 # SICHERHEITSAUFLAGE (S1) - DASSELBE PRAEDIKAT IST DIE GRENZE DES HOMESERVERS. Es begrenzt, welche
 # Fotos den Homeserver Richtung Cloud-Anbieter verlassen duerfen, und gilt fuer JEDE Abfrage, die
 # Cloud-Kandidaten bestimmt. Das sind VIER, nicht eine: die beiden Laeufe
-# (`worker.py::run_criterion_scoring`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
-# `worker.py::select_remote_category_candidates`) und die beiden vorgelagerten Kostenschaetzungen
+# (`worker/criterion_scoring.py`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
+# `worker/remote_categories.py`) und die beiden vorgelagerten Kostenschaetzungen
 # (`api/projects.py::_count_remote_category_candidates`, `_count_landmark_candidates`). Die
 # Schaetzungen folgen der Auswahl nicht von selbst, sondern sind eigene Anweisungen; sie zaehlen
 # dieselbe Menge, die der Lauf sendet. Untersagte Alternative ist die naheliegende Teilumsetzung -

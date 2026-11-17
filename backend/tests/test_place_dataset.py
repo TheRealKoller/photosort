@@ -224,7 +224,7 @@ class TestTheHitDistanceIsAZahlOhneNamen:
 
     def test_the_answer_itself_never_carries_a_distance(self) -> None:
         """S4, strukturell: `PlaceAnswer` ist ein geschlossener Stufenvorrat und bleibt es. Ein
-        Feld hier waere der Weg an den `PlaceLookup`-Schreibrand in `worker.py`."""
+        Feld hier waere der Weg an den `PlaceLookup`-Schreibrand in `photosort.worker`."""
         fields = {field.name for field in dataclasses.fields(PlaceAnswer)}
 
         assert fields == {"neighbourhood", "locality", "region", "country", "matched_level"}

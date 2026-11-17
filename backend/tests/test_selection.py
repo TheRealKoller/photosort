@@ -1319,7 +1319,7 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
         "selection.py",
         "ranking.py",
         "quality.py",
-        # `worker.py` steht seit Spec 0647 als PAKET da und wird deshalb dateiweise aufgezaehlt -
+        # Das Worker-Paket steht seit Spec 0647 da und wird deshalb dateiweise aufgezaehlt -
         # ausgeschrieben, nicht per Glob: eine neu hinzukommende Datei soll bewusst hier
         # eingetragen werden muessen, statt still unter denselben Waechter zu fallen.
         "worker/__init__.py",

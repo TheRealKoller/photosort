@@ -44,7 +44,7 @@ def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
 
 def create_app() -> FastAPI:
     # Einer der beiden Prozess-Einstiegspunkte (API-Prozess) - derselbe Aufruf sitzt fuer den
-    # Worker-Prozess in worker.py::WorkerSettings.on_startup.
+    # Worker-Prozess in worker/__init__.py::WorkerSettings.on_startup.
     configure_logging()
 
     if (

@@ -95,7 +95,7 @@ def test_scan_download_concurrency_is_env_overridable() -> None:
 
 def test_scan_download_concurrency_rejects_non_positive_values() -> None:
     # test-engineer-/security-engineer-Review-Fund (PR zu Spec 0036): fail-fast am
-    # Konfigurationsrand statt eines stillen Clamps tief im Worker-Code (worker.py verlaesst sich
+    # Konfigurationsrand statt eines stillen Clamps tief im Worker-Code (der Worker verlaesst sich
     # seitdem auf diese Validierung statt selbst zu klemmen).
     with pytest.raises(ValidationError):
         Settings(_env_file=None, scan_download_concurrency=0)

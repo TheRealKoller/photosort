@@ -1,7 +1,7 @@
 """Die Kameras eines Projekts und ihr Zeitversatz - Liste, Setzen, Vorschlag.
 
 Die ZWEITE der zwei Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1; die erste ist
-`worker.py::_process_scan_block`), und beide rechnen ueber `cameras.py::shifted` aus
+`worker/scan.py::_process_scan_block`), und beide rechnen ueber `cameras.py::shifted` aus
 `taken_at_original`.
 
 SICHERHEIT - die PROJEKTGRENZE ist eine Zusage, keine Annahme: Projekte haben keinen Eigentuemer,
@@ -264,7 +264,7 @@ async def set_camera_time_offset(
 
     # Die Beschriftung entsteht VOR dem `commit`: danach sind die Attribute der Zeile expired,
     # und ein Zugriff darauf liefe in einen Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
-    # (`MissingGreenlet`) - dieselbe Falle, die `worker.py::_fail_run` mit seinem `refresh`
+    # (`MissingGreenlet`) - dieselbe Falle, die `worker/_runs.py::_fail_run` mit seinem `refresh`
     # umgeht. Die Fotoanzahl steht ebenfalls schon fest: `updates` ist genau die Menge der Fotos
     # dieser Kamera in diesem Projekt, eine zweite Zaehlabfrage waere dieselbe Zahl.
     label = camera_label(CameraIdentity(make=camera.make, model=camera.model))

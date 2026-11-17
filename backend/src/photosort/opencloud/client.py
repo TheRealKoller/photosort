@@ -22,8 +22,8 @@ _PROPFIND_BODY = (
 )
 
 
-# Umgezogen von worker.py::_IMAGE_EXTENSIONS (dort ehemals privat) - api/opencloud.py darf
-# worker.py nicht importieren (zieht dessen schwere mediapipe-/tensorflow-Abhaengigkeiten in den
+# Umgezogen aus dem Worker (dort ehemals privat) - api/opencloud.py darf
+# photosort.worker nicht importieren (zieht dessen schwere mediapipe-/tensorflow-Abhaengigkeiten in den
 # API-Request-Pfad), client.py ist dagegen der bereits heute gemeinsame, leichte Baustein fuer
 # beide Konsumenten.
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
@@ -183,7 +183,7 @@ class OpenCloudClient:
         # XML-Tag, nicht-numerischer content-length, unparsbares Datum in _parse_last_modified)
         # darf hier nicht als roher
         # ParseError/ValueError/TypeError propagieren - sonst laeuft die Exception ungefangen bis
-        # in worker.py::run_project_scan durch, dessen (frueher zu enger) Fehlerbehandlungs-Block
+        # in worker/scan.py::run_project_scan durch, dessen (frueher zu enger) Fehlerbehandlungs-Block
         # den zugehoerigen ScanRun dann dauerhaft auf "running" stehen laesst. Analog zum
         # bestehenden Muster in _drive_from_graph_api_item (gleiche Datei).
         try:

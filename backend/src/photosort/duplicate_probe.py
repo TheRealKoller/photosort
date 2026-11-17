@@ -14,7 +14,7 @@ Variante, die Schaerfe aus ``PhotoScore``. Drei Laeufe ueber DIESELBE Teilmenge:
   viele Gruppen entstehen, wenn man eine aus dem Dateidatum abgeleitete Zeit wie eine Messung
   behandelt.
 
-REIN LESEND, geprueft in drei Teilen: kein Pfad aus ``main.py``/``worker.py`` importiert dieses
+REIN LESEND, geprueft in drei Teilen: kein Pfad aus ``main.py``/``photosort.worker`` importiert dieses
 Modul, ein Syntaxbaum-Waechter verbietet jede Schreibform im Modul, und ein echter ``main()``-Lauf
 vergleicht jede Tabelle vorher/nachher.
 

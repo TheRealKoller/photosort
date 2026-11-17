@@ -211,7 +211,7 @@ class Photo(Base):
     #
     # INVARIANTE, im Schreibpfad gehalten: `taken_at == taken_at_original + offset_minutes` der
     # Kamera dieses Fotos in genau diesem Projekt; ohne Kamera oder bei `offset_minutes = 0` sind
-    # beide Werte gleich. Es gibt GENAU ZWEI Schreibstellen - `worker.py::_process_scan_block` und
+    # beide Werte gleich. Es gibt GENAU ZWEI Schreibstellen - `worker/scan.py::_process_scan_block` und
     # `api/cameras.py` -, beide ueber die eine reine Funktion `cameras.py::shifted`. Eine dritte
     # gibt es nicht; ein struktureller Waechtertest in test_models.py haelt das fest, weil eine
     # dritte Schreibstelle keinen Verhaltenstest roeten wuerde, solange sie den Wert irgendwie
@@ -270,7 +270,7 @@ class Photo(Base):
     # antwortet dafuer fehlerfrei, und die Oberflaeche plant ein solches Foto mit 3:2 ein.
     #
     # KEIN server_default und kein Backfill. `aspect_ratio IS NULL` ist zugleich die
-    # Arbeitsmenge der Nachhol-Runde zu Beginn jedes Projekt-Scans (worker.py) - ein Default
+    # Arbeitsmenge der Nachhol-Runde zu Beginn jedes Projekt-Scans (photosort.worker) - ein Default
     # naehme ihr die Arbeitsmenge weg, und jedes Bestandsfoto zeigte dauerhaft ein erfundenes
     # Verhaeltnis.
     #
@@ -370,7 +370,7 @@ class Photo(Base):
     )
     # Die Foto-Seite derselben Kaskade wie bei CriterionScoringRun.rankings. Ohne sie scheitert
     # der Re-Scan unter echtem Postgres an einer Fremdschlüsselverletzung, sobald
-    # worker.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
+    # worker/scan.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
     # photo_rankings-Eintrag steht.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
     # 1:1 und optional; ihre ABWESENHEIT ist der Zustand "noch nicht entschieden" (ADR 0104).
@@ -398,14 +398,14 @@ class ScanRun(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Fortschritts-Watchdog: server-seitig defaultet, sonst gälte ein frisch angelegter Lauf
     # sofort als Stillstand. Periodisch zwischen-committet
-    # (worker.py::_maybe_commit_progress_checkpoint), gelesen von worker.py::reap_stalled_runs.
+    # (worker/scan.py::_maybe_commit_progress_checkpoint), gelesen von worker/stall_reaper.py.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Abbruchwunsch des Nutzers (`NULL` = keiner). Der Worker liest ihn an seinen Pruefpunkten
-    # frisch und beendet den Lauf dort als `CANCELLED` (worker.py::_finish_cancelled).
+    # frisch und beendet den Lauf dort als `CANCELLED` (worker/_runs.py::_finish_cancelled).
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # default=None (nicht 0) - unterscheidet "Enumerationsphase noch nicht abgeschlossen,
     # Gesamtzahl unbekannt" von "Projekt enthält 0 Dateien". Überall mit `is not None` statt
-    # truthy zu prüfen. Wird nach Abschluss von Phase 1 (worker.py::run_project_scan) einmalig
+    # truthy zu prüfen. Wird nach Abschluss von Phase 1 (worker/scan.py::run_project_scan) einmalig
     # gesetzt und danach nicht mehr verändert.
     total_files: Mapped[int | None] = mapped_column(default=None)
 
@@ -470,7 +470,7 @@ class ScoringRun(Base):
     """Ein Lauf des lokalen Scoring-Jobs, analog ScanRun.
 
     photos_total/photos_processed liefern granularen Live-Fortschritt, periodisch
-    zwischen-committet (worker.py::run_project_scoring).
+    zwischen-committet (worker/scoring.py::run_project_scoring).
     """
 
     __tablename__ = "scoring_runs"
@@ -621,7 +621,7 @@ class CriterionScoringRun(Base):
     Re-Scan/Re-Scoring.
 
     photos_total/photos_processed liefern granularen Live-Fortschritt, periodisch
-    zwischen-committet (worker.py::run_criterion_scoring). Kein Top-N-Parameter und kein
+    zwischen-committet (worker/criterion_scoring.py::run_criterion_scoring). Kein Top-N-Parameter und kein
     suggestions_found: N ist beim Scoren nicht bekannt und wird erst beim Lesen angewendet - der
     Job berechnet immer den vollen Rangfolge-Pool je Partition."""
 
@@ -641,7 +641,7 @@ class CriterionScoringRun(Base):
     # Abbruchwunsch, analog ScanRun.cancel_requested_at.
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # Diese Zeile ist der Run-Datensatz des GESAMTEN Klassifizierungslaufs, nicht nur seiner
-    # Kriterien-Phase: angelegt von worker.py::run_classification, bevor die erste Phase startet,
+    # Kriterien-Phase: angelegt von worker/classification.py, bevor die erste Phase startet,
     # nie von run_criterion_scoring selbst. Sonst zeigte `last_criterion_scoring_run` während der
     # Remote-Phase noch auf den Lauf DAVOR.
     #
@@ -656,7 +656,7 @@ class CriterionScoringRun(Base):
     # `started_at` ist der Beginn des GESAMTEN Laufs, und `last_progress_at` wird in der
     # Folgephase weitergeschrieben.
     #
-    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker.py::_set_phase.
+    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker/_runs.py::_set_phase.
     # `NULL` heißt hier "kein laufender Teilschritt" (beendet, abgebrochen, oder Altzeile), nie
     # "gerade begonnen"; mit `phase = NULL` fällt auch dieser Wert auf `NULL` zurück. Bricht die
     # Bindung, rechnet die Restdauer den Beginn des VORIGEN Teilschritts gegen den Fortschritt des
@@ -935,7 +935,7 @@ class PhotoRanking(Base):
     # der Wert nutzerbezogen, fiele die Antwort unter dieselbe Cache-Schlüssel-Auflage wie
     # `PhotoOut.suggestion` (siehe `api/photos.py::_to_photo_out`).
     #
-    # GESCHRIEBEN wird die Spalte an genau einer Stelle (`worker.py`); ein struktureller Wächter
+    # GESCHRIEBEN wird die Spalte an genau einer Stelle (`photosort.worker`); ein struktureller Wächter
     # in tests/test_models.py hält das fest. Eine zweite Vergaberegel daneben sähe im Ergebnis
     # genauso aus und röte keinen Verhaltenstest.
     selection_position: Mapped[int | None] = mapped_column(default=None)
@@ -952,8 +952,8 @@ class PhotoLandmarkDetection(Base):
 
     `provider` hält fest, welcher Cloud-Provider diese Zeile erzeugt hat - sonst wäre die Herkunft
     bereits gescorter Fotos nach einem Umschalten von Settings.landmark_provider unklar. Atomar im
-    selben Upsert wie name/confidence gesetzt (worker.py::_upsert_landmark_detection). Der Default
-    "anthropic" deckt Zeilen aus der Zeit vor dieser Spalte ab; worker.py setzt den Wert im
+    selben Upsert wie name/confidence gesetzt (worker/_criterion/landmark.py). Der Default
+    "anthropic" deckt Zeilen aus der Zeit vor dieser Spalte ab; photosort.worker setzt den Wert im
     produktiven Pfad immer explizit."""
 
     __tablename__ = "photo_landmark_detections"
@@ -1019,7 +1019,7 @@ class PhotoFineLabel(Base):
     UniqueConstraint(photo_id, fine_label_id): verhindert zwei Zeilen für dasselbe
     Foto x kanonisches-Label-Paar (relevant, falls beide Feinlabels eines Fotos auf denselben
     canonical_key clustern - dann wird nur eine Zeile geschrieben, siehe
-    worker.py::run_remote_category_classification)."""
+    worker/remote_categories.py::run_remote_category_classification)."""
 
     __tablename__ = "photo_fine_labels"
     __table_args__ = (
@@ -1092,16 +1092,16 @@ class CloudVisionPhase(enum.StrEnum):
 
 class PhotoCloudVisionError(Base):
     """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs für ein Foto - bewusst KEIN
-    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker.py::_record_cloud_vision_error)
+    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker/_runs.py::_record_cloud_vision_error)
     die bestehende Zeile, ein erfolgreicher Retry LÖSCHT sie
-    (worker.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
+    (worker/_runs.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
     id+UniqueConstraint-Paars: es gibt strukturell höchstens eine sinnvolle "letzter
     Fehlschlag"-Zeile je Foto x CloudVisionPhase.
 
     `error_type`/`error_message` sind identischer Inhalt wie der WARNING-Log-Eintrag
-    (`type(exc).__name__`, `str(exc)`) - an der jeweiligen worker.py-Call-Site EINMAL berechnet,
+    (`type(exc).__name__`, `str(exc)`) - an der jeweiligen Call-Site im Worker EINMAL berechnet,
     an beide Senken (Logger, hier) weitergereicht, keine zweite Auswertung. `error_message` wird
-    beim Schreiben auf worker.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH (500 Zeichen)
+    beim Schreiben auf worker/_runs.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH (500 Zeichen)
     gekappt - defensiver Schutz gegen eine entartete Fehlermeldung. Die eigentliche Absicherung
     ist und bleibt die Sanitisierung von `str(exc)` (keine Secrets, keine Rohdaten); die Kappung
     ist nur eine Storage-/Degenerationsgrenze.
@@ -1590,7 +1590,7 @@ class ExportRun(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Fortschritts-Watchdog, analog ScanRun.last_progress_at: server-seitig defaultet, sonst gaelte
     # ein frisch angelegter Lauf sofort als Stillstand. Periodisch zwischen-committet
-    # (worker.py::run_export), gelesen von worker.py::reap_stalled_runs.
+    # (worker/export.py::run_export), gelesen von worker/stall_reaper.py::reap_stalled_runs.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Abbruchwunsch, analog ScanRun.cancel_requested_at.
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
@@ -1653,7 +1653,7 @@ class PhotoDuplicateDecision(Base):
     ueber denselben Bestand, und der Kriterien-Lauf muesste eine davon waehlen.
 
     Die Zeile haengt am Foto und UEBERLEBT deshalb einen erneuten Lauf ohne durchsetzenden Code:
-    `worker.py::run_project_scoring` setzt `duplicate_of`, `cluster_key` und `suggested_status`
+    `worker/scoring.py::run_project_scoring` setzt `duplicate_of`, `cluster_key` und `suggested_status`
     zurueck und fasst diese Tabelle nicht an."""
 
     __tablename__ = "photo_duplicate_decisions"
@@ -1762,7 +1762,7 @@ class FeedbackEvent(Base):
     )
     # GRUPPIERUNGSSCHLUESSEL OHNE FREMDSCHLUESSEL, und das ist keine Nachlaessigkeit: Die Spalte
     # ist gueltig allein zusammen mit dem `criterion_scoring_run_id` derselben Zeile und wird nie
-    # zu einer `Event`-Zeile aufgeloest. `worker.py::rebuild_run_grouping` LOESCHT die
+    # zu einer `Event`-Zeile aufgeloest. `worker/criterion_scoring.py::rebuild_run_grouping` LOESCHT die
     # `Event`-Zeilen eines Laufs und legt sie neu an; ein echter Fremdschluessel hielte entweder
     # den Neuaufbau an oder risse Zeilen dieses Logs mit - beides braeche die Append-only-Zusage.
     #
