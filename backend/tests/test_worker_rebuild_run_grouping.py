@@ -20,7 +20,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import events as events_module
-from photosort import worker
 from photosort.cameras import shifted
 from photosort.models import (
     CategoryMethod,
@@ -39,7 +38,9 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.thumbnails import display_path
+from photosort.worker import criterion_scoring as worker_criterion_scoring
 from photosort.worker import rebuild_run_grouping, run_criterion_scoring
+from photosort.worker._criterion import eye as worker_eye
 from tests.import_closure import module_file
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
@@ -600,7 +601,7 @@ class TestTheRebuildLoadsNoEmbeddingModel:
         def _explode() -> NoReturn:
             pytest.fail("rebuild_run_grouping darf kein Einbettungsmodell bauen (S10)")
 
-        monkeypatch.setattr(worker, "build_label_embedder", _explode)
+        monkeypatch.setattr(worker_criterion_scoring, "build_label_embedder", _explode)
 
         await rebuild_run_grouping(db_session, project.id)
 
@@ -794,7 +795,7 @@ class TestTheRebuildNeverCallsTheEyeService:
         def _explode() -> NoReturn:
             pytest.fail("rebuild_run_grouping darf keinen Eye-Client bauen (S5)")
 
-        monkeypatch.setattr(worker, "build_eye_client", _explode)
+        monkeypatch.setattr(worker_eye, "build_eye_client", _explode)
 
         await rebuild_run_grouping(db_session, project.id)
 

@@ -20,7 +20,9 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs
+from photosort.worker import stall_reaper as worker_stall_reaper
 from tests.project_graph import get_or_create_user
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019),
@@ -34,7 +36,7 @@ _SENTINEL_NOW = datetime(2030, 1, 1, 12, 0, 0)
 
 @pytest.fixture(autouse=True)
 def _freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(worker_module, "_now_utc", lambda: _SENTINEL_NOW)
+    monkeypatch.setattr(worker_runs, "_now_utc", lambda: _SENTINEL_NOW)
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
@@ -80,7 +82,7 @@ async def test_stall_message_reflects_the_configured_threshold(
     """Copilot-Review-Fund (PR #67): die Fehlermeldung leitet die genannte Minutenzahl aus
     STALL_THRESHOLD ab statt sie hart zu codieren - passt sich also automatisch an, statt bei
     einer kuenftigen Anpassung von STALL_THRESHOLD unbemerkt auseinanderzudriften."""
-    monkeypatch.setattr(worker_module, "STALL_THRESHOLD", timedelta(minutes=30))
+    monkeypatch.setattr(worker_stall_reaper, "STALL_THRESHOLD", timedelta(minutes=30))
     project = await _make_project(db_session)
     stalled = ScanRun(
         project_id=project.id,
@@ -349,7 +351,7 @@ async def test_error_reaping_one_run_does_not_block_others(
     db_session.add_all([stalled_a, stalled_b])
     await db_session.commit()
 
-    original_fail_run = worker_module._fail_run
+    original_fail_run = worker_runs._fail_run
     call_count = {"n": 0}
 
     async def flaky_fail_run(session: AsyncSession, run: object, message: str) -> None:
@@ -358,7 +360,7 @@ async def test_error_reaping_one_run_does_not_block_others(
             raise RuntimeError("simulated failure reaping one row")
         await original_fail_run(session, run, message)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(worker_module, "_fail_run", flaky_fail_run)
+    monkeypatch.setattr(worker_runs, "_fail_run", flaky_fail_run)
 
     session_factory = make_session_factory(db_session.bind)
     reaped = await reap_stalled_runs({}, session_factory=session_factory)

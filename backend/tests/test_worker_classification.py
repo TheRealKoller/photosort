@@ -39,7 +39,9 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
 from photosort.thumbnails import display_path
+from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs, run_classification
+from photosort.worker._criterion import ranking as worker_ranking
 from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
@@ -877,7 +879,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
             recorder.record(await _current_run(db_session))
             return await super().detect(image_bytes, mime_type, hint)
 
-    real_rank_photos = worker.rank_photos
+    real_rank_photos = worker_ranking.rank_photos
 
     def _observing_rank_photos(*args: object, **kwargs: object) -> object:
         # Der Ranking-Teilschritt hat keinen Client - der Spy auf rank_photos ist sein einziger
@@ -888,7 +890,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         recorder.record(run)
         return real_rank_photos(*args, **kwargs)
 
-    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _observing_rank_photos)
 
     run = await _run(
         db_session,
@@ -921,7 +923,7 @@ async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
     await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
     recorder = _PhaseRecorder()
 
-    real_rank_photos = worker.rank_photos
+    real_rank_photos = worker_ranking.rank_photos
 
     def _observing_rank_photos(*args: object, **kwargs: object) -> object:
         run = next(
@@ -930,7 +932,7 @@ async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
         recorder.record(run)
         return real_rank_photos(*args, **kwargs)
 
-    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _observing_rank_photos)
 
     run = await _run(
         db_session,
@@ -960,7 +962,7 @@ async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
     await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
     observed: list[ClassificationPhase | None] = []
 
-    real_rank_photos = worker.rank_photos
+    real_rank_photos = worker_ranking.rank_photos
 
     def _observing_rank_photos(*args: object, **kwargs: object) -> object:
         run = next(
@@ -969,7 +971,7 @@ async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
         observed.append(run.phase)
         return real_rank_photos(*args, **kwargs)
 
-    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _observing_rank_photos)
 
     await _run(
         db_session,
@@ -1000,7 +1002,7 @@ async def test_a_failed_run_leaves_no_phase_behind(
     def _explode(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("simulierter Fehlschlag im Ranking-Teilschritt")
 
-    monkeypatch.setattr(worker, "rank_photos", _explode)
+    monkeypatch.setattr(worker_ranking, "rank_photos", _explode)
 
     run = await _run(
         db_session,
@@ -1282,7 +1284,7 @@ async def _three_photo_cloud_project(
     for name in ("a.jpg", "b.jpg", "c.jpg"):
         await _add_candidate_photo(session, project, name, tmp_path)
     clock = _TickingClock()
-    monkeypatch.setattr(worker, "_now_utc", clock)
+    monkeypatch.setattr(worker_runs, "_now_utc", clock)
     return project, scoring_run, clock
 
 

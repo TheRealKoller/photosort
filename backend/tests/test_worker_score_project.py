@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw, ImageFilter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import photosort.worker as worker_module
 from photosort.models import (
     DuplicateDecision,
     Photo,
@@ -26,7 +25,9 @@ from photosort.models import (
 from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
 from photosort.security import hash_password
 from photosort.thumbnails import display_path
+from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scoring
+from photosort.worker import scoring as worker_scoring
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -257,12 +258,12 @@ async def test_scoring_run_marked_failed_keeps_suggestions_found_at_default(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 1)
 
     def _boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("unexpected clustering failure")
 
-    monkeypatch.setattr(worker_module, "assign_duplicate_groups", _boom)
+    monkeypatch.setattr(worker_scoring, "assign_duplicate_groups", _boom)
 
     project = await _make_project(db_session)
     photo = await _add_photo(
@@ -352,7 +353,7 @@ async def test_scoring_run_commits_progress_periodically(
     Zwischen-Commits klein setzen, um granulares Fortschritts-Commit-Verhalten mit wenigen
     Testfotos zu pruefen, statt echte 25+ Testfotos anzulegen."""
 
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 2)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 2)
 
     project = await _make_project(db_session)
     for i in range(5):
@@ -417,12 +418,12 @@ async def test_scoring_run_marked_failed_leaves_committed_progress_untouched(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 1)
 
     def _boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("unexpected clustering failure")
 
-    monkeypatch.setattr(worker_module, "assign_duplicate_groups", _boom)
+    monkeypatch.setattr(worker_scoring, "assign_duplicate_groups", _boom)
 
     project = await _make_project(db_session)
     photo = await _add_photo(
@@ -460,7 +461,7 @@ async def test_scoring_run_marked_failed_on_cancelled_error(
     def _boom(*args: object, **kwargs: object) -> float:
         raise asyncio.CancelledError()
 
-    monkeypatch.setattr(worker_module, "compute_sharpness", _boom)
+    monkeypatch.setattr(worker_scoring, "compute_sharpness", _boom)
 
     project = await _make_project(db_session)
     project_id = project.id
@@ -486,9 +487,9 @@ async def test_scoring_updates_last_progress_at_at_each_checkpoint(
     0019), Pendant zu test_scan_updates_last_progress_at_at_each_checkpoint - hier am
     SCORE_COMMIT_BATCH_SIZE-Zwischen-Commit-Block."""
 
-    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+    monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 1)
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_module, "_now_utc", lambda: sentinel)
+    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)
 
     project = await _make_project(db_session)
     photo = await _add_photo(
@@ -787,7 +788,7 @@ async def test_a_decision_written_after_the_groups_are_read_wins_the_race(
     dem Lauf vorhandenen Zeile.
     """
     project, winner, loser = await _scored_pair(db_session, tmp_path)
-    original = worker_module.assign_duplicate_groups
+    original = worker_scoring.assign_duplicate_groups
 
     def assign_with_foreign_decision(fingerprints):
         assignment = original(fingerprints)
@@ -796,7 +797,7 @@ async def test_a_decision_written_after_the_groups_are_read_wins_the_race(
         )
         return assignment
 
-    monkeypatch.setattr(worker_module, "assign_duplicate_groups", assign_with_foreign_decision)
+    monkeypatch.setattr(worker_scoring, "assign_duplicate_groups", assign_with_foreign_decision)
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 

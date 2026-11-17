@@ -87,6 +87,7 @@ from photosort.models import (
 )
 from photosort.place_dataset import extract_line, write_extracts
 from photosort.selection import carried_motifs, effective_target
+from photosort.worker._criterion import ranking as worker_ranking
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -3096,7 +3097,7 @@ class TestBothPathsSeeTheSameCandidates:
     ) -> None:
         project_id = await _seed_measured_project(db_session)
         captured: list[tuple[EventCandidate, ...]] = []
-        through_the_run = worker.read_event_inputs
+        through_the_run = worker_ranking.read_event_inputs
 
         async def recording(
             session: AsyncSession, seen_project_id: int, photo_ids: Collection[int]
@@ -3105,7 +3106,7 @@ class TestBothPathsSeeTheSameCandidates:
             captured.append(inputs.candidates)
             return inputs
 
-        monkeypatch.setattr(worker, "read_event_inputs", recording)
+        monkeypatch.setattr(worker_ranking, "read_event_inputs", recording)
 
         # Der Neuaufbau ist der Lauf-Pfad: er ermittelt die Kandidatenmenge selbst und ruft
         # `_build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
