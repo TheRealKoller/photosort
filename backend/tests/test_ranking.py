@@ -55,8 +55,8 @@ class TestTheMonotonicityIsBack:
     """specs/features/0427-motive-mit-staerke.md, PR 3 Schritt 1: `confidence_ordering_score` und
     `CONFIDENCE_RANK_PENALTY` entfallen mit der Modellkonfidenz je Kategorie.
 
-    Die Faelle hier sind die POSITIVE Haelfte des Abbaus - der strukturelle Waechter in
-    tests/test_keine_kategoriebegriffe.py deckt nur ab, dass die Namen nicht mehr vorkommen. Sie
+    Die Faelle hier sind die POSITIVE Haelfte des Abbaus - der strukturelle Waechter
+    deckt nur ab, dass die Namen nicht mehr vorkommen. Sie
     halten fest, dass `rank_position` monoton in `rank_score` ist: eine still wiedereingefuehrte
     Daempfung (etwa ueber eine Motivstaerke) braeche sie."""
 

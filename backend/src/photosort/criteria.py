@@ -617,7 +617,7 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     presence_threshold erreicht (`>=`, inklusiv, dieselben Registry-Werte wie die
     übrige Presence-Auswertung). Fehlende Werte gelten als 0.0, kein Sonderfall. Von
     worker/_criterion/landmark.py::_select_landmark_candidates (Live-Lauf) UND
-    api/photos.py::_cloud_vision_status_out (Read-Time-Ableitung) gemeinsam genutzt -
+    api/photos/_conversion.py::_cloud_vision_status_out (Read-Time-Ableitung) gemeinsam genutzt -
     verhindert ein Auseinanderlaufen beider Stellen bei einer Schwellenwert-Änderung.
 
     SICHERHEIT: Das ist die Stelle an der Vertrauensgrenze - sie entscheidet, welche Fotos

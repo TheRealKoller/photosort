@@ -422,7 +422,7 @@ def event_for_time(spans: Iterable[EventSpan], taken_at: datetime) -> int | None
 
     REIN und ohne Uhr; die Reihenfolge der uebergebenen Spannen wirkt sich nicht aus.
 
-    Aufrufer ist der Entwurfszweig von `api/photos.py` fuer die vom Nutzer aufgenommenen Fotos
+    Aufrufer ist der Entwurfszweig von `api/photos/` fuer die vom Nutzer aufgenommenen Fotos
     ohne Rangzeile. Die Spannenliste wird dort EINMAL geladen und fuer alle Fotos wiederverwendet
     (Auflage S14) - nie eine Abfrage je Foto."""
     ordered = sorted(spans, key=_span_order)

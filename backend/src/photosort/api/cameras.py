@@ -40,14 +40,14 @@ from photosort.models import (
 )
 from photosort.worker import rebuild_run_grouping
 
-# Router-weite Auth wie `api/stats.py` (anders als `api/photos.py`): kein Endpunkt hier braucht
+# Router-weite Auth wie `api/stats.py` (anders als `api/photos/`): kein Endpunkt hier braucht
 # das tatsaechliche User-Objekt, und dies ist ein NEU angelegtes Modul - ohne die Router-Ebene
 # haenge die Absicherung eines kuenftigen vierten Endpunkts allein daran, dass niemand die
 # Dependency vergisst.
 router = APIRouter(prefix="/projects", tags=["cameras"], dependencies=[Depends(get_current_user)])
 
 # SICHERHEIT - Obergrenze der Foto-Ids des Vorschlags, im Muster von
-# `api/photos.py::MAX_QUERY_POSITION`: ein Pydantic-`int` ist unbeschraenkt und landet direkt im
+# `api/photos/_reads.py::MAX_QUERY_POSITION`: ein Pydantic-`int` ist unbeschraenkt und landet direkt im
 # SQL-Vergleich; unter SQLite wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit
 # eine 500 statt einer 404.
 _MAX_PHOTO_ID = 1_000_000_000

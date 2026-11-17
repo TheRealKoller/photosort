@@ -326,7 +326,7 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
 # SICHERHEIT (die Zielgruppe dieser Fehlermeldung reicht vom Server-Log-Leser bis zum App-Nutzer):
 # Die persistierte Meldung darf keinen URL-Query-Parameter tragen. Betroffen ist der von
 # httpx.HTTPError gewrappte Netzwerkfehler
-# (landmark.py::LandmarkApiError/remote_classification.py::RemoteCategoryClassificationApiError,
+# (_criterion/landmark.py::LandmarkApiError bzw. remote_categories.py::RemoteCategoryClassificationApiError,
 # jeweils "... API nicht erreichbar: {exc}"). Getragen wird die Zusage davon, dass beide Call-Sites
 # ausschliesslich die fest codierten URL-Konstanten ANTHROPIC_MESSAGES_URL/
 # MISTRAL_CHAT_COMPLETIONS_URL aufrufen (cloud_vision.py) - beide ohne Query-String. Jeglicher
@@ -410,7 +410,7 @@ async def _clear_cloud_vision_error(
     """Loescht eine ggf. vorhandene Fehler-Zeile nach einem erfolgreichen (Retry-)Versuch
     ("Aufraeumen bei Erfolg") - haelt die Tabelle konsistent mit ihrer eigenen
     Bedeutung ("letzter bekannter Versuch ist fehlgeschlagen"), auch wenn die Prioritaets-Kaskade
-    in api/photos.py::_cloud_vision_status_out einen vergessenen Aufruf funktional abfangen
+    in api/photos/_conversion.py::_cloud_vision_status_out einen vergessenen Aufruf funktional abfangen
     wuerde (Erfolg schlaegt Fehler)."""
     existing = await session.get(PhotoCloudVisionError, (photo_id, phase))
     if existing is not None:

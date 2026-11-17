@@ -697,7 +697,7 @@ class TestIsLandmarkCandidate:
     """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
     attempt-fehler-persistierung.md Punkt 4: extrahiert aus worker/_criterion/landmark.py
     - reine Schwellenwert-Pruefung (kein Skip-bereits-gescort, das bleibt worker-spezifisch), von
-    Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt.
+    Live-Lauf UND API-Ableitung (api/photos/_conversion.py::_cloud_vision_status_out) gemeinsam genutzt.
 
     specs/features/0217, ADR 0047 Punkt 5: die Vorfilterung prueft seit dieser Spec `landschaft`
     ODER `gebaeude` statt `content_landscape` ODER `gebaeude` - inhaltlich das, was der Filter

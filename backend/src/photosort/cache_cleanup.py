@@ -7,7 +7,7 @@ Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenban
 Pfadbildung liegt, die das Muster wiedererkennt.
 
 `cache_key` ist `sha256(f"{photo_id}:{etag}")`. Dieselbe Rechnung, die eine alte Fassung
-unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos.py`,
+unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos/`,
 `measure_cache_usage` und `delete_cached_variants` rechnen alle drei aus VORHANDENEN Zeilen. Was zu
 keiner Zeile mehr gehoert, ist deshalb weder sichtbar noch loeschbar. Wer diese Dateien finden
 will, muss das Verzeichnis lesen - genau einmal, an genau dieser Stelle.

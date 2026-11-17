@@ -314,11 +314,11 @@ Verarbeitungs-Cache (Thumbnails).
     `/projects`- und `/opencloud`-Router sind auth-pflichtig (Router-Level-Dependency).
   - `GET /projects/{id}/photos` (Listing/Filter/Pagination), `GET /photos/{id}/image`
     (Thumbnail-/Display-Streaming aus dem lokalen Cache), `PUT`/`DELETE /photos/{id}/rating`
-    (`api/photos.py`, `api/ratings.py`) — auth-pflichtig per Endpoint-Dependency statt
+    (`api/photos/`, `api/ratings.py`) — auth-pflichtig per Endpoint-Dependency statt
     Router-Level-Dependency, da beide Router mehrere URL-Präfixe bedienen und den `User` ohnehin für
     die Bewertungszuordnung brauchen.
   - `POST /projects/{id}/score` (`api/projects.py`, analog `POST /projects/{id}/scan`, gleicher
-    Router-Level-Auth-Guard), `PhotoOut.suggestion` (`api/photos.py`, nur befüllt ohne eigenes
+    Router-Level-Auth-Guard), `PhotoOut.suggestion` (`api/photos/`, nur befüllt ohne eigenes
     `Rating`), `ProjectOut.last_scoring_run` (analog `last_scan`). `POST
     /projects/{id}/confirm-ausschuss-gate` (synchron, idempotent, projektweit; **seit Spec
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) übernimmt der Aufruf in einer
@@ -331,7 +331,7 @@ Verarbeitungs-Cache (Thumbnails).
     /projects/{id}/photos?top_n_per_category=N` (Top-N je Partition),
     `ProjectOut.last_criterion_scoring_run`, `ScoringRunSummary.id`/`.gate_confirmed_at`,
     `PhotoOut.ranking`/`RankingOut`.
-  - `GET /projects/{id}/ausschuss` (`api/photos.py`; **seit Spec
+  - `GET /projects/{id}/ausschuss` (`api/photos/`; **seit Spec
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md)**) — der Bestand des
     Ausschuss-Schritts: „offener Vorschlag" **und** „Entscheidungszeile" zusammen (ausdrücklich
     **nicht** `NOT ueberlebt`), je Eintrag der Grund
@@ -369,9 +369,9 @@ Verarbeitungs-Cache (Thumbnails).
     `Project.cloud_vision_detection_enabled`/`.cloud_vision_consent_at` synchron (Zeitstempel bei
     Aktivierung, `NULL` bei Deaktivierung); beide Felder stehen zusätzlich auf `ProjectOut`.
     Derselbe Schalter gated Sehenswürdigkeits- **und** Kategorie-Erkennung — kein zweiter Consent.
-    `PUT`/`DELETE /photos/{id}/category-override` (`api/photos.py`); `PUT` nimmt `{"category_key":
+    `PUT`/`DELETE /photos/{id}/category-override` (`api/photos/`); `PUT` nimmt `{"category_key":
     "<canonical_key>"}` entgegen.
-  - additiv `PhotoOut.cloud_vision_status: list[CloudVisionStatusOut]` (`api/photos.py`, kein neuer
+  - additiv `PhotoOut.cloud_vision_status: list[CloudVisionStatusOut]` (`api/photos/`, kein neuer
     Endpunkt); die volle Prioritäts-Kaskade steht in ADR 0035.
   - zwei neue, rein lesende Endpunkte — `GET /categories` (eigener Router `api/categories.py`,
     Router-Level-Auth: liefert das feste Kategorien-Set in Registry-Reihenfolge mit
@@ -508,7 +508,7 @@ Verarbeitungs-Cache (Thumbnails).
     **nicht** an `ProjectOut`: `ProjectOut` ist nutzerunabhängig und wird gepollt, und ein Lesefehler
     des Merkers darf das Laden des Projekts nicht mitreißen.
   - kein neuer Endpunkt, drei additive Antwortfelder. `CategoryCandidateOut.confidence: float |
-    None` (`api/photos.py`) — die Zahl folgt dem SCHLÜSSEL, nicht der `origin`-Kennzeichnung: ein
+    None` (`api/photos/`) — die Zahl folgt dem SCHLÜSSEL, nicht der `origin`-Kennzeichnung: ein
     lokal UND remote erkannter Schlüssel bleibt `origin="local"`, behält aber die Modellzahl; ein
     rein lokaler Kandidat bekommt `null`, nie `0.0`. Ausdrücklich keine Wiederkehr des mit Spec 0289
     entfallenen `score`-Felds — jenes war die Rechengröße der abgeschafften
@@ -530,13 +530,13 @@ Verarbeitungs-Cache (Thumbnails).
     Kuratierung ist eine Konstante der Oberfläche.
   - ein neuer Lese-Endpunkt `GET
     /projects/{id}/curation-candidates?event_id=N&category_key=…&after_rank=N&limit=…&offset=…`
-    (`api/photos.py`) liefert die Zugehörigkeiten **einer** Partition mit `rank_position >
+    (`api/photos/`) liefert die Zugehörigkeiten **einer** Partition mit `rank_position >
     after_rank`, aufsteigend, als `PhotoListOut`; `total` ist die Restmenge der Partition
     (`max(partition_size - after_rank, 0)`) und damit unabhängig von `limit`/`offset`. Kein
     erfolgreicher Lauf, unbekannte Schlüssel oder ein `after_rank` jenseits der Partitionsgröße
     liefern `200` mit leerer Liste, kein Fehler und keine Rückspiegelung der übergebenen Schlüssel.
     `curation_position` wird ausschließlich für die **angefragte** Zugehörigkeit gesetzt. **Zwei
-    Muss-Kriterien:** die Auth-Dependency ist ausgeschrieben (`api/photos.py` verzichtet bewusst auf
+    Muss-Kriterien:** die Auth-Dependency ist ausgeschrieben (`api/photos/` verzichtet bewusst auf
     eine Router-weite `dependencies`-Liste — ein vergessener Parameter ergäbe dort einen still
     öffentlichen Endpunkt), und `criterion_scoring_run_id` aus dem **Pfadparameter** steht in jeder
     Abfrage inklusive der Zählabfrage hinter `total`, weil `photo_rankings` keine `project_id` trägt
@@ -745,7 +745,7 @@ Verarbeitungs-Cache (Thumbnails).
   - **Der Austausch ist ein Aufruf, eine Transaktion und ein Ereignis** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md)
-    Punkt 3)*: `POST /projects/{project_id}/draft/exchange` (`api/photos.py`, Body
+    Punkt 3)*: `POST /projects/{project_id}/draft/exchange` (`api/photos/`, Body
     `{"photo_id": …, "replaced_photo_id": …}`, Antwort `DraftExchangeOut` mit **beiden**
     geschriebenen Bewertungszeilen). „B statt A" ist die Aussage; die beiden Bilder für sich tragen
     sie nicht. Zwei getrennte `PUT /photos/{id}/rating` ließen sich nachträglich nur über eine
@@ -777,7 +777,7 @@ Verarbeitungs-Cache (Thumbnails).
     Rückgängig als Wiederherstellung** *(Spec
     [`0558`](../specs/features/0558-album-entwurf-verstaendlich.md), ADR
     [`decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md`](../specs/decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md))*:
-    - `GET /projects/{project_id}/album-draft` (`api/photos.py`, Auth-Dependency ausgeschrieben)
+    - `GET /projects/{project_id}/album-draft` (`api/photos/`, Auth-Dependency ausgeschrieben)
       ersetzt den Entwurfsmodus von `GET /projects/{id}/photos`. Antwort
       `AlbumDraftOut { events, items }` aus einer Anfrage, ohne `total` und ohne Blättern: `events`
       sind alle Events des letzten erfolgreichen Laufs nach `position` (lückenlos 1..m, auch Events
@@ -848,7 +848,7 @@ Verarbeitungs-Cache (Thumbnails).
       pfadbenannter 401-Fall). `included` ist pflichtig und ohne Vorgabewert — genau wie die
       Spalte. **Kein `DELETE`:** „wieder strittig werden" ist kein Zustand des Produkts, ändern
       heißt den anderen Wert schreiben.
-    - `GET /projects/{project_id}/album-selection` (`api/photos.py`, Antwort `AlbumSelectionOut`
+    - `GET /projects/{project_id}/album-selection` (`api/photos/`, Antwort `AlbumSelectionOut`
       mit `participants`, `has_proposal`, `items`) — **ohne `total` und ohne Seitenweise**, wie der
       Entwurfszweig. Die Antwortmenge ist **additiv**: `strittig ∪ Endauswahl ∪ entschieden`. Der
       dritte Teil ist keine Redundanz — ein ausdrücklich **herausgenommenes** Bild gehört nicht zur
@@ -979,7 +979,7 @@ Verarbeitungs-Cache (Thumbnails).
       der projektweite Massenabschluss (`api/projects.py::confirm_ausschuss_gate`, Auswahl über
       `has_open_suggestion`), die erweiterte Vorbedingung des Einzel-Schreibwegs
       (`api/duplicate_decisions.py`, pro Foto und projektgebunden) und der Bestand der
-      Ausschuss-Übersicht (`api/photos.py::has_ausschuss_entry`, die **Vereinigung** beider
+      Ausschuss-Übersicht (`api/photos/ausschuss.py::has_ausschuss_entry`, die **Vereinigung** beider
       Ursachen — ausdrücklich **nicht** `NOT survives_ausschuss`, weil eine mit `Ausschuss`
       entschiedene Aufnahme weder überlebt noch offener Vorschlag ist). Das Prädikat prüft
       **positiv auf
@@ -991,7 +991,7 @@ Verarbeitungs-Cache (Thumbnails).
       Die Asymmetrie zwischen den beiden Werten ist die Entscheidung, nicht ein Detail —
       `suggested_status = REJECTED` trägt zwei Gründe, und ein unbedingtes `keep` höbe eine
       Ablehnung auf, zu der der Nutzer nie befragt wurde.
-    - `GET /projects/{project_id}/duplicate-groups/{photo_id}` (`api/photos.py`, Antwort
+    - `GET /projects/{project_id}/duplicate-groups/{photo_id}` (`api/photos/`, Antwort
       `DuplicateGroupOut` mit `items[]` aus `photo: PhotoOut`, `effective_decision` und
       `keep_possible`, dazu `position`, `total`, `previous_photo_id` und `next_photo_id`). Die
       Gruppe hat **keine eigene Id**: Sie ist der zur Lesezeit gebildete Stern über
@@ -1011,7 +1011,7 @@ Verarbeitungs-Cache (Thumbnails).
       Rand) und stammen aus **derselben** projektbegrenzten Kantenliste wie die Gruppe selbst:
       `photo_scores.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, und ohne die Bindung
       nennte die Antwort Foto-Ids fremder Projekte.
-    - `GET /projects/{project_id}/duplicate-groups` (`api/photos.py`, Antwort
+    - `GET /projects/{project_id}/duplicate-groups` (`api/photos/`, Antwort
       `DuplicateGroupIndexOut` mit `total` und `first_photo_id`) — der Einstieg in den Durchgang,
       Grundlage der beiden Wege dorthin. Ohne Foto-Hydratation: Die Antwort trägt kein `PhotoOut`
       und ist damit keine Funktion des anfragenden Nutzers. `total` ist **dieselbe** Zahl wie in
@@ -1436,7 +1436,7 @@ Verarbeitungs-Cache (Thumbnails).
     `"people"`/`"landscape"`/`"detail"` sind keine bevorzugten Standardkategorien mehr, unterliegen
     derselben Häufigkeitsregel wie jedes andere Inhalts-Kriterium. Keine Migration
     (`PhotoRanking.category_key` war bereits ein freier String).
-    `worker/_criterion/local.py::_CONTENT_CRITERION_KEYS`/`_CONTENT_CRITERION_SOURCES` (bildbasiert berechnete
+    `worker/_criterion/local.py::_IMAGE_ANALYSIS_CRITERION_KEYS` (bildbasiert berechnete
     Kriterien für Upsert-Buchhaltung, fachlich unabhängig von `category_eligible`) rein kosmetisch
     umbenannt zu `_IMAGE_ANALYSIS_CRITERION_KEYS`/`_IMAGE_ANALYSIS_CRITERION_SOURCES`, um
     Verwechslung zu vermeiden. Kein neuer Endpunkt, kein Frontend-Effekt außer einem
@@ -1573,7 +1573,7 @@ Verarbeitungs-Cache (Thumbnails).
     (`MOTIF_PRESENCE_THRESHOLD`): Sie wird ausschließlich über das Prädikat `motif_is_present`
     gelesen — geteilt wird nie die Zahl, sonst stünde der inklusive Vergleich an zwei Stellen — und
     sie verlässt das Backend einzig als `MotifStrengthOut.present`. Beides hält der strukturelle
-    Wächter in `backend/tests/test_selection.py` fest, der seit Spec 0430 auch `api/photos.py`
+    Wächter in `backend/tests/test_selection.py` fest, der seit Spec 0430 auch `api/photos/`
     führt.
   - **Phase `persons`** *(Spec 0292, ADR
     [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
@@ -2283,11 +2283,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     (der Platz dieser Zugehörigkeit in der um die eigenen Ablehnungen bereinigten Auswahl —
     nutzerabhängig, **nie** persistiert oder zwischengespeichert, ausdrücklich nicht dieselbe Zahl
     wie `rank_position`). Gezählt wird in Auswertungen weiterhin die Hauptkategorie
-    (`api/stats.py::_ranking_counts_by_category` und `category_diff.py::collect_assignments` filtern
+    (`category_diff.py::collect_assignments` filtert
     auf `is_primary`), die Partitionsgröße im Info-Popover dagegen **alle** Zeilen der Partition.
   - **kein Schema-Eingriff, keine Migration, kein neues Antwortfeld** — die Story nutzt aus, was
     diese Tabelle ohnehin führt: den **vollen** Pool. Der Ablehnungsfilter fällt aus
-    `api/photos.py::_top_n_per_category_photo_ids` (Outer-Join auf `Rating` und `row_number()`
+    der Abfrage ganz (Outer-Join auf `Rating` und `row_number()`
     entfallen), womit beim Verwerfen nichts mehr nachrückt und die Auswahl ausschließlich vom Lauf
     abhängt statt vom Bewertungsstand des Betrachters. `curation_position` ist dadurch **entweder
     `null` oder gleich `rank_position`**; ihre verbliebene Aufgabe ist allein die Auskunft, unter
@@ -2572,7 +2572,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   `status IS NOT NULL` — der Rasterfilter `unrated`, die Statistikzahl `unrated` und die Bedingung,
   unter der `PhotoOut.suggestion` erscheint.
 
-  **Invariante, an genau einer Stelle durchgesetzt** (`api/ratings.py::_write_own_rating`, über die
+  **Invariante, an genau einer Stelle durchgesetzt** (`api/ratings.py::write_own_rating`, über die
   alle drei Schreibendpunkte laufen): Es gibt keine Zeile mit `status IS NULL AND favorite IS
   FALSE` — sie wird gelöscht. Eine solche Zeile wäre auf keinem Lesepfad als Fehler erkennbar,
   unterdrückte aber dauerhaft den Ausschuss-Vorschlag.
@@ -2593,7 +2593,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   str`, `computed_at`. 1:1 statt 1:N, weil pro Foto genau eine Kategorie entsteht — das Schema
   erzwingt die Kernaussage der Spec, statt sie nur zu befolgen. Existenz dieser Zeile ist zugleich
   das Skip-Kriterium (`worker/remote_categories.py::select_remote_category_candidates`) und die Erfolgs-Ableitung des
-  `remote_category`-Cloud-Vision-Status (`api/photos.py::_cloud_vision_status_out`).
+  `remote_category`-Cloud-Vision-Status (`api/photos/_conversion.py::_cloud_vision_status_out`).
   - zwei additive, nullable Spalten (Migration `a3b4c5d6e7f8`). `detected_category_confidences:
     JSON` ist die Abbildung `category_key -> Konfidenz in [0, 1]` — eine ABBILDUNG und kein
     positionsparalleles Array: der Wert hängt am Schlüssel und überlebt jede Umsortierung. Ihre
@@ -3028,7 +3028,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   hält die Tabelle konsistent mit ihrer eigenen Bedeutung. Nur diese eine Tabelle ist tatsächlich
   neu: die übrigen fünf möglichen Cloud-Vision-Zustände pro Foto×Lauf-Typ
   (`not_run`/`not_candidate`/`consent_disabled`/`no_result`/`result`) sind bereits vollständig aus
-  bestehenden Signalen ableitbar und werden read-time über `api/photos.py::_cloud_vision_status_out`
+  bestehenden Signalen ableitbar und werden read-time über `api/photos/_conversion.py::_cloud_vision_status_out`
   bestimmt, nicht separat gespeichert (Zentraler Befund von ADR 0035, vereinfacht den ursprünglich
   vom `requirements-engineer` skizzierten Entwurf einer vollen Status-Tabelle).
 

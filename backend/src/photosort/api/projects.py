@@ -413,7 +413,7 @@ class ProjectOut(BaseModel):
     taken_at_latest: datetime | None
 
 
-# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::MAX_QUERY_POSITION`:
+# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos/_reads.py::MAX_QUERY_POSITION`:
 # ein Pydantic-`int` ist unbeschraenkt, der Wert wird in eine INTEGER-Spalte geschrieben und geht
 # in `⌈0,25·T⌉`/`⌈T/m⌉`/`T − m`; jenseits von 2^63 ergibt das unter SQLite einen `OverflowError`
 # und damit eine 500 statt einer 422.
@@ -756,7 +756,7 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     (worker/remote_categories.py::select_remote_category_candidates), als eigenstaendige kleine Query HIER
     dupliziert: die API-Schicht (reine HTTP-/Validierungs-/Lese-Zustaendigkeit) importiert
     das Worker-Paket nicht, sondern loest Jobs ausschliesslich ueber den stringbasierten JobEnqueuer
-    aus. `api/photos.py` ist die eine bewusste Ausnahme davon.
+    aus. `api/photos/` ist die eine bewusste Ausnahme davon.
 
     Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
     verlaesst die Datenbank, auch nicht bei einem grossen Projekt.

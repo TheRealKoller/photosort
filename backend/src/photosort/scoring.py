@@ -58,8 +58,8 @@ TIME_CLUSTER_GAP = timedelta(hours=1)
 #
 # ACHTUNG: die Schwelle begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den
 # DURCHMESSER eines Clusters - ein Spaziergang in 400-m-Schritten teilt nie und kann Kilometer
-# ueberspannen. Deshalb traegt api/photos.py::PhotoLocationOut ein `source`-Feld: eine hergeleitete
-# Koordinate ist eine Schaetzung, nie eine Messung.
+# ueberspannen. Deshalb traegt api/photos/_conversion.py::PhotoLocationOut ein `source`-Feld: eine
+# hergeleitete Koordinate ist eine Schaetzung, nie eine Messung.
 GPS_CLUSTER_SPLIT_DISTANCE_METERS = 500.0
 
 # Mittlerer Erdradius (IUGG) fuer die Haversine-Approximation. Fuer die hier relevante Praezision

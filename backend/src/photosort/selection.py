@@ -48,7 +48,7 @@ def motif_is_present(strength: float, threshold: float | None = None) -> bool:
     nichts laut, obwohl gerade die Inklusivitaet die Zusage ist. Gehalten in
     `tests/test_selection.py::TestTheStructuralGuardAgainstReadingTheDisplayBands`.
 
-    Zweiter Leser ausserhalb der Auswahl ist `api/photos.py::_motifs_out`
+    Zweiter Leser ausserhalb der Auswahl ist `api/photos/_conversion.py::_motifs_out`
     (`MotifStrengthOut.present`) - die Grenze verlaesst das Backend ausschliesslich als dieses
     Ja/Nein, nie als Zahl.
 

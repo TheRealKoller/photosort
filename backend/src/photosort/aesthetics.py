@@ -34,7 +34,7 @@ _ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.
 
 AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c681a21a91cb2"
 
-# NIMA/MobileNet-Eingabegroesse (idealo-Repo: src/utils/utils.py, MobileNet-Standardgroesse).
+# NIMA/MobileNet-Eingabegroesse (idealo-Repo: `utils.py`, MobileNet-Standardgroesse).
 _INPUT_SIZE = 224
 
 # NIMA liefert eine Wahrscheinlichkeitsverteilung ueber 10 Ratingklassen (Index 0 = Rating 1, Index
@@ -86,7 +86,7 @@ def compute_aesthetics(image: Image.Image, model: AestheticsModelLike) -> float:
 def build_aesthetics_model() -> AestheticsModelLike:
     """Baut das echte NIMA/MobileNet-Modell durch Rekonstruktion der idealo-Architektur
     (MobileNet-Backbone ohne Klassifikationskopf, GlobalAveragePooling, Dropout(0.75),
-    Dense(10, softmax) - src/handlers/model_builder.py im idealo-Repo) und Laden NUR der Gewichte
+    Dense(10, softmax) - `model_builder.py` im idealo-Repo) und Laden NUR der Gewichte
     (`load_weights`, siehe Security-Hinweis beim ASSET_PATH oben) statt eines vollstaendigen
     `load_model()`-Aufrufs. Lokaler tensorflow-Import (analog zum lokalen mediapipe-Import in
     classification.py), damit die schwere Abhaengigkeit nicht in einen leichteren Importpfad

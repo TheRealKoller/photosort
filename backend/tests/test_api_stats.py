@@ -1007,7 +1007,7 @@ class TestTheCostFiguresCountEveryPaidAnswer:
 
     `photo_landmark_detections` ist an dieser Stelle der Nachweis dafuer, dass Geld geflossen ist,
     nicht eine Aussage ueber einen verwendbaren Namen - ein unsicherer Treffer hat ebenso gekostet
-    wie ein sicherer. Die Stelle sieht neben `worker.py::_landmark_names` wie eine Inkonsistenz aus
+    wie ein sicherer. Die Stelle sieht neben `event_inputs.py::_landmark_names` wie eine Inkonsistenz aus
     und ist keine; ohne diese beiden Faelle wuerde sie frueher oder spaeter "angeglichen"."""
 
     async def test_a_run_of_only_discarded_hits_still_reports_its_rows_and_costs(

@@ -3,7 +3,7 @@ Gruppenabschluss.
 
 EIGENES MODUL UND EIGENER ROUTER, weil die geschriebene Entscheidung keinen Nutzer kennt: Wer sie
 trifft, geht in keine Zeile ein (ADR 0104 Punkt 2). Sie gehoeren ausdruecklich nicht nach
-`api/photos.py` - siehe die Sicherungen unten.
+`api/photos/` - siehe die Sicherungen unten.
 """
 
 from __future__ import annotations

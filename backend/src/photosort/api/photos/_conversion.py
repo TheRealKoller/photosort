@@ -523,7 +523,7 @@ class AlbumDraftOut(BaseModel):
     events: list[EventOut]
     items: list[PhotoOut]
     # Die Zahl AUSWAHLFAEHIGER Kandidaten des Laufs - dieselbe Menge, aus der
-    # `worker.py::_apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
+    # `worker/_criterion/ranking.py::_apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
     # `excluded_document`). Lauf-global, ohne Nutzerbezug. Speist allein den Hinweis
     # "kleinerer Vorschlag": Er erscheint nur, wenn der Vorschlag diese Menge ausschoepft.
     eligible_candidate_count: int
@@ -644,7 +644,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     # Vorhandensein der Kopfzeile. Der Kriterien-Lauf schreibt fuer jedes beurteilte Foto eine
     # LOKALE Kopfzeile; ein reiner Existenztest meldete jedes lokal beurteilte Foto als
     # erfolgreich cloud-klassifiziert, obwohl nie ein Cloud-Aufruf stattfand. Dieselbe Bedingung
-    # steht in worker.py::select_remote_category_candidates und
+    # steht in worker/remote_categories.py::select_remote_category_candidates und
     # api/projects.py::_count_remote_category_candidates.
     # SICHERHEITSAUFLAGE S6: das Erfolgssignal ist ZUSAMMENGESETZT, genau wie das Skip-Kriterium
     # der Auswahl - Cloud-Kopfzeile UND Albumtauglichkeitszeile. Ohne die zweite Haelfte meldete
@@ -675,9 +675,9 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
             success=remote_category_success,
             error=errors_by_phase.get(CloudVisionPhase.REMOTE_CATEGORY),
             consent_enabled=project.cloud_vision_detection_enabled,
-            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates -
-            # und zwar ueber DASSELBE Praedikat, nicht ueber eine zweite Formulierung davon. Kein
-            # PhotoScore vorhanden ODER nicht ueberlebend -> kein Kandidat. Dies ist der fuenfte
+            # Spiegelt exakt die WHERE-Klausel von
+            # worker/remote_categories.py::select_remote_category_candidates - und zwar ueber
+            # DASSELBE Praedikat, nicht ueber eine zweite Formulierung davon. Kein
             # Ort des Praedikats: Anzeige, keine Grenze (S1).
             is_candidate=survives_ausschuss_for(photo),
         ),
