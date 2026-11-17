@@ -979,7 +979,7 @@ Verarbeitungs-Cache (Thumbnails).
       der projektweite Massenabschluss (`api/projects.py::confirm_ausschuss_gate`, Auswahl über
       `has_open_suggestion`), die erweiterte Vorbedingung des Einzel-Schreibwegs
       (`api/duplicate_decisions.py`, pro Foto und projektgebunden) und der Bestand der
-      Ausschuss-Übersicht (`api/photos/ausschuss.py::has_ausschuss_entry`, die **Vereinigung** beider
+      Ausschuss-Übersicht (`duplicates.py::has_ausschuss_entry`, die **Vereinigung** beider
       Ursachen — ausdrücklich **nicht** `NOT survives_ausschuss`, weil eine mit `Ausschuss`
       entschiedene Aufnahme weder überlebt noch offener Vorschlag ist). Das Prädikat prüft
       **positiv auf

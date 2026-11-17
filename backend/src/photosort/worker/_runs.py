@@ -326,7 +326,7 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
 # SICHERHEIT (die Zielgruppe dieser Fehlermeldung reicht vom Server-Log-Leser bis zum App-Nutzer):
 # Die persistierte Meldung darf keinen URL-Query-Parameter tragen. Betroffen ist der von
 # httpx.HTTPError gewrappte Netzwerkfehler
-# (_criterion/landmark.py::LandmarkApiError bzw. remote_categories.py::RemoteCategoryClassificationApiError,
+# (photosort/landmark.py::LandmarkApiError bzw. remote_categories.py::RemoteCategoryClassificationApiError,
 # jeweils "... API nicht erreichbar: {exc}"). Getragen wird die Zusage davon, dass beide Call-Sites
 # ausschliesslich die fest codierten URL-Konstanten ANTHROPIC_MESSAGES_URL/
 # MISTRAL_CHAT_COMPLETIONS_URL aufrufen (cloud_vision.py) - beide ohne Query-String. Jeglicher
