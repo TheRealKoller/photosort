@@ -26,6 +26,7 @@ from photosort.thumbnails import (
     measure_cache_usage,
     thumbnail_path,
 )
+from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scan
 from photosort.worker import scan as worker_scan
 from tests.time_offset_invariant import assert_time_offset_invariant
@@ -669,7 +670,7 @@ async def test_scan_updates_last_progress_at_at_each_checkpoint(
     reap_stalled_runs (Schicht 2) spaeter liest - verifiziert ueber einen kontrollierten "Uhr"-Wert
     statt einer echten Wartezeit."""
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_scan, "_now_utc", lambda: sentinel)
+    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)
 
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)

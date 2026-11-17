@@ -411,7 +411,7 @@ class TestTheRebuildOnlyRecomputesTheDraft:
     ) -> None:
         """Null Aufrufe am Cloud-/Bildverarbeitungs-Doppel: der Neuaufbau rechnet ausschliesslich
         aus persistierten Zeilen."""
-        import photosort.worker as worker_module
+        import photosort.worker.criterion_scoring as worker_module
 
         calls: list[str] = []
         for name in ("build_face_detector", "build_object_detector", "build_scene_classifier"):
