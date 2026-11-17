@@ -1640,7 +1640,7 @@ def test_the_selection_guard_sees_every_write_form_it_claims_to_cover(snippet: s
 
 def test_the_selection_guard_ignores_reading_and_comparing() -> None:
     """Zwei Gegenproben: Lesen und Vergleichen zaehlen nie. Ohne sie waere jeder Lesepfad
-    (api/photos.py) ein Befund."""
+    (api/photos/) ein Befund."""
     assert not _writes_selection_position(
         "select(PhotoRanking.photo_id).order_by(PhotoRanking.selection_position)"
     )
@@ -2088,8 +2088,8 @@ _DECISION_MODEL = "FinalSelectionDecision"
 # GLEICHHEIT: Findet der Waechter eine erlaubte Stelle nicht mehr, prueft er fuer sie nichts.
 _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
-        "api/photos.py::_final_selection_decisions",
-        "api/photos.py::album_selection",
+        "api/photos/__init__.py::_final_selection_decisions",
+        "api/photos/__init__.py::album_selection",
         # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
         # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
         # bestimmen - die Menge, die der Export nimmt. Kein Entwurfszweig, keine zweite Ebene.
@@ -2602,7 +2602,7 @@ def test_the_phase_guard_does_not_confuse_the_two_columns() -> None:
 
 def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
     """Gegenprobe: `PhotoCloudVisionError` und `CloudVisionStatusOut` fuehren eine gleichnamige
-    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::_record_cloud_vision_error` und `api/photos.py`
+    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::_record_cloud_vision_error` und `api/photos/`
     Befunde - und der Waechter waere nur noch abzuschalten."""
     assert (
         _functions_writing(

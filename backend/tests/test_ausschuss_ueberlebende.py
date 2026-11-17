@@ -401,15 +401,15 @@ _ERWARTETE_VERWENDUNGEN = {
     ("api/duplicate_decisions.py", "has_open_suggestion"): 1,
     ("api/duplicate_decisions.py", "has_ausschuss_entry"): 1,
     # `is_candidate` - Anzeige, keine Grenze.
-    ("api/photos.py", "survives_ausschuss_for"): 1,
+    ("api/photos/__init__.py", "survives_ausschuss_for"): 1,
     # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu
     # seit Spec 0525 die projektweite `open_count` des Ausschuss-Lesepfads.
-    ("api/photos.py", "has_open_suggestion"): 2,
-    ("api/photos.py", "has_open_suggestion_for"): 1,
+    ("api/photos/__init__.py", "has_open_suggestion"): 2,
+    ("api/photos/__init__.py", "has_open_suggestion_for"): 1,
     # Spec 0525: der Ausschuss-BESTAND der Uebersicht - die VEREINIGUNG beider Ursachen, eine eigene
     # Praesenzgrenze neben den vier obigen und deshalb hier als eigener Name gefuehrt (Auflage S9:
     # keine zweite, von Hand geschriebene Fassung von `PhotoScore.suggested_status` im Lesepfad).
-    ("api/photos.py", "has_ausschuss_entry"): 1,
+    ("api/photos/__init__.py", "has_ausschuss_entry"): 1,
 }
 
 # Die beiden Fassungen, getrennt gezaehlt: Nur die SQL-Fassungen treten als weiterer

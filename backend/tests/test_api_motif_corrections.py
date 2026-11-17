@@ -594,7 +594,7 @@ class TestTheConcurrencyMapping:
         eine Zeile und leitet nichts ab, sie hat keinen Schreibzugriff auf die Rangfolge. Der
         Grund, aus dem `reassign_photo_category` mit `with_for_update()` arbeiten musste, gilt
         hier nicht."""
-        source = (_SOURCE_DIR / "api" / "photos.py").read_text(encoding="utf-8")
+        source = (_SOURCE_DIR / "api" / "photos" / "__init__.py").read_text(encoding="utf-8")
         handlers = source[source.index("async def set_motif_correction") :]
 
         # Der AUFRUF, nicht das Wort: der Kommentar an der Stelle nennt die untersagte Sperre
