@@ -1,6 +1,6 @@
 """Keine Funktion der beiden Pakete ueber 200 Zeilen (Spec 0647, Zusicherung AK5).
 
-Die Zerlegung von `worker.py` und `api/photos.py` in Pakete ist eine Ablage-Aenderung, die ein
+Die Zerlegung der beiden frueheren Monolith-Module in Pakete ist eine Ablage-Aenderung, die ein
 Verhaltenstest nicht bemerkt: Ein Rueckfall in eine 643-Zeilen-Funktion antwortet byte-gleich und
 ist gruen. Die Zusage ist deshalb selbst die Messung - gezaehlt wird im Syntaxbaum, je Funktion,
 gemessen von der ersten Dekoratorzeile bis `end_lineno`.

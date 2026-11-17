@@ -4085,7 +4085,7 @@ class TestPhotoLocationAndClusterPlace:
     # Gefuehrt wird der Nachweis am AUFRUFER, nicht an `infer_locations`: die reine Funktion
     # kennt den Versatz nicht: sie bekommt `taken_at` uebergeben. Die Entscheidung, WELCHE
     # Spalte die Inferenzbasis speist, liegt hier (`_event_and_location_by_photo_id`) und in
-    # `worker.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
+    # `worker/_criterion/ranking.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
     # `taken_at_original` plausibel formuliert und fachlich falsch.
     async def _inheritance_fixture(
         self, db_session: AsyncSession, *, offset_minutes: int

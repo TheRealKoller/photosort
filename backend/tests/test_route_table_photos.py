@@ -1,6 +1,6 @@
 """Die Routentabelle der Aufnahmen-Ansicht, eingefroren (Spec 0647, Zusicherungen S1-S3).
 
-Die Aufteilung von `api/photos.py` in ein Paket darf die HTTP-Schnittstelle nicht verschieben:
+Die Aufteilung der Endpunkt-Sammlung in ein Paket darf die HTTP-Schnittstelle nicht verschieben:
 dieselben zwoelf Operationen, gleiche Methode, gleicher Pfad, gleicher Erfolgs-Statuscode, gleiches
 Antwortschema und dieselbe Reihenfolge. Die Reihenfolge ist Teil der Zusage, nicht Kosmetik: eine
 statische Route hinter `…/{project_id}/…` faengt sonst den falschen Handler, und die Antwort sieht
@@ -179,9 +179,9 @@ class TestEveryHandlerKeepsItsAuthDependency:
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
-                named = (
-                    isinstance(node.func, ast.Name) and node.func.id == "APIRouter"
-                ) or (isinstance(node.func, ast.Attribute) and node.func.attr == "include_router")
+                named = (isinstance(node.func, ast.Name) and node.func.id == "APIRouter") or (
+                    isinstance(node.func, ast.Attribute) and node.func.attr == "include_router"
+                )
                 if not named:
                     continue
                 assert all(keyword.arg != "dependencies" for keyword in node.keywords), (
