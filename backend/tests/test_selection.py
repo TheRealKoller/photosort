@@ -1340,6 +1340,14 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
         # Das API-Paket wird wie das Worker-Paket dateiweise aufgezaehlt - eine neu
         # hinzukommende Datei soll bewusst hier eingetragen werden muessen.
         "api/photos/__init__.py",
+        "api/photos/_conversion.py",
+        "api/photos/_reads.py",
+        "api/photos/album_draft.py",
+        "api/photos/album_selection.py",
+        "api/photos/ausschuss.py",
+        "api/photos/draft_exchange.py",
+        "api/photos/duplicate_groups.py",
+        "api/photos/image.py",
         "events.py",
     )
     _DISPLAY_BANDS = ("MOTIF_STRENGTH_BAND_STRONG", "MOTIF_STRENGTH_BAND_MEDIUM")

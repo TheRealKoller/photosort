@@ -2088,8 +2088,8 @@ _DECISION_MODEL = "FinalSelectionDecision"
 # GLEICHHEIT: Findet der Waechter eine erlaubte Stelle nicht mehr, prueft er fuer sie nichts.
 _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
-        "api/photos/__init__.py::_final_selection_decisions",
-        "api/photos/__init__.py::album_selection",
+        "api/photos/_reads.py::_final_selection_decisions",
+        "api/photos/album_selection.py::album_selection",
         # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
         # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
         # bestimmen - die Menge, die der Export nimmt. Kein Entwurfszweig, keine zweite Ebene.
