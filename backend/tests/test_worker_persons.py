@@ -70,7 +70,7 @@ from tests.face_fakes import (
     sentinel_box,
     write_display_variant,
 )
-from tests.import_closure import module_file
+from tests.import_closure import package_files
 from tests.phase_binding import assert_phase_binding
 
 ANNA = "Annabell-Merkname"
@@ -341,7 +341,9 @@ async def test_the_phase_runs_after_ranking_and_before_success(
         order.append("ranking")
         return await original_rankings(*args, **kwargs)
 
-    monkeypatch.setattr(worker_criterion_scoring, "_build_grouping_and_rankings", recording_rankings)
+    monkeypatch.setattr(
+        worker_criterion_scoring, "_build_grouping_and_rankings", recording_rankings
+    )
 
     def on_detect(color: Color) -> None:
         order.append("persons")
@@ -660,26 +662,29 @@ async def test_no_run_writes_or_deletes_a_correction(
 def test_the_worker_names_the_correction_table_nowhere() -> None:
     """Kein Lauf schreibt oder loescht `photo_person_corrections` - der Worker nennt das Modell
     nicht einmal."""
-    path = module_file("photosort.worker")
-    assert path is not None
+    paths = package_files("photosort.worker")
+    assert paths
     names = {
         node.id
+        for path in paths
         for node in ast.walk(ast.parse(path.read_text("utf-8")))
         if isinstance(node, ast.Name)
     }
 
     assert "PhotoPersonCorrection" not in names
-    assert "photo_person_corrections" not in path.read_text("utf-8")
+    for path in paths:
+        assert "photo_person_corrections" not in path.read_text("utf-8")
 
 
 def test_the_worker_never_reads_a_person_name() -> None:
     """S6: `worker.py` importiert beide Seiten. Die Phase liest nur Id und Schwerpunkt ueber
     `current_centroids` - das Modell `Person` kommt im Worker nicht vor."""
-    path = module_file("photosort.worker")
-    assert path is not None
-    tree = ast.parse(path.read_text("utf-8"))
+    paths = package_files("photosort.worker")
+    assert paths
+    trees = [ast.parse(path.read_text("utf-8")) for path in paths]
     imported = {
         alias.name
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module == "photosort.models"
         for alias in node.names
@@ -688,6 +693,7 @@ def test_the_worker_never_reads_a_person_name() -> None:
     assert "Person" not in imported
     assert "current_centroids" in {
         alias.name
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module == "photosort.persons"
         for alias in node.names

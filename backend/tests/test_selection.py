@@ -1319,7 +1319,24 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
         "selection.py",
         "ranking.py",
         "quality.py",
-        "worker.py",
+        # `worker.py` steht seit Spec 0647 als PAKET da und wird deshalb dateiweise aufgezaehlt -
+        # ausgeschrieben, nicht per Glob: eine neu hinzukommende Datei soll bewusst hier
+        # eingetragen werden muessen, statt still unter denselben Waechter zu fallen.
+        "worker/__init__.py",
+        "worker/_runs.py",
+        "worker/_criterion/__init__.py",
+        "worker/_criterion/eye.py",
+        "worker/_criterion/landmark.py",
+        "worker/_criterion/local.py",
+        "worker/_criterion/persons.py",
+        "worker/_criterion/ranking.py",
+        "worker/classification.py",
+        "worker/criterion_scoring.py",
+        "worker/export.py",
+        "worker/remote_categories.py",
+        "worker/scan.py",
+        "worker/scoring.py",
+        "worker/stall_reaper.py",
         "api/photos.py",
         "events.py",
     )

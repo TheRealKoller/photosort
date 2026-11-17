@@ -6221,7 +6221,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         """Ein SYNTAXBAUM-Waechter, und er hat einen Grund (S3): Ein hinzugefuegter
         `infer_locations`-Aufruf roetet keinen Verhaltenstest, solange die Messlage echte
         Koordinaten traegt - genau dann waere die Zusage aber gebrochen."""
-        path = module_file("photosort.worker")
+        path = module_file("photosort.worker.criterion_scoring")
         assert path is not None
         tree = ast.parse(path.read_text(encoding="utf-8"))
         phase = next(

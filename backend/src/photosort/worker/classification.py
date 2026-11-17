@@ -168,37 +168,6 @@ async def _run_remote_category_phase(
     return True
 
 
-async def _run_eye_stage(
-    session: AsyncSession,
-    run: CriterionScoringRun,
-    project: Project,
-    cache_dir: Path,
-    build_eye_client: Callable[[], EyeClientLike],
-) -> bool:
-    """Phase "eye" - `True`, wenn der Lauf weiterlaeuft, `False`, wenn er hier endet.
-
-    Die Eye-Phase liegt VOR der Kriterien-Phase, damit Rangfolge, Events und Auswahlvorschlag
-    desselben Laufs den WIRKSAMEN Vektor lesen. Ein Fehlschlag beendet den Lauf hier: es gibt keinen
-    Rueckfall auf Cloud oder "nur lokal", und geschrieben ist nichts (die Phase committet ihre
-    Ergebnisse erst am Ende)."""
-    try:
-        await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
-    except RunCancelled:
-        await runs._finish_cancelled(session, run)
-        return False
-    except asyncio.CancelledError:
-        await runs._fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
-        raise
-    except Exception:
-        await runs._fail_run(
-            session,
-            run,
-            "Eye-Auswertung fehlgeschlagen; es wurde nichts uebernommen.",
-        )
-        return False
-    return True
-
-
 async def run_classification(
     session: AsyncSession,
     project: Project,
@@ -323,10 +292,28 @@ async def run_classification(
     if await runs._finish_if_cancel_requested(session, run):
         return run
 
-    if mode is ClassificationMode.EYE and not await _run_eye_stage(
-        session, run, project, cache_dir, build_eye_client
-    ):
-        return run
+    # Phase "eye": sie liegt VOR der Kriterien-Phase, damit Rangfolge, Events und
+    # Auswahlvorschlag desselben Laufs den WIRKSAMEN Vektor lesen. Ein Fehlschlag beendet den Lauf
+    # hier: es gibt keinen Rueckfall auf Cloud oder "nur lokal", und geschrieben ist nichts (die
+    # Phase committet ihre Ergebnisse erst am Ende).
+    if mode is ClassificationMode.EYE:
+        try:
+            await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
+        except RunCancelled:
+            await runs._finish_cancelled(session, run)
+            return run
+        except asyncio.CancelledError:
+            await runs._fail_run(
+                session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+            )
+            raise
+        except Exception:
+            await runs._fail_run(
+                session,
+                run,
+                "Eye-Auswertung fehlgeschlagen; es wurde nichts uebernommen.",
+            )
+            return run
 
     if await runs._finish_if_cancel_requested(session, run):
         return run

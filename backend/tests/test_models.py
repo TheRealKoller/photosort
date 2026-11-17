@@ -49,6 +49,7 @@ from photosort.models import (
     User,
 )
 from tests.event_rows import event_id_of_run, event_of_run
+from tests.import_closure import package_files
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -1455,7 +1456,7 @@ async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
 
 
 # Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1).
-_ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker.py", "api/cameras.py"})
+_ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker/scan.py", "api/cameras.py"})
 
 _TAKEN_AT = "taken_at"
 
@@ -1559,7 +1560,7 @@ def test_the_guard_ignores_reading_the_column() -> None:
 
 # specs/features/0429-auswahl-richtwert-und-mischung.md: die EINE Schreibstelle auf
 # `PhotoRanking.selection_position`.
-_ALLOWED_SELECTION_POSITION_WRITERS = frozenset({"worker.py"})
+_ALLOWED_SELECTION_POSITION_WRITERS = frozenset({"worker/_criterion/ranking.py"})
 
 _SELECTION_POSITION = "selection_position"
 
@@ -2337,7 +2338,7 @@ _ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"_set_phase"})
 # Spec 0641 freigegeben: `demo_state.py` schreibt einen FABRIZIERTEN Endzustand (abgebrochener
 # Lauf) - beide Spalten zusammen im Konstruktor, kein Uebergang und kein `_set_phase`; ein
 # zweiter Schreiber im laufenden Betrieb bleibt damit weiterhin ausgeschlossen.
-_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker.py", "demo_state.py"})
+_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker/_runs.py", "demo_state.py"})
 
 _PHASE = "phase"
 _PHASE_STARTED_AT = "phase_started_at"
@@ -2482,8 +2483,18 @@ def _writes_a_phase_field(source: str) -> bool:
     return bool(_functions_writing(source, _PHASE) or _functions_writing(source, _PHASE_STARTED_AT))
 
 
-def _worker_source() -> str:
-    return (Path(photosort.__file__).resolve().parent / "worker.py").read_text(encoding="utf-8")
+def _worker_sources() -> list[str]:
+    """Die Quelldateien des Worker-PAKETS (Spec 0647), jede fuer sich.
+
+    Dateiweise und nicht zusammengezogen: ein Zusammenzug mehrerer Module waere kein gueltiges
+    Python (`from __future__ import annotations` steht in jeder Datei), und Funktionen gleichen
+    Namens aus zwei Dateien verschmoelzen still zu einer."""
+    return [path.read_text(encoding="utf-8") for path in package_files("photosort.worker")]
+
+
+def _worker_writers(field: str) -> set[str]:
+    """Die Funktionen des Worker-Pakets, die `field` schreiben - ueber alle Dateien vereinigt."""
+    return set().union(*(_functions_writing(source, field) for source in _worker_sources()))
 
 
 def test_exactly_one_function_writes_the_phase() -> None:
@@ -2494,7 +2505,7 @@ def test_exactly_one_function_writes_the_phase() -> None:
 
     Geprueft wird GLEICHHEIT, nicht Teilmenge: Findet der Waechter die erlaubte Stelle nicht mehr,
     prueft er fuer sie nichts - so bliebe er gruen, nachdem die Bindung ausgebaut wurde."""
-    writers = _functions_writing(_worker_source(), _PHASE)
+    writers = _worker_writers(_PHASE)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
         "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase` setzen, weicht "
@@ -2508,7 +2519,7 @@ def test_exactly_one_function_writes_the_phase_start() -> None:
     """Dieselbe Pruefung fuer die zweite Spalte. Sie steht EINZELN da, weil die erste allein auch
     gegen ein `_set_phase` bestuende, das `phase_started_at` gar nicht mehr anfasst - dann gaebe
     es schlicht keine zweite Schreibstelle, und die erste Zusicherung bliebe gruen."""
-    writers = _functions_writing(_worker_source(), _PHASE_STARTED_AT)
+    writers = _worker_writers(_PHASE_STARTED_AT)
 
     assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
         "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase_started_at` "
@@ -2522,10 +2533,8 @@ def test_exactly_one_function_writes_the_phase_start() -> None:
 def test_the_one_phase_writer_sets_both_columns() -> None:
     """Die dritte Zusicherung, und die eigentliche Bindung: DIESELBE Funktion setzt beide. Ohne
     sie waeren die beiden Mengen oben auch dann erfuellt, wenn sie leer waeren."""
-    source = _worker_source()
-
-    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE)
-    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE_STARTED_AT)
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _worker_writers(_PHASE)
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _worker_writers(_PHASE_STARTED_AT)
 
 
 def test_exactly_the_known_modules_write_a_phase_field() -> None:
