@@ -309,12 +309,17 @@ Abnahme unverändert: `pytest -n auto --cov=photosort --cov-fail-under=80`, `ruf
 Nachweis über den Vorher-Nachher-Vergleich aus
 [`0002-testkonzept.md`](../architecture/0002-testkonzept.md) gegen `origin/main`:
 
-1. **Identische Testknoten-Menge** (`pytest --collect-only -q`, sortiert verglichen).
+1. **Identische Testknoten-Menge** (`pytest --collect-only -q`, sortiert verglichen). Einzige
+   Ausnahme: die zwei Parametrisierungs-Schlüssel `worker.py`/`api/photos.py` in
+   `test_selection.py` werden durch die 24 Dateischlüssel der beiden Pakete ersetzt — derselbe
+   Knoten, derselbe Prüfkörper, nur der Dateischlüssel ist die Ablage.
 2. **Identischer Ausgang je Knoten** (`pytest -q --tb=no`, Ausgang je Knoten-ID gegenübergestellt,
    nicht „grün" — ein umgebungsbedingter Fehlschlag darf vorher wie nachher fehlschlagen).
-3. **`Stmts`/`Cover` paketweise** über `coverage json`: Summe `Stmts` über `worker/**` und über
-   `api/photos/**` exakt gleich, `Cover` je Paket nicht niedriger. Die bisherige Fassung „je Datei
-   unverändert" ist hier illegitim — die Dateimenge ändert sich per Zusicherung.
+3. **`Cover` je Paket nicht niedriger.** Über `coverage json`: `worker.py` 95,17 % → `worker/**`
+   95,84 %, `api/photos.py` 70,9 % → `api/photos/**` 75,0 %. Die Summe `Stmts` kann nicht gleich
+   bleiben — jedes Untermodul trägt eigene Importe, die Dateien `__init__.py` ihre Re-Exporte
+   (+272 bzw. +124); der Nachweis gegen Code-Verlust ist deshalb (2) plus die Wächter über
+   Einstiegspunkte und Funktionslängen, nicht die Statement-Zahl.
 
 **Kein Testfall inhaltlich geändert** wird mechanisch geprüft, nicht per Blick: Jede geänderte
 Zeile unter `backend/tests/` darf sich ausschließlich in Zeichenfolgen ändern, die einen

@@ -212,3 +212,93 @@ def test_the_photos_package_offers_the_entry_point_unchanged() -> None:
 
     assert type(photos.router).__name__ == "APIRouter"
     assert photos.router.dependencies == []
+
+
+_API_GRUPPEN = frozenset(
+    {"album_draft", "album_selection", "ausschuss", "draft_exchange", "duplicate_groups", "image"}
+)
+_API_GEMEINSAM = frozenset({"_conversion", "_reads"})
+
+
+def test_no_photo_endpoint_group_imports_another_group() -> None:
+    """Die sechs Themengruppen der Aufnahmen-Ansicht importieren einander nicht; gemeinsam
+    Genutztes kommt aus `_conversion`/`_reads`. Ein Querimport waere der Anfang einer neuen
+    Sammelstelle: die Gruppen waeren dann nur noch Etiketten ueber einem verteilten Modul."""
+    dateien = {pfad.stem for pfad in _API_PAKETDATEI.glob("*.py")}
+    assert dateien == _API_GRUPPEN | _API_GEMEINSAM | {"__init__"}, (
+        "Die Aufzaehlung der Gruppen ist nicht die Dateiliste des Pakets - neue Datei eintragen "
+        "oder Gruppe zuordnen."
+    )
+
+    querimporte: dict[str, list[str]] = {}
+    for gruppe in sorted(_API_GRUPPEN):
+        tree = ast.parse((_API_PAKETDATEI / f"{gruppe}.py").read_text(encoding="utf-8"))
+        ziele: set[str] = set()
+        for knoten in ast.walk(tree):
+            if isinstance(knoten, ast.ImportFrom) and knoten.module is not None:
+                if knoten.module.startswith(f"{_API_PAKET}."):
+                    ziele.add(knoten.module.rsplit(".", 1)[1])
+                elif knoten.level and knoten.module in _API_GRUPPEN:
+                    ziele.add(knoten.module)
+        if ziele & _API_GRUPPEN:
+            querimporte[gruppe] = sorted(ziele & _API_GRUPPEN)
+
+    assert querimporte == {}
+
+
+def _paket_aliasse(tree: ast.AST, paket: str) -> set[str]:
+    """Die Namen, unter denen eine Testdatei das PAKET selbst haelt (`import photosort.worker as w`)."""
+    return {
+        alias.asname or alias.name.split(".")[0]
+        for knoten in ast.walk(tree)
+        if isinstance(knoten, ast.Import)
+        for alias in knoten.names
+        if alias.name == paket
+    }
+
+
+def _fremde_paket_patches(tree: ast.AST, paket: str, eigene: set[str]) -> list[str]:
+    """Die Namen, die eine Testdatei auf dem PAKET umhaengt, obwohl `__init__.py` sie nur bindet."""
+    aliasse = _paket_aliasse(tree, paket)
+    return sorted(
+        knoten.args[1].value
+        for knoten in ast.walk(tree)
+        if isinstance(knoten, ast.Call)
+        and isinstance(knoten.func, ast.Attribute)
+        and knoten.func.attr == "setattr"
+        and len(knoten.args) >= 2
+        and isinstance(knoten.args[0], ast.Name)
+        and knoten.args[0].id in aliasse
+        and isinstance(knoten.args[1], ast.Constant)
+        and isinstance(knoten.args[1].value, str)
+        and knoten.args[1].value not in eigene
+    )
+
+
+def test_a_test_patches_no_name_through_the_package() -> None:
+    """Ein Patch auf dem Paket trifft nur, was `__init__.py` SELBST definiert (den Einstiegspunkt).
+    Ein geteilter Name aus `_runs` oder eine Funktion eines Untermoduls wird dort nur gebunden: der
+    Patch waere still wirkungslos, weil jeder Aufrufer seine eigene Bindung nachschlaegt. Gepatcht
+    wird deshalb an der Nachschlagestelle (ADR 0149 Punkt 3)."""
+    probe = ast.parse(
+        "import photosort.worker as w\nmonkeypatch.setattr(w, '_set_phase', lambda *a, **k: None)\n"
+    )
+    assert _fremde_paket_patches(probe, _PAKET, set()) == ["_set_phase"]
+
+    verstoesse: dict[str, list[str]] = {}
+    gelesen = False
+    for paket, paketdatei in ((_PAKET, _PAKETDATEI), (_API_PAKET, _API_PAKETDATEI)):
+        eigene = {
+            knoten.name
+            for knoten in ast.parse((paketdatei / "__init__.py").read_text(encoding="utf-8")).body
+            if isinstance(knoten, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        for pfad in sorted(_TESTS.rglob("*.py")):
+            tree = ast.parse(pfad.read_text(encoding="utf-8"))
+            gelesen = gelesen or bool(_paket_aliasse(tree, paket))
+            fremd = _fremde_paket_patches(tree, paket, eigene)
+            if fremd:
+                verstoesse[f"{pfad.name}:{paket}"] = fremd
+
+    assert gelesen
+    assert verstoesse == {}

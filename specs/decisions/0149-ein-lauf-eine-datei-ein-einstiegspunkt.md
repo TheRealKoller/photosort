@@ -25,7 +25,10 @@ oder thematisch benannt, nie ein zweiter Einstiegspunkt.
 Geteiltes Laufverhalten (Phase setzen, Abbruch prüfen, Fehlschlag melden, Lauf beenden,
 Cloud-Kosten/-fehler verbuchen, Logger, Zeitquelle) liegt in `worker/_runs.py`. Angesprochen
 wird sie ausschließlich qualifiziert: `import photosort.worker._runs as runs` und
-`runs._set_phase(...)`. Kein `from … import` für geteilte Namen, keine relativen Importe.
+`runs._set_phase(...)`. Kein `from … import` für geteilte Namen an einer **Aufrufstelle**, keine
+relativen Importe. `worker/__init__.py` bindet die Namen für die Außenseite (Punkt 1) und ruft
+selbst nichts Geteiltes über diese Bindung auf; ein Patch auf dem Paket erreicht deshalb keinen
+Aufrufer.
 
 ### 3. Patch-Ziel ist die Nachschlagestelle
 Ein Monkeypatch trifft das Modul, in dem der Name zur Laufzeit nachgeschlagen wird — nicht den
