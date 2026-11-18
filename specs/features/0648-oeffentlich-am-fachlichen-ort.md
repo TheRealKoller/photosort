@@ -1,6 +1,6 @@
 # 0648 - Was andere Module brauchen, ist öffentlich und liegt fachlich richtig
 
-**Status:** Accepted
+**Status:** Implemented ([PR #660](https://github.com/TheRealKoller/photosort/pull/660))
 **Erstellt:** 2026-11-18
 **Bezug:** [Issue #648](https://github.com/TheRealKoller/photosort/issues/648)
 
