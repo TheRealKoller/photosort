@@ -72,7 +72,7 @@ def selection_state_of(
 async def included_photos(session: AsyncSession, project_id: int) -> list[IncludedPhoto]:
     """Die inkludierte Endauswahlmenge eines Projekts, deterministisch nach `photo_id`.
 
-    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos/_reads.py::_user_count`),
+    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos/_reads.py::user_count`),
     der Vorschlagsbezug der letzte erfolgreiche Kriterien-Lauf. Ohne einen solchen Lauf gibt es
     weder Vorschlag noch Einigkeit - die Menge ist leer."""
     user_count = (await session.execute(select(func.count()).select_from(User))).scalar_one()

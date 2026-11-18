@@ -275,7 +275,7 @@ def _photos_of_project(project_id: int) -> Select[tuple[int]]:
 async def _latest_successful_criterion_scoring_run_id(
     session: AsyncSession, project_id: int
 ) -> int | None:
-    """Bewusst identisch zu api/photos/_reads.py::_latest_successful_criterion_scoring_run_id (dort
+    """Bewusst identisch zu api/photos/_reads.py::latest_successful_criterion_scoring_run_id (dort
     ebenfalls lokal gehalten): sortiert nach `started_at DESC`, damit ein neuerer FEHLGESCHLAGENER
     Lauf den aelteren erfolgreichen nicht verdraengt."""
     return (

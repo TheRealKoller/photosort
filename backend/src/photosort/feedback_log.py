@@ -129,7 +129,7 @@ async def _latest_successful_criterion_scoring_run(
     session: AsyncSession, project_id: int
 ) -> tuple[int, CategoryMethod] | None:
     """Id und eingefrorene Stufenquelle des juengsten erfolgreichen Laufs. Das Praedikat ist
-    bewusst identisch zu `api/photos/_reads.py::_latest_successful_criterion_scoring_run_id` (dort steht
+    bewusst identisch zu `api/photos/_reads.py::latest_successful_criterion_scoring_run_id` (dort steht
     die ausfuehrliche Begruendung). Eine Import-Beziehung von diesem Modul in die API-Schicht liefe
     der Abhaengigkeitsrichtung entgegen."""
     row = (

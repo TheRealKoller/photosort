@@ -4,6 +4,10 @@
 **Erstellt:** 2026-11-18
 **Bezug:** [Issue #648](https://github.com/TheRealKoller/photosort/issues/648)
 
+Über dem Richtwert von rund 200 Zeilen: Die Verschiebetabelle muss je Baustein alten und neuen
+Ort nennen, weil AK4 „kein Zwilling" nur so prüfbar ist, und der Abschnitt Security trägt die
+vier Zusicherungen aus AK5 mit ihren neuen Adressen.
+
 ## Ziel
 
 Mehrere Funktionen, die andere Module brauchen, sind als privat markiert und werden trotzdem quer
@@ -21,8 +25,6 @@ Signatur und ihre Zusicherung als Vertrag lesen kann, statt beim Ändern eines f
 Innenseiten mitzupflegen — und damit der Importgraph zeigt, wie die Schichten liegen.
 
 ## Akzeptanzkriterien
-
-<!-- AK-PLATZHALTER -->
 
 **Maßstab „privat" (ADR [0150](../decisions/0150-privat-heisst-dateilokal-geteilt-heisst-oeffentlich.md)):**
 Ein Name mit genau einem führenden Unterstrich gilt nur in der Datei, die ihn definiert; Dunder und
@@ -85,7 +87,7 @@ aus AK5 bleiben an genau einer Stelle — es ändert sich nur der Name.
 
 | heute | neu | Grund |
 |---|---|---|
-| `api/projects.py::_count_landmark_candidates`, `::_count_remote_category_candidates` | `candidate_counts.py::count_landmark_candidates`, `::count_remote_category_candidates` (der dritte Zähler bleibt dort privat) | von `criterion_probe.py` (Nicht-HTTP) und `api/` gemeinsam benutzt; ein Endpunkt-Modul ist kein Ort dafür |
+| `api/projects.py::_count_landmark_candidates`, `::_count_remote_category_candidates`, `::_count_eye_candidates` | `candidate_counts.py::count_landmark_candidates`, `::count_remote_category_candidates`, `::count_eye_candidates` | von `criterion_probe.py` (Nicht-HTTP) und `api/` gemeinsam benutzt; ein Endpunkt-Modul ist kein Ort dafür |
 | `api/projects.py::_reject_while_a_criterion_run_is_active` | `api/run_guards.py::reject_while_a_criterion_run_is_active` | trägt `409` samt Nutzertext, bleibt also in der HTTP-Schicht, wird aber von `api/model_choice.py` gebraucht |
 | `classification_review.py` | `worker/classification_review.py` (`run_classification_review`, `fail_review` statt `_fail`, `ReviewAbort`) | ist ein Lauf, bezieht `_runs` und `_criterion.local` auf Modulebene; keine Funktions-Importe mehr |
 
@@ -125,7 +127,95 @@ Endpunkt und keine Antwort ändert sich.
 
 ## Security
 
-<!-- SEC-PLATZHALTER -->
+**Einordnung: sicherheitsrelevant — als Sichtbarkeits- und Adressänderung, nicht als
+Verhaltensänderung.** Kein Endpunkt, keine Antwort, keine Abfrage und kein Pfad ändert sich; es
+entsteht keine neue Angriffsfläche und kein neues Restrisiko.
+
+Betroffen ist die **Auffindbarkeit** der vier Zusicherungen aus AK5. Das Sicherheitskonzept
+verankert sie über ihren Namen (Ankerliste, Abschnitt „Wer eine dieser Stellen verschiebt,
+umbenennen oder ihren Schutz entfernt, zieht diese Liste im selben Pull Request nach"). Ein Name,
+den es nach dem Umbau nicht mehr gibt, macht die Auflage unprüfbar: Wer eine sechste
+Sanitisierungsstelle braucht, sucht die im Konzept genannte Adresse, findet keine Definition und
+legt naheliegend eine zweite Fassung an — genau das, was die Auflage verbietet. Deshalb ziehen
+`specs/architecture/0003-securitykonzept.md` (Adressen je Symbol: `join_remote_path`,
+`sanitize_label_text`, `finish_cancelled`, `take_over_queued_run`, `fail_run`/`fail_export_run`/
+`fail_review`, `reject_while_a_criterion_run_is_active`, `count_*_candidates`, `to_photo_out`,
+`photos_by_id`, `partition_sizes`, `recognize_persons`, `place_infos`, `landmark_points_by_name`,
+`apply_run_selection`, `build_grouping_and_rankings`, `log_cloud_vision_failure`,
+`record_cloud_vision_error`, `start_criterion_scoring_run`, `album_level_source`,
+`filtered_photo_ids`, `latest_successful_criterion_scoring_run_id`, `classify_scan_entries`) und
+die Sicherheitskommentare im Code im selben Pull Request nach.
+
+**Die eine fail-open-Stelle.** Wächter, die Namen als Zeichenketten führen, sind meist fail-closed:
+Gleichheit gegen eine erwartete Menge wird bei veraltetem Namen rot. Eine Deny-Liste schneidet
+dagegen nur — ein veralteter Eintrag trifft nichts, und der Test bleibt grün, ohne noch zu
+schützen. `tests/test_classification_review_isolation.py::VERBOTENE_NAMEN` ist diese Form; ihre
+vier betroffenen Einträge (`run_eye_phase`, `build_classification_estimate`,
+`build_grouping_and_rankings`, `rebuild_run_selection` — der letzte ist heute schon tot) wandern im
+selben Schritt wie die Namen.
+
+**Schichtung und Duplikationsauflage.** `api/run_guards.py` bleibt in der HTTP-Schicht: die
+Prüfung trägt Statuscode `409` und deutschen Nutzertext, beide Aufrufer sind HTTP-Handler, kein
+Worker-Modul importiert sie. `candidate_counts.py` liegt oberhalb der HTTP-Schicht und enthält nur
+Datenbank-Zählungen (kein `fastapi`, kein Worker-Import); `criterion_probe.py` bezieht sie auf
+Modulebene statt aus `api/projects.py`, womit eine Kante Probe → HTTP-Schicht entfällt. Die
+bewusste Duplikation derselben Ausschuss-/Schwellenbedingungen wie im Lauf bleibt Auflage
+(S14/S15): `test_ausschuss_ueberlebende.py::_ERWARTETE_VERWENDUNGEN` führt den Schlüssel
+`("candidate_counts.py", "survives_ausschuss"): 3` — umbenannt, nicht gestrichen; die Summe ist die
+Zusicherung, nicht der Dateiname. Ebenso bleibt `"photosort.candidate_counts" in in_probe` in
+`test_criterion_probe.py` die einzige Prüfung gegen eine stille Kopie der Zählung.
+
+**Patch-Ziele.** Mit den gestrichenen Re-Exporten in `worker/__init__.py` verschwindet eine zweite
+Adresse, an der ein Patch still nicht greifen konnte; jeder Patch zeigt danach auf den
+Definitionsort oder scheitert laut.
+
+**Restrisiko:** keines neu. Python erzwingt Sichtbarkeit nicht — die Regel bleibt eine Test- und
+Konventionsregel, was ADR 0150 festhält und diese Story nicht ändert.
+
+## Teststrategie
+
+Reine Sichtbarkeits- und Ablageänderung: kein neuer Verhaltenstest. Neu ist genau **ein**
+Struktur-Test über den Syntaxbaum (Klasse B nach ADR 0148); die Zusicherungen aus AK5 tragen
+weiterhin die vorhandenen Tests, deren Knotenmenge gleich bleibt.
+
+**AK1/AK3/AK6 — ein Wächter, drei Zusicherungen.**
+`backend/tests/test_private_name_boundary.py` liest den Syntaxbaum von `backend/src` und
+`backend/tests`; `finde_verstoesse(pfad)` liefert je Datei `(Zeile, Name, Modul)`, die Adresse ist
+`src`- bzw. `tests`-relativ, die Meldung lautet `datei:zeile: name aus modul`.
+
+- AK1 und AK3 sind **eine** Messung mit Pfadpräfix: die Fundmenge über `PRODUCTION_DIR` bzw.
+  `TESTS_DIR` ist gleich der Arbeitsliste (G0–G8), ab G8 `== set()`. Die Gleichheit trägt die
+  Aussage, weil sie den Bestand misst und die Erwartung der jeweilige Schritt ist — keine
+  eingefrorene Namensliste, keine Prüfung von `__all__`-Längen. Eine bloße „keine Funde“-Assertion
+  wäre auf jedem kaputten Walker grün; deshalb der Nicht-Leer-Nachweis über beide Wurzeln.
+- AK6 belegt je Erfassungsform (`from`-Import, Attribut, `setattr`, `getattr`, `patch.object`,
+  Patch-Zeichenkette) ein handgeschriebenes Snippet mit **genau einem** Fund und ausgeschriebenem
+  Meldungstext. Die Snippets nennen einen Namen, der dauerhaft dateilokal bleibt (`_counted`),
+  sonst prüften sie nach dem Umbau nichts mehr. Je eine Positivprobe deckt die Ausnahmen der Regel
+  ab (Modulsegment im Import und als Attributkette, fremdes Objekt als `setattr`-Empfänger, `_`,
+  unbekannter und öffentlicher Name).
+- Der Rot-Lauf gegen den Ausgangsstand (leere Liste → volle Fundliste) ist der einmalige
+  Mutationsbeleg für den Bestandspfad; die Snippets belegen die Zweige.
+
+**AK5 — Anzahl und Aussage ohne Wortlaut-Test.** `pytest --collect-only -q` beider Stände
+sortiert vergleichen: erwartete Differenz ist ausschließlich der neue Wächter und **genau ein**
+zusätzlicher parametrisierter Fall `test_selection.py::…[worker/classification_review.py]`. Jede
+übrige Knoten-ID bleibt identisch. Im `git diff --word-diff` über `backend/tests` ändert jede
+Zeile nur einen Namen oder eine Importadresse aus der Zuordnungstabelle — keine
+Assertion-Operanden, Literale, Zahlen, Fixtures oder Parametrisierungen.
+
+**Mitziehende Wächter** (Namen als Zeichenketten): `test_worker_import_graph.py` (`_LAUF_DATEIEN`
++ `classification_review`, `_LAUF_EINSTIEGSPUNKTE` + `run_classification_review`,
+`_ERLAUBTE_KANTEN`), `test_selection.py::_SELECTING_MODULES`, `test_models.py`
+(`_ALLOWED_PHASE_WRITER_FUNCTIONS = {"set_phase"}`, `_ALLOWED_DECISION_MODEL_READERS` mit
+`api/photos/_reads.py::final_selection_decisions`), `test_classification_review_isolation.py`,
+`test_criterion_phases_standalone.py::_PHASEN` (sonst läuft `test_no_phase_names_another_phase`
+gegen eine leere Schnittmenge still grün), `test_ausschuss_ueberlebende.py`,
+`test_criterion_probe.py`, `tests/phase_binding.py`, `test_persons.py`.
+
+**Abnahme:** vollständige Suite mit `--cov-fail-under=80`, `ruff check`, `ruff format --check`,
+`mypy src`, Knotenmengen-Differenz, Wächter grün; dynamisch gerechnete Adressen (`getattr` mit
+Variable, f-Strings) und relative Importe sind nicht messbar und bleiben Prüfkriterium im Review.
 
 ## Entscheidungen
 
