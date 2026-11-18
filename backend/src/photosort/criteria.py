@@ -603,7 +603,7 @@ def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
 
 
 # Genau die Kriterien, die is_landmark_candidate unten auswertet - exportiert, damit die
-# API-seitige Kostenschätzung (api/projects.py::_count_landmark_candidates) nur diese Zeilen
+# API-seitige Kostenschätzung (candidate_counts.py::count_landmark_candidates) nur diese Zeilen
 # laden muss, ohne die Schlüssel ein zweites Mal zu kennen. Wer hier etwas ergänzt, MUSS es
 # auch in is_landmark_candidate tun; der gemeinsame Test in test_criteria.py hält beide
 # Stellen zusammen.

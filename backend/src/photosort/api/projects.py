@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,12 +19,17 @@ from photosort.api.deps import (
     get_opencloud_client,
     get_session,
 )
+from photosort.api.run_guards import reject_while_a_criterion_run_is_active
+from photosort.candidate_counts import (
+    count_eye_candidates,
+    count_landmark_candidates,
+    count_remote_category_candidates,
+)
 from photosort.classification_eta import remaining_seconds
 from photosort.clock import now_utc
 from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
-from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
-from photosort.duplicates import has_open_suggestion, survives_ausschuss
+from photosort.duplicates import has_open_suggestion
 from photosort.eye_client import eye_service_is_healthy
 from photosort.model_choice import (
     UnknownModelChoiceError,
@@ -42,14 +47,9 @@ from photosort.models import (
     ExportRun,
     ExportRunStatus,
     FineLabel,
-    MotifAssessmentSource,
     Photo,
-    PhotoAlbumSuitability,
-    PhotoCriterionScore,
     PhotoDuplicateDecision,
-    PhotoEyeResult,
     PhotoFineLabel,
-    PhotoMotifAssessment,
     PhotoScore,
     Project,
     RemoteCategoryClassificationRun,
@@ -751,119 +751,6 @@ def _estimate_part(
     )
 
 
-async def _count_remote_category_candidates(session: AsyncSession, project_id: int) -> int:
-    """Ermittelt über dieselbe Kandidaten-Selektion wie der tatsächliche Lauf
-    (worker/remote_categories.py::select_remote_category_candidates), als eigenstaendige kleine Query HIER
-    dupliziert: die API-Schicht (reine HTTP-/Validierungs-/Lese-Zustaendigkeit) importiert
-    das Worker-Paket nicht, sondern loest Jobs ausschliesslich ueber den stringbasierten JobEnqueuer
-    aus. `api/photos/` ist die eine bewusste Ausnahme davon.
-
-    Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
-    verlaesst die Datenbank, auch nicht bei einem grossen Projekt.
-
-    SICHERHEITSAUFLAGE S15/S7: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern
-    sich beide Stellen in derselben PR. Das Kriterium ist ZUSAMMENGESETZT - eine Kopfzeile mit
-    `source='cloud'` UND eine Albumtauglichkeitszeile; nicht das bloße Vorhandensein einer
-    Kopfzeile (der Kriterien-Lauf schreibt lokale). Eine Schaetzung, die eine andere Menge zaehlt
-    als der Lauf sendet, ist eine falsche Grundlage fuer die Freigabe einer kostenpflichtigen
-    Aktion.
-
-    Die Negation der KONJUNKTION wird per De Morgan zur DISJUNKTION: Kandidat ist, wem eines von
-    beiden fehlt. Eine falsch geklammerte Negation (`~(a & b)` als `~a & ~b` gelesen) zaehlt still
-    eine andere Menge - der Test prueft deshalb MENGENGLEICHHEIT gegen den Worker-Pfad ueber
-    demselben Datenbestand, nicht zwei getrennt hingeschriebene Erwartungswerte."""
-    cloud_assessed = exists().where(
-        PhotoMotifAssessment.photo_id == Photo.id,
-        PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
-    )
-    album_rated = exists().where(PhotoAlbumSuitability.photo_id == Photo.id)
-    result = await session.execute(
-        select(func.count())
-        .select_from(Photo)
-        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-        .where(
-            Photo.project_id == project_id,
-            # SICHERHEIT (S1 von Spec 0374): DASSELBE Praedikat wie im Lauf. Es folgt der Auswahl
-            # nicht von selbst - dies ist eine eigene Anweisung, und sie muss dieselbe Menge
-            # zaehlen, die der Lauf sendet.
-            survives_ausschuss(),
-            or_(~cloud_assessed, ~album_rated),
-        )
-    )
-    return result.scalar_one()
-
-
-async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> int:
-    """Der Landmark-Anteil der Kostenschätzung.
-
-    Zaehlt Ausschuss-Ueberlebende, deren BEREITS GESPEICHERTE Kriterien-Werte
-    `criteria.py::is_landmark_candidate` erfuellen und die noch keine `landmark`-Zeile haben -
-    dieselbe reine Schwellenwert-Funktion, die auch der Live-Lauf ueber
-    worker/_criterion/landmark.py::_select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender
-
-    STRUKTURELL EINE SCHAETZUNG, keine Vorausberechnung: die Landmark-Kandidaten des kommenden
-    Laufs ergeben sich aus Kriterien-Werten, die genau dieser Lauf erst neu berechnet. Vor dem
-    allerersten Lauf eines Projekts liegen gar keine Vorwerte vor und die Zahl ist 0; die
-    Oberflaeche weist sie als Schaetzung aus.
-
-    Die Schwellenwert-Pruefung laeuft in Python, nie als SQL-Ausdruck: `is_landmark_candidate`
-    ist die geteilte Quelle der Wahrheit, eine SQL-Nachbildung der Schwellenwerte waere die
-    zweite, auseinanderlaufende Stelle. Geladen werden nur die beiden relevanten
-    Kriterien-Zeilen je Foto, nicht die vollen Fotos."""
-    already_scored = (
-        select(PhotoCriterionScore.photo_id)
-        .join(Photo, Photo.id == PhotoCriterionScore.photo_id)
-        .where(Photo.project_id == project_id, PhotoCriterionScore.criterion_key == "landmark")
-    )
-    rows = (
-        await session.execute(
-            select(
-                PhotoCriterionScore.photo_id,
-                PhotoCriterionScore.criterion_key,
-                PhotoCriterionScore.value,
-            )
-            .join(Photo, Photo.id == PhotoCriterionScore.photo_id)
-            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-            .where(
-                Photo.project_id == project_id,
-                # SICHERHEIT (S1 von Spec 0374): dieselbe Begruendung wie eine Funktion weiter
-                # oben. Der Sehenswuerdigkeits-Teilschritt wird vom Kriterien-Lauf gespeist, und
-                # dessen Fotoauswahl traegt dasselbe Praedikat.
-                survives_ausschuss(),
-                PhotoCriterionScore.criterion_key.in_(LANDMARK_CANDIDATE_CRITERION_KEYS),
-                PhotoCriterionScore.photo_id.not_in(already_scored),
-            )
-        )
-    ).all()
-
-    values_by_photo: dict[int, dict[str, float]] = {}
-    for photo_id, criterion_key, value in rows:
-        values_by_photo.setdefault(photo_id, {})[criterion_key] = value
-    return sum(1 for values in values_by_photo.values() if is_landmark_candidate(values))
-
-
-async def _count_eye_candidates(session: AsyncSession, project_id: int) -> int:
-    """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile, die noch
-    KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand (Spec 0621).
-
-    Dieselbe Bedingung wie `worker/_criterion/eye.py::_run_eye_phase`, als eigenstaendige kleine Query HIER
-    dupliziert - dieselbe Begruendung wie bei `_count_remote_category_candidates`: die
-    API-Schicht importiert das Worker-Paket nicht. Eine Schaetzung, die eine andere Menge zaehlt als
-    der Lauf, waere eine falsche Grundlage: Sie verspraeche Kosten fuer Fotos, die der Lauf gar
-    nicht mehr an den Dienst schickt."""
-    result = await session.execute(
-        select(func.count())
-        .select_from(Photo)
-        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-        .where(
-            Photo.project_id == project_id,
-            survives_ausschuss(),
-            ~exists().where(PhotoEyeResult.photo_id == Photo.id),
-        )
-    )
-    return result.scalar_one()
-
-
 async def _to_project_out(
     session: AsyncSession, project: Project, aggregate: PhotoAggregate
 ) -> ProjectOut:
@@ -1385,48 +1272,6 @@ async def set_cloud_vision_consent(
     )
 
 
-async def _reject_while_a_criterion_run_is_active(
-    session: AsyncSession,
-    project_id: int,
-    *,
-    afterwards: str = "Der Richtwert kann danach gesetzt werden.",
-) -> None:
-    """`409`, solange der Kriterien-Lauf dieses Projekts laeuft oder wartet.
-
-    ENGER als `api/cameras.py::_reject_while_a_run_is_active`, das auch den Scan erfasst: nur
-    dieser Lauftyp schreibt `selection_position`, der Scan nicht.
-
-    Der laufende Lauf liest den Richtwert unmittelbar vor seinem Erfolgsvermerk. Ohne diesen
-    Waechter schreibt der Endpunkt den neuen Wert, waehrend der Lauf noch mit dem alten rechnet -
-    Ergebnis ist ein Vorschlag nach altem Richtwert unter einer Oberflaeche, die den neuen anzeigt.
-    Die Abweichung heilt erst beim naechsten Ausloeser und ist bis dahin nirgends als Fehler
-    sichtbar.
-
-    Geprueft wird nur der NEUESTE Lauf (Muster `delete_project`), damit ein haengengebliebener
-    Altlauf nicht dauerhaft blockiert - ein solcher wird ohnehin vom Watchdog auf FAILED
-    gesetzt.
-
-    `afterwards` ist der Nachsatz, der dem Nutzer sagt, WAS danach moeglich ist - der Richtwert
-    oder (Spec 0383) die Modellwahl. Der Statuscode und der erste Satz bleiben wortgleich."""
-    latest = (
-        (
-            await session.execute(
-                select(CriterionScoringRun.status)
-                .where(CriterionScoringRun.project_id == project_id)
-                .order_by(CriterionScoringRun.started_at.desc())
-                .limit(1)
-            )
-        )
-        .scalars()
-        .first()
-    )
-    if latest in (ScanStatus.RUNNING, ScanStatus.QUEUED):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Fuer dieses Projekt laeuft gerade eine Klassifizierung. " + afterwards,
-        )
-
-
 @router.put("/{project_id}/selection-target", response_model=ProjectOut)
 async def set_selection_target(
     project_id: int,
@@ -1447,7 +1292,7 @@ async def set_selection_target(
     router-weiten Auth-Torwächter; weder `target` noch ein Query-Parameter steuert je eine Lauf-,
     Event- oder Foto-Id bei - die Projektbindung kommt ausschließlich aus dem Pfadparameter."""
     project = await _get_project_or_404(project_id, session)
-    await _reject_while_a_criterion_run_is_active(session, project_id)
+    await reject_while_a_criterion_run_is_active(session, project_id)
 
     project.selection_target = payload.target
     await rebuild_run_selection(session, project_id)
@@ -1528,7 +1373,7 @@ async def _build_classification_estimate(
             price_per_image_usd=estimate_usd_per_image(
                 resolved.category_model, resolved.category_provider
             ),
-            candidate_count=await _count_remote_category_candidates(session, project.id),
+            candidate_count=await count_remote_category_candidates(session, project.id),
         )
     else:
         # Eye liefert keine Modell-ID und keinen Anbieter - der Anteil ist kostenfrei.
@@ -1537,7 +1382,7 @@ async def _build_classification_estimate(
             provider=None,
             model=None,
             price_per_image_usd=0.0,
-            candidate_count=await _count_eye_candidates(session, project.id),
+            candidate_count=await count_eye_candidates(session, project.id),
         )
 
     landmark: ClassificationEstimatePartOut | None = None
@@ -1545,14 +1390,14 @@ async def _build_classification_estimate(
         # Der Landmark-Anteil ist NICHT SCHAETZBAR, solange im Projekt kein erfolgreich
         # abgeschlossener Klassifizierungslauf existiert - vor dem ersten Lauf gibt es keine
         # gespeicherten Kriterien-Werte, aus denen sich Kandidaten ableiten liessen, und
-        # `_count_landmark_candidates` liefert dort strukturell `0`. Diese `0` als Tatsache
+        # `count_landmark_candidates` liefert dort strukturell `0`. Diese `0` als Tatsache
         # anzuzeigen behauptet Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
         #
         # Ein laufender oder fehlgeschlagener Durchlauf gilt ausdruecklich nicht als stattgefunden:
         # erst ein `success` belegt, dass Kriterien-Werte geschrieben wurden.
         landmark_candidate_count: int | None = None
         if await _has_successful_classification_run(session, project.id):
-            landmark_candidate_count = await _count_landmark_candidates(session, project.id)
+            landmark_candidate_count = await count_landmark_candidates(session, project.id)
         landmark = _estimate_part(
             kind="cloud",
             provider=resolved.landmark_provider,

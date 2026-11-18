@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
-from photosort.api.projects import _reject_while_a_criterion_run_is_active
+from photosort.api.run_guards import reject_while_a_criterion_run_is_active
 from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER, provider_for_vision_model
 from photosort.config import settings
 from photosort.model_choice import api_key_for_provider, describe_model_choice
@@ -186,7 +186,7 @@ async def put_model_choice(
     `category_method`/`category_model`/`landmark_model` und fasst die Einwilligungs-Spalten
     nicht an (S3)."""
     project = await _get_project_or_404(project_id, session)
-    await _reject_while_a_criterion_run_is_active(
+    await reject_while_a_criterion_run_is_active(
         session,
         project_id,
         afterwards="Die Modellwahl kann danach geändert werden.",

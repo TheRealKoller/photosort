@@ -6,7 +6,7 @@ Produktivpaket": die Zaehlbloecke rein und ohne DB, die duenne Leseschicht gegen
 `db_session`-Fixture, `main()` synchron gegen eine dateibasierte SQLite in `tmp_path`.
 
 Der Lesepfad ist zugleich die Gegenprobe zur geteilten Quelle der Wahrheit: Er nimmt
-`criteria.py::is_landmark_candidate` und `api/projects.py::_count_landmark_candidates` selbst,
+`criteria.py::is_landmark_candidate` und `candidate_counts.py::count_landmark_candidates` selbst,
 statt die Schwellen in einer zweiten Fassung nachzubauen.
 """
 
@@ -683,13 +683,13 @@ class TestTheProbeIsReadOnly:
 
     def test_the_shared_means_lie_in_the_graph_of_the_run(self) -> None:
         """DIE GEGENPROBE ZUR NACHBAU-GEFAHR: `is_landmark_candidate` und
-        `_count_landmark_candidates` MUESSEN im Graphen des Kommandos liegen - sonst waeren aus
+        `count_landmark_candidates` MUESSEN im Graphen des Kommandos liegen - sonst waeren aus
         den geteilten Mitteln still Kopien geworden, und das Messkommando maesse etwas anderes als
         der Lauf, waehrend beide fuer sich gruen blieben."""
         in_probe = import_closure("photosort.criterion_probe")
 
         assert "photosort.criteria" in in_probe
-        assert "photosort.api.projects" in in_probe
+        assert "photosort.candidate_counts" in in_probe
         # Der Lauf selbst nimmt dieselbe Schwellenwert-Pruefung.
         assert "photosort.criteria" in import_closure("photosort.worker")
 

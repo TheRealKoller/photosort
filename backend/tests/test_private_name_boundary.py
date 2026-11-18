@@ -39,19 +39,23 @@ def _resolviertes_modul(teile: list[str]) -> tuple[str, list[str]] | None:
     return None
 
 
+def _ist_privat(name: str) -> bool:
+    """Genau ein fuehrender Unterstrich vor einem Namen: Dunder und `_` selbst sind ausgenommen."""
+    return name.startswith("_") and not name.startswith("__") and name != "_"
+
+
 def _privater_name(teile: list[str]) -> str | None:
     """Der erste gebundene private Name der Teilefolge, `None` wenn keiner."""
     for teil in teile:
-        if teil.startswith("_") and not teil.startswith("__"):
+        if _ist_privat(teil):
             return teil
     return None
 
 
 def _privater_string(ausdruck: ast.expr) -> str | None:
     if isinstance(ausdruck, ast.Constant) and isinstance(ausdruck.value, str):
-        wert = ausdruck.value
-        if wert.startswith("_") and not wert.startswith("__"):
-            return wert
+        if _ist_privat(ausdruck.value):
+            return ausdruck.value
     return None
 
 
@@ -104,19 +108,27 @@ class _Dateipruefung(ast.NodeVisitor):
             for alias in knoten.names:
                 if _ismodulpfad(f"{knoten.module}.{alias.name}".split(".")):
                     continue
-                name = alias.name
-                if name.startswith("_") and not name.startswith("__"):
+                if _ist_privat(alias.name):
                     quelldatei = module_file(knoten.module)
                     if quelldatei is not None and quelldatei != self.pfad:
-                        self._melde(knoten.lineno, name, knoten.module)
+                        self._melde(knoten.lineno, alias.name, knoten.module)
         self.generic_visit(knoten)
 
     def visit_Attribute(self, knoten: ast.Attribute) -> None:
-        if knoten.attr.startswith("_") and not knoten.attr.startswith("__"):
+        if _ist_privat(knoten.attr):
             modul = self._modul_von(knoten.value)
-            if modul is not None:
+            if modul is not None and not _ismodulpfad([*modul.split("."), knoten.attr]):
                 self._melde(knoten.lineno, knoten.attr, modul)
         self.generic_visit(knoten)
+
+    def _modul_aus_argument(self, ausdruck: ast.expr) -> str | None:
+        """Das `photosort`-Modul, das ein Aufrufargument benennt - Alias oder Zeichenkette."""
+        if isinstance(ausdruck, ast.Constant) and isinstance(ausdruck.value, str):
+            aufgeloest = _resolviertes_modul(ausdruck.value.split("."))
+            if aufgeloest is None or aufgeloest[1]:
+                return None
+            return aufgeloest[0]
+        return self._modul_von(ausdruck)
 
     def visit_Call(self, knoten: ast.Call) -> None:
         if isinstance(knoten.func, ast.Attribute):
@@ -127,8 +139,9 @@ class _Dateipruefung(ast.NodeVisitor):
             func = None
         if func in {"setattr", "getattr", "object"} and len(knoten.args) >= 2:
             name = _privater_string(knoten.args[1])
-            if name is not None:
-                self._melde(knoten.lineno, name, self._modul_von(knoten.args[0]) or "?")
+            modul = self._modul_aus_argument(knoten.args[0])
+            if name is not None and modul is not None:
+                self._melde(knoten.lineno, name, modul)
         for argument in [*knoten.args, *(kw.value for kw in knoten.keywords)]:
             if not (isinstance(argument, ast.Constant) and isinstance(argument.value, str)):
                 continue
@@ -159,10 +172,6 @@ def finde_verstoesse(pfad: Path) -> list[tuple[int, str, str]]:
     pruefung = _Dateipruefung(pfad)
     pruefung.binde_aliase()
     pruefung.visit(ast.parse(pfad.read_text(encoding="utf-8")))
-    if pfad.resolve() == Path(__file__).resolve():
-        # Die eigene Datei fuehrt die Verstoss-Beispiele ihres Selbstschutzes als Text; sie sind
-        # Pruefmaterial, keine Benutzung. Alles ausserhalb der Beispieldefinitionen wird gemessen.
-        return [fund for fund in pruefung.verstoesse if not _ist_beispiel(fund[0])]
     return pruefung.verstoesse
 
 
@@ -173,36 +182,13 @@ def _dateien(wurzel: Path) -> list[Path]:
 # Arbeitsliste waehrend der Abarbeitung (Spec 0648): Datei -> Namen. Geprueft wird GLEICHHEIT in
 # beide Richtungen - ein neuer Verstoss wird rot, ein abgearbeiteter Eintrag ebenfalls.
 _BEKANNTE_FUNDE_TEXT = """
-api/model_choice.py: _reject_while_a_criterion_run_is_active
-api/photos/__init__.py: _suggestion_reason
-api/photos/_reads.py: _event_out _location_out
-api/photos/album_draft.py: _album_level_source _event_and_location_by_photo_id _event_ids_from_rankings
-    _filtered_photo_ids _final_selection_decisions _get_project_or_404
-    _latest_successful_criterion_scoring_run_id _partition_sizes _photos_by_id _place_in_events
-    _ranking_by_photo_id _run_events _to_photo_out _user_count
-api/photos/album_selection.py: _album_level_source _event_and_location_by_photo_id
-    _final_selection_decisions _get_project_or_404 _latest_successful_criterion_scoring_run_id
-    _partition_sizes _photos_by_id _place_in_events _ranking_by_photo_id _run_events _to_photo_out
-api/photos/ausschuss.py: _album_level_source _auto_decided_ids _event_and_location_by_photo_id
-    _event_ids_from_rankings _final_selection_decisions _get_project_or_404
-    _latest_successful_criterion_scoring_run_id _partition_sizes _photos_by_id _ranking_by_photo_id
-    _suggestion_reason _to_photo_out _user_count
-api/photos/draft_exchange.py: _album_level_source _event_and_location_by_photo_id
-    _event_ids_from_rankings _final_selection_decisions _get_project_or_404
-    _latest_successful_criterion_scoring_run_id _partition_sizes _photos_by_id _ranking_by_photo_id
-    _to_photo_out _user_count
-api/photos/duplicate_groups.py: _album_level_source _auto_decided_ids _event_and_location_by_photo_id
-    _event_ids_from_rankings _final_selection_decisions _get_project_or_404
-    _latest_successful_criterion_scoring_run_id _partition_sizes _photos_by_id _ranking_by_photo_id
-    _to_photo_out _user_count
 classification_review.py: _compute_content_criteria _finish_cancelled _raise_if_cancel_requested
     _take_over_queued_run _try_build
-criterion_probe.py: _count_landmark_candidates
 tests/test_aesthetics.py: _ASSET_PATH
 tests/test_api_classification_reviews.py: _guard_export_shape
 tests/test_api_opencloud_folder_counts.py: _count_images_up_to_limit
 tests/test_api_persons.py: _criterion_scoring_run_summary _name_taken _person_write_lock _phase_progress
-    _phase_remaining_seconds _taken_slots _wait_for_the_second
+    _phase_remaining_seconds _taken_slots
 tests/test_api_stats.py: _DATABASE_SIZE_SQL _local_database_bytes_estimate
 tests/test_api_unnamed_faces.py: _embedding_at _on_model_thread
 tests/test_classification.py: _FACE_DETECTOR_MODEL_PATH _FACE_LANDMARKER_MODEL_PATH
@@ -215,10 +201,8 @@ tests/test_demo_state.py: _DEMO_AUTO_DECIDED_GROUP_SIZE _DEMO_CORRECTED_INDEX _D
     _DEMO_EXCLUDED_INDEX _DEMO_EYE_ALBUM_LEVEL _DEMO_EYE_MODEL_REVISION _DEMO_LOCAL_BASIS_INDEX
     _DEMO_UNASSESSED_INDEX
 tests/test_duplicate_probe.py: _distribution _groups_of _summarise
-tests/test_duplikat_anzeigezustand.py: _suggestion_reason
 tests/test_event_probe.py: _quota_lines _report_head _tally
 tests/test_events.py: _EARTH_RADIUS_METERS _landmark_name_is_plausible _round_limit _usable_name
-tests/test_final_selection.py: _selection_state_of
 tests/test_horizon.py: _score_from_angle_deviation _select_dominant_candidate_angle
 tests/test_label_embedding.py: _mean_pool_and_normalize
 tests/test_landmark.py: _build_prompt _landmark_detection_from_json
@@ -228,15 +212,14 @@ tests/test_place_dataset.py: _build_parser _download_archive
 tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _slugify
 tests/test_worker_classification.py: _now_utc
 tests/test_worker_criterion_scoring.py: _IMAGE_ANALYSIS_CRITERION_KEYS _IMAGE_ANALYSIS_CRITERION_SOURCES
-    _compute_content_criteria _count_landmark_candidates _log_cloud_vision_throttling _now_utc
-    _recognize_persons _select_landmark_candidates _start_criterion_scoring_run
+    _compute_content_criteria _log_cloud_vision_throttling _now_utc _recognize_persons
+    _select_landmark_candidates _start_criterion_scoring_run
 tests/test_worker_eye_phase.py: _set_phase
 tests/test_worker_fail_run.py: _commit_phase_costs _fail_run
 tests/test_worker_finish_cancelled.py: _fail _fail_export_run _fail_run _finish_cancelled
 tests/test_worker_persons.py: _build_grouping_and_rankings
 tests/test_worker_place_names.py: _build_grouping_and_rankings _landmark_points_by_name _place_infos
 tests/test_worker_reap_stalled_runs.py: _fail_run _now_utc
-tests/test_worker_remote_category_classification.py: _count_remote_category_candidates
 tests/test_worker_scan_classification.py: _classify_scan_entries
 tests/test_worker_scan_project.py: _catch_up_aspect_ratios _now_utc
 tests/test_worker_score_cancel.py: _raise_if_cancel_requested
@@ -311,6 +294,7 @@ def test_die_messung_ist_nicht_leer_und_deckt_den_baum() -> None:
     }
     assert len(geprueft) > 100
     assert "api/model_choice.py" in geprueft
+    assert "tests/test_private_name_boundary.py" in geprueft
 
 
 def _meldung(pfad: Path) -> list[str]:
@@ -320,13 +304,20 @@ def _meldung(pfad: Path) -> list[str]:
 
 
 _MODUL = "photosort.worker._runs"
+_PAKET = "photosort.worker"
 # Bewusst ein Name, der dauerhaft dateilokal bleibt: die Beispiele des Selbstschutzes muessen
 # auch nach dem Umbau noch echte Verstoesse sein, sonst pruefen sie nichts mehr.
 _PRIVAT = "_counted"
 
+# Je eine Probe pro Ausnahme der Regel: Modulsegment im Import und als Attributkette, ein fremdes
+# Objekt als `setattr`-Empfaenger, `_` allein, ein unbekannter und ein oeffentlicher Name.
 _KEIN_VERSTOSS = [
-    f"from {_MODUL} import set_phase, now_utc\n",
-    "from photosort.opencloud.client import join_remote_path\n",
+    (f"from {_MODUL} import set_phase, now_utc\n", "unbekannter-name"),
+    ("from photosort.opencloud.client import join_remote_path\n", "oeffentlicher-name"),
+    (f"from {_PAKET} import _runs\n", "modulsegment-import"),
+    ("import photosort\n\nx = photosort.worker._runs\n", "modulsegment-attribut"),
+    ("setattr(gate, '_wait', None)\n", "fremdes-objekt"),
+    (f"from {_MODUL} import _\n", "unterstrich"),
 ]
 
 _VERSTOSS_BEISPIELE = [
@@ -344,19 +335,24 @@ _VERSTOSS_BEISPIELE = [
         3,
     ),
     (
+        f"import {_MODUL} as runs\n\nx = getattr(runs, '{_PRIVAT}')\n",
+        _PRIVAT,
+        "getattr",
+        3,
+    ),
+    (
+        f"from unittest import mock\n\nimport {_MODUL} as runs\n\nmock.patch.object(runs, '{_PRIVAT}')\n",
+        _PRIVAT,
+        "patch-object",
+        5,
+    ),
+    (
         f"from unittest import mock\n\nmock.patch('{_MODUL}.{_PRIVAT}')\n",
         _PRIVAT,
         "patch-ziel",
         3,
     ),
 ]
-# Grenzen der Beispieldefinitionen - der Detektor liest die eigene Datei und ueberspringt sie.
-_BEISPIEL_ZEILEN = (0, 0)
-_QUELLEN_ZEILEN: frozenset[int] = frozenset()
-
-
-def _ist_beispiel(zeile: int) -> bool:
-    return _BEISPIEL_ZEILEN[0] <= zeile <= _BEISPIEL_ZEILEN[1] or zeile in _QUELLEN_ZEILEN
 
 
 def _snippet(tmp_path: Path, quelle: str) -> Path:
@@ -365,8 +361,8 @@ def _snippet(tmp_path: Path, quelle: str) -> Path:
     return pfad
 
 
-@pytest.mark.parametrize("quelle", _KEIN_VERSTOSS, ids=["unbekannt", "oeffentlich"])
-def test_ein_snippet_ohne_verstoss_bleibt_leer(tmp_path: Path, quelle: str) -> None:
+@pytest.mark.parametrize(("quelle", "ident"), _KEIN_VERSTOSS, ids=[i for _, i in _KEIN_VERSTOSS])
+def test_ein_snippet_ohne_verstoss_bleibt_leer(tmp_path: Path, quelle: str, ident: str) -> None:
     assert finde_verstoesse(_snippet(tmp_path, quelle)) == []
 
 
@@ -394,15 +390,3 @@ def test_ein_unterstrich_modulsegment_ist_kein_verstoss() -> None:
         name for _, name, _ in finde_verstoesse(TESTS_DIR / "test_worker_import_graph.py")
     }
     assert "_runs" not in verstoesse
-
-
-def _beispielgrenzen() -> tuple[int, int]:
-    """Zeilenbereich der Beispieldefinitionen in dieser Datei (Start- und Endzeile)."""
-    quellzeilen = Path(__file__).read_text(encoding="utf-8").splitlines()
-    start = next(i for i, zeile in enumerate(quellzeilen, 1) if zeile.startswith("_KEIN_VERSTOSS"))
-    ende = next(i for i, zeile in enumerate(quellzeilen, 1) if zeile.startswith("_QUELLEN_ZEILEN"))
-    return start, ende
-
-
-_BEISPIEL_ZEILEN = _beispielgrenzen()
-_QUELLEN_ZEILEN = frozenset({_BEISPIEL_ZEILEN[0], _BEISPIEL_ZEILEN[1]})

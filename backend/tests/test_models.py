@@ -2073,12 +2073,12 @@ class TestTheSingleDraftStaysUntouchedByTheFinalSelection:
 # specs/features/0431-endauswahl-gemeinsam.md, Nachweisstelle 3 von sieben: Die Funktionen des
 # EINZELENTWURFS nennen die gemeinsame Entscheidung nicht.
 #
-# DIE EINHEIT IST DER FUNKTIONSRUMPF, NICHT DIE DATEI, und das ist keine Feinheit: `_to_photo_out`
+# DIE EINHEIT IST DER FUNKTIONSRUMPF, NICHT DIE DATEI, und das ist keine Feinheit: `to_photo_out`
 # und `album_selection` liegen im selben Modul wie `_draft_photo_ids` und `draft_alternatives`, und
 # die drei Endauswahl-Felder stehen auf ALLEN Lesepfaden - ein Waechter auf Dateiebene waere
 # deshalb entweder dauerhaft rot oder so weit gefasst, dass er nichts zusichert.
 #
-# Gemessen wird ausschliesslich der MODELLNAME, nicht der Lader `_final_selection_decisions`:
+# Gemessen wird ausschliesslich der MODELLNAME, nicht der Lader `final_selection_decisions`:
 # `draft_alternatives` und `list_photos` MUESSEN ihn aufrufen, weil die Felder auch dort stehen.
 # Was ihnen untersagt ist, ist der direkte Zugriff auf die Tabelle - der waere der Anfang einer
 # zweiten Auswahlebene IM Einzelentwurf.
@@ -2088,7 +2088,7 @@ _DECISION_MODEL = "FinalSelectionDecision"
 # GLEICHHEIT: Findet der Waechter eine erlaubte Stelle nicht mehr, prueft er fuer sie nichts.
 _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
-        "api/photos/_reads.py::_final_selection_decisions",
+        "api/photos/_reads.py::final_selection_decisions",
         "api/photos/album_selection.py::album_selection",
         # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
         # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
@@ -2196,10 +2196,10 @@ class TestTheDraftFunctionsNeverTouchTheJointDecision:
         assert _functions_naming_the_decision_model(snippet) == set()
 
     def test_the_guard_ignores_the_loader_that_every_read_path_must_call(self) -> None:
-        """Die Abgrenzung, auf der die ganze Messung steht: `_final_selection_decisions` ist der
+        """Die Abgrenzung, auf der die ganze Messung steht: `final_selection_decisions` ist der
         PFLICHTIGE Aufruf jedes Lesepfads - die drei Felder stehen ueberall. Zaehlte er als
         Zugriff, waere der Waechter dauerhaft rot."""
-        snippet = "async def f():\n    return await _final_selection_decisions(session, ids)"
+        snippet = "async def f():\n    return await final_selection_decisions(session, ids)"
 
         assert _functions_naming_the_decision_model(snippet) == set()
 

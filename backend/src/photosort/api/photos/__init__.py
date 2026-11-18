@@ -18,7 +18,6 @@ from photosort.api.photos import (
     duplicate_groups,
     image,
 )
-from photosort.api.photos._conversion import _suggestion_reason
 from photosort.api.photos._reads import MAX_QUERY_POSITION
 from photosort.api.photos.duplicate_groups import (
     DuplicateGroupOut,
@@ -26,7 +25,6 @@ from photosort.api.photos.duplicate_groups import (
     empty_duplicate_group_out,
 )
 from photosort.api.photos.image import MotifCorrectionIn
-from photosort.final_selection import selection_state_of as _selection_state_of
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
 # projects.py/opencloud.py: jeder Endpunkt hier braucht das tatsächliche
@@ -47,8 +45,6 @@ __all__ = [
     "DuplicateGroupOut",
     "MAX_QUERY_POSITION",
     "MotifCorrectionIn",
-    "_selection_state_of",
-    "_suggestion_reason",
     "build_duplicate_group_out",
     "empty_duplicate_group_out",
     "router",

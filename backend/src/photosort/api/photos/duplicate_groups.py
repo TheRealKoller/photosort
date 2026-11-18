@@ -11,20 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.persons import photo_person_outs
-from photosort.api.photos._conversion import NO_PLACE, PhotoOut, _to_photo_out
+from photosort.api.photos._conversion import NO_PLACE, PhotoOut, to_photo_out
 from photosort.api.photos._reads import (
     MAX_QUERY_POSITION,
-    _album_level_source,
-    _auto_decided_ids,
-    _event_and_location_by_photo_id,
-    _event_ids_from_rankings,
-    _final_selection_decisions,
-    _get_project_or_404,
-    _latest_successful_criterion_scoring_run_id,
-    _partition_sizes,
-    _photos_by_id,
-    _ranking_by_photo_id,
-    _user_count,
+    album_level_source,
+    auto_decided_ids,
+    event_and_location_by_photo_id,
+    event_ids_from_rankings,
+    final_selection_decisions,
+    get_project_or_404,
+    latest_successful_criterion_scoring_run_id,
+    partition_sizes,
+    photos_by_id,
+    ranking_by_photo_id,
+    user_count,
 )
 from photosort.duplicates import (
     all_group_representative_ids,
@@ -109,8 +109,8 @@ async def build_duplicate_group_out(
     """Bildet den Stern um `photo_id` und hydratisiert seine Mitglieder zur vollen Antwort.
 
     VON ALLEN VIER ENDPUNKTEN GENUTZT, auch von den drei Schreibwegen im eigenen Router - genau
-    deshalb steht der Aufbau hier und nicht im Endpunkt: Die Hydratation (`_photos_by_id`,
-    `_to_photo_out` samt Event-, Orts- und Rang-Kontext) haengt an dieser Datei, und eine zweite
+    deshalb steht der Aufbau hier und nicht im Endpunkt: Die Hydratation (`photos`,
+    `to_photo_out` samt Event-, Orts- und Rang-Kontext) haengt an dieser Datei, und eine zweite
     Fassung davon liefe auseinander.
 
     `404` (als `HTTPException`), wenn es keine Gruppe gibt. Der Fall deckt unbekannte Id, fremdes
@@ -127,7 +127,7 @@ async def build_duplicate_group_out(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
-    auto_ids = await _auto_decided_ids(session, project.id)
+    auto_ids = await auto_decided_ids(session, project.id)
     auto_representatives = auto_decided_representatives(links, auto_ids)
     stellung = group_standing(representative_id, links)
     # `representative_of` hat die Gruppe soeben aufgeloest - `group_standing` kann sie nicht mehr
@@ -135,39 +135,37 @@ async def build_duplicate_group_out(
     assert stellung is not None
 
     ids = member_ids_of(representative_id, links)
-    photos_by_id = await _photos_by_id(session, ids)
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project.id)
+    photos = await photos_by_id(session, ids)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project.id)
     rankings_by_id = (
-        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
+        await ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
     )
-    partition_sizes = (
-        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
-    )
-    place_by_id = await _event_and_location_by_photo_id(
-        session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    sizes = await partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    place_by_id = await event_and_location_by_photo_id(
+        session, project.id, latest_run_id, photos, event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
     persons_by_id = await load_effective_persons(session, ids)
-    final_decisions = await _final_selection_decisions(session, ids)
-    user_count = await _user_count(session)
-    album_level_source = await _album_level_source(session, project)
+    final_decisions = await final_selection_decisions(session, ids)
+    users = await user_count(session)
+    album_source = await album_level_source(session, project)
     return DuplicateGroupOut(
         items=[
             DuplicateGroupPhotoOut(
-                photo=_to_photo_out(
-                    photos_by_id[member_id],
+                photo=to_photo_out(
+                    photos[member_id],
                     current_user_id,
                     project,
                     rankings_by_id.get(member_id),
-                    partition_sizes,
+                    sizes,
                     # Keine `curation_position`: Die Gruppe ist keine numerierte Auswahl.
                     None,
                     place_by_id.get(member_id, NO_PLACE),
                     motifs_by_id.get(member_id),
                     decisions=final_decisions,
-                    user_count=user_count,
+                    user_count=users,
                     persons=photo_person_outs(persons_by_id.get(member_id, [])),
-                    album_level_source=album_level_source,
+                    album_level_source=album_source,
                 ),
                 # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier
                 # (Auflage S2): Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
@@ -175,13 +173,13 @@ async def build_duplicate_group_out(
                 # ersten weg, ohne Fehler und ohne Meldung -
                 # `tests/test_ausschuss_ueberlebende.py` schlaegt fuer jede hier ausgeschriebene
                 # Fassung an.
-                effective_decision=effective_decision_for(photos_by_id[member_id]),
-                keep_possible=keep_possible_for(photos_by_id[member_id]),
+                effective_decision=effective_decision_for(photos[member_id]),
+                keep_possible=keep_possible_for(photos[member_id]),
                 # SICHERHEIT (S10): ueber `_score_metrics`, das die fehlende Zeile kennt - ein
                 # blosser Attributzugriff wuerfe fuer den Repraesentanten ohne `PhotoScore` und
                 # machte die ganze Gruppenantwort zur `500`.
-                sharpness=_score_metrics(photos_by_id[member_id])[0],
-                exposure=_score_metrics(photos_by_id[member_id])[1],
+                sharpness=_score_metrics(photos[member_id])[0],
+                exposure=_score_metrics(photos[member_id])[1],
             )
             for member_id in ids
         ],
@@ -265,7 +263,7 @@ async def duplicate_group_index(
     `404` fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln. `422` fuer eine
     Pfad-Id ausserhalb der Grenzen - ein unbeschraenkter Pydantic-`int` erreicht die Datenbank und
     wird jenseits von 2^63 zu `500` statt `404`."""
-    project = await _get_project_or_404(project_id, session)
+    project = await get_project_or_404(project_id, session)
     representatives = all_group_representative_ids(await load_duplicate_links(session, project.id))
     return DuplicateGroupIndexOut(
         total=len(representatives),
@@ -307,5 +305,5 @@ async def duplicate_group(
 
     `422` fuer eine Pfad-Id ausserhalb der Grenzen: Ein unbeschraenkter Pydantic-`int` erreicht die
     Datenbank und wird jenseits von 2^63 zu `500` statt `404`."""
-    project = await _get_project_or_404(project_id, session)
+    project = await get_project_or_404(project_id, session)
     return await build_duplicate_group_out(session, project, photo_id, current_user.id)

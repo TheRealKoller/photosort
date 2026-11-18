@@ -57,7 +57,7 @@ def selection_state_of(
     Seit ADR 0098 kann eine Zeile allein den Favoriten tragen, und ein Existenztest machte aus
     einer Auszeichnung eine Streichung.
 
-    EINE Stelle fuer alle Leser (`_to_photo_out`, der Zustandsfilter von `album_selection` und
+    EINE Stelle fuer alle Leser (`to_photo_out`, der Zustandsfilter von `album_selection` und
     `included_photos`): Mehrmals geschrieben liefen die Felder an dem Tag auseinander, an dem
     eine der Stellen sich aendert."""
     return selection_state(

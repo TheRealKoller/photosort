@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort import events, pricing, selection, worker
 from photosort import events as events_module
 from photosort.album_suitability import normalize_level
-from photosort.api.projects import _count_landmark_candidates
+from photosort.candidate_counts import count_landmark_candidates
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -5963,7 +5963,7 @@ class TestTheLandmarkEstimateCountsWhatTheRunSends:
         # Erster Lauf OHNE Cloud: er legt die Kriterienwerte an, aus denen die Schaetzung ihre
         # Kandidaten ableitet. Sie ist strukturell eine Schaetzung, keine Vorausberechnung.
         await self._run(db_session, project, scoring_run.id, tmp_path)
-        geschaetzt = await _count_landmark_candidates(db_session, project.id)
+        geschaetzt = await count_landmark_candidates(db_session, project.id)
 
         client = RecordingLandmarkClient()
         await self._run(db_session, project, scoring_run.id, tmp_path, landmark_client=client)

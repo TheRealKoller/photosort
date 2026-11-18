@@ -18,8 +18,8 @@ from photosort.api.photos._conversion import (
     EventOut,
     PhotoPlace,
     RatingFilter,
-    _event_out,
-    _location_out,
+    event_out,
+    location_out,
 )
 from photosort.duplicates import has_open_suggestion
 from photosort.events import EventSpan, LocationEntry, event_for_time, infer_locations
@@ -42,14 +42,14 @@ from photosort.models import (
 from photosort.persons import effective_person_assignments
 
 
-async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project:
+async def get_project_or_404(project_id: int, session: AsyncSession) -> Project:
     project = await session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projekt nicht gefunden.")
     return project
 
 
-async def _auto_decided_ids(session: AsyncSession, project_id: int) -> set[int]:
+async def auto_decided_ids(session: AsyncSession, project_id: int) -> set[int]:
     """Die Fotos DIESES Projekts, deren `PhotoScore.auto_decided` steht (Spec 0639).
 
     Projektbindung ausgeschrieben in derselben Anweisung, wie alle Zaehlungen dieses Moduls: Der
@@ -65,7 +65,7 @@ async def _auto_decided_ids(session: AsyncSession, project_id: int) -> set[int]:
     )
 
 
-async def _filtered_photo_ids(
+async def filtered_photo_ids(
     session: AsyncSession,
     project_id: int,
     current_user_id: int,
@@ -106,7 +106,7 @@ async def _filtered_photo_ids(
         # Foto still aus dem Filter fallen.
         base = base.where(or_(own_rating.id.is_(None), own_rating.status.is_(None)))
     elif rating_status is RatingFilter.SUGGESTED:
-        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: keine
+        # Bildet dieselbe Regel wie has_suggestion in to_photo_out als SQL-Praedikat nach: keine
         # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND ein OFFENER Vorschlag.
         #
         # "Offen" ist seit ADR 0104 mehr als "suggested_status gesetzt": Eine im Duplikat-Vergleich
@@ -135,7 +135,7 @@ async def _filtered_photo_ids(
     return ids, total
 
 
-async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Photo]:
+async def photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Photo]:
     if not ids:
         return {}
     result = await session.execute(
@@ -187,7 +187,7 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
     return {photo.id: photo for photo in result.scalars()}
 
 
-def _event_ids_from_rankings(rankings_by_photo_id: Mapping[int, PhotoRanking]) -> dict[int, int]:
+def event_ids_from_rankings(rankings_by_photo_id: Mapping[int, PhotoRanking]) -> dict[int, int]:
     """Die Event-Abbildung der Lesepfade, die ausschliesslich Fotos MIT Rangzeile liefern.
 
     Der Entwurfszweig baut seine eigene: dort haben aufgenommene Fotos ohne Rangzeile ihr Event
@@ -195,7 +195,7 @@ def _event_ids_from_rankings(rankings_by_photo_id: Mapping[int, PhotoRanking]) -
     return {photo_id: ranking.event_id for photo_id, ranking in rankings_by_photo_id.items()}
 
 
-async def _event_and_location_by_photo_id(
+async def event_and_location_by_photo_id(
     session: AsyncSession,
     project_id: int,
     criterion_scoring_run_id: int | None,
@@ -227,11 +227,11 @@ async def _event_and_location_by_photo_id(
       durchgereicht, nie in dieser Funktion neu bestimmt; fehlt sie, bleibt `event` `None`. Die
       Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf herleiten".
 
-    `known_events` sind die bereits ueber `_run_events` (dasselbe Laufpraedikat) geladenen Events
+    `known_events` sind die bereits ueber `run_events` (dasselbe Laufpraedikat) geladenen Events
     desselben Laufs; mit ihnen entfaellt die Event-Abfrage hier, die Events eines Laufs werden je
     Anfrage dann genau einmal geladen.
 
-    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
+    `photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
     if not photos_by_id:
         return {}
 
@@ -252,7 +252,7 @@ async def _event_and_location_by_photo_id(
         events_by_id = known_events
     elif criterion_scoring_run_id is not None and event_id_by_photo_id:
         events_by_id = {
-            event.id: _event_out(event)
+            event.id: event_out(event)
             for event in (
                 await session.execute(
                     select(Event).where(
@@ -268,18 +268,16 @@ async def _event_and_location_by_photo_id(
 
     return {
         photo_id: PhotoPlace(
-            location=_location_out(effective_locations.get(photo_id)),
+            location=location_out(effective_locations.get(photo_id)),
             event=events_by_id.get(event_id_by_photo_id.get(photo_id, 0)),
         )
         for photo_id in photos_by_id
     }
 
 
-async def _final_selection_decisions(
-    session: AsyncSession, photo_ids: list[int]
-) -> dict[int, bool]:
+async def final_selection_decisions(session: AsyncSession, photo_ids: list[int]) -> dict[int, bool]:
     """Die gemeinsame Entscheidung je Foto - EINE Abfrage je Anfrage, nie eine je Foto (Muster
-    `_ranking_by_photo_id`).
+    `ranking_by_photo_id`).
 
     Ein fehlender Eintrag heisst "unentschieden"; es gibt keinen dritten Zustand."""
     if not photo_ids:
@@ -292,7 +290,7 @@ async def _final_selection_decisions(
     return {photo_id: included for photo_id, included in result.all()}
 
 
-async def _user_count(session: AsyncSession) -> int:
+async def user_count(session: AsyncSession) -> int:
     """Der NENNER der Einigkeitsregel: die Zahl der Konten im Bestand.
 
     Eine einzelne Zahl statt der Nutzerliste, weil die drei Bestands-Lesepfade (Listing, Entwurf,
@@ -308,7 +306,7 @@ async def _user_count(session: AsyncSession) -> int:
     return (await session.execute(select(func.count()).select_from(User))).scalar_one()
 
 
-async def _latest_successful_criterion_scoring_run_id(
+async def latest_successful_criterion_scoring_run_id(
     session: AsyncSession, project_id: int
 ) -> int | None:
     return (
@@ -324,7 +322,7 @@ async def _latest_successful_criterion_scoring_run_id(
     ).scalar_one_or_none()
 
 
-async def _album_level_source(session: AsyncSession, project: Project) -> CategoryMethod:
+async def album_level_source(session: AsyncSession, project: Project) -> CategoryMethod:
     """Das Verfahren, dessen Stufe in DIESEM Projekt zaehlt: die am juengsten erfolgreichen Lauf
     eingefrorene Quelle, ohne erfolgreichen Lauf die Projekteinstellung (ADR 0144).
 
@@ -370,7 +368,7 @@ class PlacedPhotos:
     event_id_by_photo_id: dict[int, int]
 
 
-def _place_in_events(
+def place_in_events(
     rows: Sequence[tuple[int, datetime, int | None]],
     spans: Sequence[EventSpan],
     position_by_event_id: Mapping[int, int],
@@ -427,7 +425,7 @@ def _place_in_events(
 @dataclass(frozen=True)
 class RunEvents:
     """Die Events EINES Laufs, einmal geladen und in den drei Formen, die die Lesepfade brauchen:
-    Spannen und Positionen als Eingabe von `_place_in_events`, `EventOut` je Id fuer die Fotos und
+    Spannen und Positionen als Eingabe von `place_in_events`, `EventOut` je Id fuer die Fotos und
     die nach `position` geordnete Liste fuer die Eventliste des Entwurfs."""
 
     spans: list[EventSpan]
@@ -436,11 +434,11 @@ class RunEvents:
     ordered: list[EventOut]
 
 
-async def _run_events(session: AsyncSession, criterion_scoring_run_id: int) -> RunEvents:
+async def run_events(session: AsyncSession, criterion_scoring_run_id: int) -> RunEvents:
     """Die Events eines Laufs aus EINER Abfrage (Auflage S14), von Entwurf und Endauswahl geteilt.
 
     SICHERHEIT (M1, S2): ausschliesslich ueber `Event.criterion_scoring_run_id` des uebergebenen,
-    je Anfrage einmal aufgeloesten Laufs; `EventOut` entsteht nur ueber `_event_out`, damit die
+    je Anfrage einmal aufgeloesten Laufs; `EventOut` entsteht nur ueber `event_out`, damit die
     Mitgliedschaftspruefung des Ortsteils (`_event_place_out`) an einer Stelle bleibt."""
     events = (
         (
@@ -453,7 +451,7 @@ async def _run_events(session: AsyncSession, criterion_scoring_run_id: int) -> R
         .scalars()
         .all()
     )
-    ordered = [_event_out(event) for event in events]
+    ordered = [event_out(event) for event in events]
     return RunEvents(
         spans=[
             EventSpan(event_id=event.id, started_at=event.started_at, ended_at=event.ended_at)
@@ -465,7 +463,7 @@ async def _run_events(session: AsyncSession, criterion_scoring_run_id: int) -> R
     )
 
 
-async def _partition_sizes(session: AsyncSession, criterion_scoring_run_id: int) -> dict[int, int]:
+async def partition_sizes(session: AsyncSession, criterion_scoring_run_id: int) -> dict[int, int]:
     """Größe jeder Event-Partition eines Laufs, für "Rang M von N" im Info-Popover - ein einzelner
     GROUP BY-Query pro Aufruf (nicht pro Foto). Bewusst lauf-global, nicht nutzerspezifisch
     gefiltert - siehe RankingOut.partition_size-Docstring.
@@ -489,7 +487,7 @@ async def _partition_sizes(session: AsyncSession, criterion_scoring_run_id: int)
     return {event_id: count for event_id, count in result.all()}
 
 
-async def _ranking_by_photo_id(
+async def ranking_by_photo_id(
     session: AsyncSession, criterion_scoring_run_id: int, photo_ids: list[int]
 ) -> dict[int, PhotoRanking]:
     """Die Rangzeile je Foto - GENAU EINE, durch den Unique-Constraint `(Lauf, Foto)` garantiert.

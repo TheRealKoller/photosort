@@ -307,7 +307,7 @@ def _group_slot(
 # Cloud-Kandidaten bestimmt. Das sind VIER, nicht eine: die beiden Laeufe
 # (`worker/criterion_scoring.py`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
 # `worker/remote_categories.py`) und die beiden vorgelagerten Kostenschaetzungen
-# (`api/projects.py::_count_remote_category_candidates`, `_count_landmark_candidates`). Die
+# (`candidate_counts.py::count_remote_category_candidates`, `count_landmark_candidates`). Die
 # Schaetzungen folgen der Auswahl nicht von selbst, sondern sind eigene Anweisungen; sie zaehlen
 # dieselbe Menge, die der Lauf sendet. Untersagte Alternative ist die naheliegende Teilumsetzung -
 # das Praedikat in die Lesepfade der Oberflaeche zu legen und eine der vier Stellen beim alten

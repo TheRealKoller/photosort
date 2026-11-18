@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
 from photosort.album_suitability import AlbumSuitability
-from photosort.api.projects import _count_remote_category_candidates
+from photosort.candidate_counts import count_remote_category_candidates
 from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
     VISION_MODELS_BY_PROVIDER,
@@ -1274,7 +1274,7 @@ class TestTheWidenedCandidateSelection:
         project, _photos = await self._fixture(db_session)
 
         candidates = await select_remote_category_candidates(db_session, project.id)
-        counted = await _count_remote_category_candidates(db_session, project.id)
+        counted = await count_remote_category_candidates(db_session, project.id)
 
         assert counted == len(candidates)
 

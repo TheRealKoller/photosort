@@ -933,7 +933,7 @@ class PhotoRanking(Base):
     # LAUF-GLOBAL und ausdrücklich ohne Nutzerbezug: `user_id` fließt in keine Abfrage und in
     # keine Schreibanweisung des Neuaufbaus, es gibt keine je Nutzer verschiedene Position. Wäre
     # der Wert nutzerbezogen, fiele die Antwort unter dieselbe Cache-Schlüssel-Auflage wie
-    # `PhotoOut.suggestion` (siehe `api/photos/_conversion.py::_to_photo_out`).
+    # `PhotoOut.suggestion` (siehe `api/photos/_conversion.py::to_photo_out`).
     #
     # GESCHRIEBEN wird die Spalte an genau einer Stelle (`photosort.worker`); ein struktureller Wächter
     # in tests/test_models.py hält das fest. Eine zweite Vergaberegel daneben sähe im Ergebnis
