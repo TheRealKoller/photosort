@@ -258,13 +258,13 @@ class TestDemoProjectSpecs:
         bliebe sie unbelegt."""
         duplicates = demo_project_specs()[4]
 
-        assert demo_state._DEMO_DUPLICATE_GROUP_SIZES == (7, 3)
-        assert demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE == 2
+        assert demo_state.DEMO_DUPLICATE_GROUP_SIZES == (7, 3)
+        assert demo_state.DEMO_AUTO_DECIDED_GROUP_SIZE == 2
         assert duplicates.photo_count == (
-            sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES) + demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE
+            sum(demo_state.DEMO_DUPLICATE_GROUP_SIZES) + demo_state.DEMO_AUTO_DECIDED_GROUP_SIZE
         )
-        assert len(set(demo_state._DEMO_DUPLICATE_GROUP_SIZES)) == len(
-            demo_state._DEMO_DUPLICATE_GROUP_SIZES
+        assert len(set(demo_state.DEMO_DUPLICATE_GROUP_SIZES)) == len(
+            demo_state.DEMO_DUPLICATE_GROUP_SIZES
         )
 
     def test_slugs_are_unique(self) -> None:
@@ -300,10 +300,10 @@ class TestDemoProjectSpecs:
         still aus dem Demo-Bestand, und die Sichtpruefung zeigte ihn nie wieder."""
         rated = demo_project_specs()[2]
         indices = (
-            demo_state._DEMO_UNASSESSED_INDEX,
-            demo_state._DEMO_LOCAL_BASIS_INDEX,
-            demo_state._DEMO_EXCLUDED_INDEX,
-            demo_state._DEMO_CORRECTED_INDEX,
+            demo_state.DEMO_UNASSESSED_INDEX,
+            demo_state.DEMO_LOCAL_BASIS_INDEX,
+            demo_state.DEMO_EXCLUDED_INDEX,
+            demo_state.DEMO_CORRECTED_INDEX,
         )
 
         assert len(set(indices)) == len(indices)
@@ -720,7 +720,7 @@ class TestRebuildDemoStateProducesTheSevenStates:
             gruppen.setdefault(representative, []).append(photo_id)
 
         assert sorted(len(members) for members in gruppen.values()) == sorted(
-            (*demo_state._DEMO_DUPLICATE_GROUP_SIZES, demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE)
+            (*demo_state.DEMO_DUPLICATE_GROUP_SIZES, demo_state.DEMO_AUTO_DECIDED_GROUP_SIZE)
         )
         for representative, members in gruppen.items():
             repraesentant = scores[representative]
@@ -756,7 +756,7 @@ class TestRebuildDemoStateProducesTheSevenStates:
             score for score in repraesentanten if score.suggested_status == RatingStatus.REJECTED
         ]
 
-        assert len(repraesentanten) == (len(demo_state._DEMO_DUPLICATE_GROUP_SIZES) + 1)
+        assert len(repraesentanten) == (len(demo_state.DEMO_DUPLICATE_GROUP_SIZES) + 1)
         assert len(abgelehnt) == 1
         assert abgelehnt[0].sharpness < SHARPNESS_REJECT_THRESHOLD
         # Der Zeit-/Ortscluster wird nur fuer die NICHT aussortierten Fotos gesetzt - dieselbe
@@ -1332,8 +1332,8 @@ class TestRebuildDemoStateAtProductionSize:
             LARGE_COLLECTION_PHOTO_COUNT
             + len(MOTIF_REGISTRY)
             + ERROR_STATE_PHOTO_COUNT
-            + sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
-            + demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE
+            + sum(demo_state.DEMO_DUPLICATE_GROUP_SIZES)
+            + demo_state.DEMO_AUTO_DECIDED_GROUP_SIZE
             + demo_state.LONG_AUSSCHUSS_PHOTO_COUNT
             + demo_state.OPERATIONS_PHOTO_COUNT
         )
@@ -2237,8 +2237,8 @@ class TestTheDemoStateShowsEveryMotifState:
         assert eye_photo is not None
         eye_result = await db_session.get(PhotoEyeResult, eye_photo.id)
         assert eye_result is not None
-        assert eye_result.album_level == demo_state._DEMO_EYE_ALBUM_LEVEL
-        assert eye_result.model_revision == demo_state._DEMO_EYE_MODEL_REVISION
+        assert eye_result.album_level == demo_state.DEMO_EYE_ALBUM_LEVEL
+        assert eye_result.model_revision == demo_state.DEMO_EYE_MODEL_REVISION
         assert eye_result.mapping_version == demo_state.EYE_MAPPING_VERSION
         # Der verdraengte lokale Vektor liegt als Rueckbaudatensatz daneben - sonst zeigte die
         # Demo einen Eye-Zustand, den die Anwendung selbst nie erzeugt.

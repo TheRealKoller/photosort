@@ -10,15 +10,15 @@ import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
-    _FACE_DETECTOR_MODEL_PATH,
-    _FACE_LANDMARKER_MODEL_PATH,
-    _OBJECT_DETECTOR_MODEL_PATH,
-    _SCENE_CLASSIFIER_MODEL_PATH,
+    FACE_DETECTOR_MODEL_PATH,
     FACE_DETECTOR_MODEL_SHA256,
+    FACE_LANDMARKER_MODEL_PATH,
     FACE_LANDMARKER_MODEL_SHA256,
     OBJECT_DETECTION_CONFIDENCE_THRESHOLD,
+    OBJECT_DETECTOR_MODEL_PATH,
     OBJECT_DETECTOR_MODEL_SHA256,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+    SCENE_CLASSIFIER_MODEL_PATH,
     SCENE_CLASSIFIER_MODEL_SHA256,
     SCENE_LABEL_MAX_RESULTS,
     SCENE_LABEL_MIN_CONFIDENCE,
@@ -26,13 +26,13 @@ from photosort.classification import (
     FaceOrientation,
     ObjectDetection,
     SceneLabel,
-    _yaw_degrees_from_rotation_matrix,
     classify_scene,
     compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_face_orientation,
     detect_objects,
     detect_person,
+    yaw_degrees_from_rotation_matrix,
 )
 
 
@@ -69,7 +69,7 @@ class TestFaceDetectorModelAsset:
         # Beschaedigung/Ersetzung der committeten Binaerdatei (fehlerhaftes Merge,
         # LFS-Fehlkonfiguration) sofort in CI, statt erst durch spuerbar schlechtere
         # Erkennungsguete aufzufallen.
-        digest = hashlib.sha256(_FACE_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
+        digest = hashlib.sha256(FACE_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == FACE_DETECTOR_MODEL_SHA256
 
 
@@ -77,13 +77,13 @@ class TestObjectDetectorModelAsset:
     def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
         # Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3, hochgestuft von
         # "nice to have"): je gepinntem Modell-Asset ein eigener Integritaets-Test.
-        digest = hashlib.sha256(_OBJECT_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
+        digest = hashlib.sha256(OBJECT_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == OBJECT_DETECTOR_MODEL_SHA256
 
 
 class TestSceneClassifierModelAsset:
     def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
-        digest = hashlib.sha256(_SCENE_CLASSIFIER_MODEL_PATH.read_bytes()).hexdigest()
+        digest = hashlib.sha256(SCENE_CLASSIFIER_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == SCENE_CLASSIFIER_MODEL_SHA256
 
 
@@ -96,7 +96,7 @@ class TestFaceLandmarkerModelAsset:
         # float16/1/face_landmarker.task, per direktem Download vor dem TDD-Einstieg verifiziert,
         # keine with_blendshapes-Variante noetig - output_face_blendshapes=False steuert das zur
         # Laufzeit ueber ein Options-Flag desselben Bundles, nicht ueber ein anderes Asset).
-        digest = hashlib.sha256(_FACE_LANDMARKER_MODEL_PATH.read_bytes()).hexdigest()
+        digest = hashlib.sha256(FACE_LANDMARKER_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == FACE_LANDMARKER_MODEL_SHA256
 
 
@@ -167,13 +167,13 @@ class TestComputeSymmetryScore:
         # Quadranten-Raster angewendet - unabhaengig ueber dieselbe, bereits an anderer Stelle
         # (TestComputeUniformAreaFraction) getestete Kantenkarte nachgerechnet, NICHT ueber eine
         # Kopie der Score-Formel selbst.
-        from photosort.classification import _laplace_edges_without_border_artifact
+        from photosort.classification import laplace_edges_without_border_artifact
 
         image = _noisy(size=160, seed=3).resize((7, 5))
         grayscale = image.convert("L")
         width, height = grayscale.size
         edges = np.abs(
-            np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
+            np.asarray(laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
         )
         mid_x, mid_y = width // 2, height // 2
         top_left = edges[:mid_y, :mid_x].mean()
@@ -488,7 +488,7 @@ class TestClassifyScene:
 
 def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
     """Baut eine synthetische 4x4-Rotationsmatrix um die Y-Achse (Konvention dieser Umsetzung,
-    siehe classification.py::_yaw_degrees_from_rotation_matrix-Docstring) - erlaubt das Testen der
+    siehe classification.py::yaw_degrees_from_rotation_matrix-Docstring) - erlaubt das Testen der
     Rotationsmatrix-zu-Winkel-Mathematik OHNE echtes Modell (Teststrategie-Abschnitt der Spec
     0048: "deckt die offene Achsen-/Vorzeichenkonvention ab")."""
     theta = math.radians(degrees_value)
@@ -502,13 +502,13 @@ def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
 
 class TestYawDegreesFromRotationMatrix:
     def test_identity_matrix_yields_zero_yaw(self) -> None:
-        assert _yaw_degrees_from_rotation_matrix(np.eye(4)) == pytest.approx(0.0)
+        assert yaw_degrees_from_rotation_matrix(np.eye(4)) == pytest.approx(0.0)
 
     def test_positive_rotation_yields_positive_yaw(self) -> None:
-        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(30.0)) == pytest.approx(30.0)
+        assert yaw_degrees_from_rotation_matrix(_rotation_matrix_y(30.0)) == pytest.approx(30.0)
 
     def test_negative_rotation_yields_negative_yaw(self) -> None:
-        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(-20.0)) == pytest.approx(-20.0)
+        assert yaw_degrees_from_rotation_matrix(_rotation_matrix_y(-20.0)) == pytest.approx(-20.0)
 
     def test_translation_component_of_the_matrix_does_not_affect_the_extracted_yaw(self) -> None:
         # Reale mediapipe-facial_transformation_matrixes-Ausgaben tragen zusaetzlich eine
@@ -519,7 +519,7 @@ class TestYawDegreesFromRotationMatrix:
         matrix[0, 3] = 12.5
         matrix[1, 3] = -40.0
         matrix[2, 3] = 100.0
-        assert _yaw_degrees_from_rotation_matrix(matrix) == pytest.approx(15.0)
+        assert yaw_degrees_from_rotation_matrix(matrix) == pytest.approx(15.0)
 
 
 class FakeFaceLandmarker:

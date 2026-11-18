@@ -69,7 +69,7 @@ def _with_zone(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC)
 
 
-async def _count_images_up_to_limit(
+async def count_images_up_to_limit(
     client: OpenCloudClient, webdav_url: str, path: str, limit: int
 ) -> tuple[int, bool]:
     """Konsumiert client.walk() (bestehende BFS-Traversierung mit Zyklenschutz, Endpunkt-lokale
@@ -93,7 +93,7 @@ async def _count_subfolder(
     client: OpenCloudClient, webdav_url: str, path: str, semaphore: asyncio.Semaphore
 ) -> tuple[int, bool]:
     async with semaphore:
-        return await _count_images_up_to_limit(client, webdav_url, path, FOLDER_COUNT_LIMIT)
+        return await count_images_up_to_limit(client, webdav_url, path, FOLDER_COUNT_LIMIT)
 
 
 @router.get("/folder-counts", response_model=list[FolderCountOut])

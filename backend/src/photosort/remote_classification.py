@@ -73,10 +73,10 @@ MAX_FINE_LABELS_PER_PHOTO = 2
 # `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht der Annahme anzupassen - gehoben wird die
 # Schranke. Sie haengt an MAX_ALBUM_SUITABILITY_REASON_LENGTH: wer die eine hebt, leitet die
 # andere neu her (S5).
-_MAX_RESPONSE_TOKENS = 512
+MAX_RESPONSE_TOKENS = 512
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
-# canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen wird
+# canonical_key/display_name, BEVOR resolve_canonical_label/slugify aufgerufen wird
 # (Sicherheits-Muss-Kriterium). Ein zu langes Label wird VERWORFEN, nicht gekuerzt: ein auf 60
 # Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren canonical_key in der
 # projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf denselben Slug fallen.
@@ -176,7 +176,7 @@ def _log_discarded_motif_key(photo_id: int, raw: object) -> None:
     der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins Log, nie roh ueber %s:
     ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen erzeugen. Kein Log-Flooding
     moeglich - pro Foto koennen hoechstens so viele Werte verworfen werden, wie die Antwort
-    Eintraege hat (und die ist ueber `_MAX_RESPONSE_TOKENS` begrenzt)."""
+    Eintraege hat (und die ist ueber `MAX_RESPONSE_TOKENS` begrenzt)."""
     text = raw if isinstance(raw, str) else repr(raw)
     if len(text) > _MAX_LOGGED_RAW_VALUE_LENGTH:
         text = text[:_MAX_LOGGED_RAW_VALUE_LENGTH] + "..."
@@ -225,7 +225,7 @@ def _strength_from_raw(raw: object, photo_id: int) -> float | None:
       `double precision`-Spalte (PostgreSQL nimmt `NaN` an) und Starlette rendert mit
       `allow_nan=False`. Die Pruefung gehoert deshalb HIER an den Parser, nicht an die
       Datenbankschicht.
-    - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::_landmark_detection_from_json`.
+    - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::landmark_detection_from_json`.
       `1.4 -> 1.0` waere eine Aussage, die das Modell nie getroffen hat; und ein spaeteres Klemmen
       (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt.
     """
@@ -303,7 +303,7 @@ def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
     return tuple(accepted[:MAX_FINE_LABELS_PER_PHOTO])
 
 
-def _classification_from_json(
+def classification_from_json(
     parsed: Any, photo_id: int, usage: TokenUsage | None = None
 ) -> RemoteClassification:
     """Providerneutrale Validierung der Roh-Antwort - **strukturell hart, inhaltlich tolerant**:
@@ -311,7 +311,7 @@ def _classification_from_json(
     STRUKTURELL HART (jeweils RemoteCategoryClassificationApiError, das Foto wird auf Worker-Ebene
     best-effort uebersprungen): die Antwort ist kein JSON-Objekt, `motifs` fehlt, `motifs` ist
     kein JSON-Objekt, oder `fine_labels` ist vorhanden aber keine Liste. Eine durch
-    _MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
+    MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
     teilweise geparsten Datensatz.
 
     INHALTLICH TOLERANT: unbekannte Motivschluessel, unbrauchbare Zahlen, ein unbrauchbares
@@ -394,7 +394,7 @@ class AnthropicCategoryClient:
     ) -> RemoteClassification:
         body = {
             "model": self._model,
-            "max_tokens": _MAX_RESPONSE_TOKENS,
+            "max_tokens": MAX_RESPONSE_TOKENS,
             "messages": [
                 {
                     "role": "user",
@@ -428,7 +428,7 @@ class AnthropicCategoryClient:
         )
         payload = response.json()
         parsed = anthropic_response_to_json(payload, RemoteCategoryClassificationApiError)
-        return _classification_from_json(
+        return classification_from_json(
             parsed, photo_id, anthropic_usage_from_response(payload, self._model)
         )
 
@@ -465,7 +465,7 @@ class MistralCategoryClient:
     ) -> RemoteClassification:
         body = {
             "model": self._model,
-            "max_tokens": _MAX_RESPONSE_TOKENS,
+            "max_tokens": MAX_RESPONSE_TOKENS,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -497,7 +497,7 @@ class MistralCategoryClient:
         )
         payload = response.json()
         parsed = mistral_response_to_json(payload, RemoteCategoryClassificationApiError)
-        return _classification_from_json(
+        return classification_from_json(
             parsed, photo_id, mistral_usage_from_response(payload, self._model)
         )
 
@@ -556,7 +556,7 @@ class FineLabelSnapshotEntry:
 _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
-def _slugify(text: str) -> str:
+def slugify(text: str) -> str:
     """Bildet einen URL-/Key-sicheren Slug (Schritt 4): casefoldet defensiv zusaetzlich selbst
     (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert hat),
     Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
@@ -608,7 +608,7 @@ def resolve_canonical_label(
         return best_entry
 
     new_entry = FineLabelSnapshotEntry(
-        canonical_key=_slugify(normalized),
+        canonical_key=slugify(normalized),
         display_name=raw_label,
         embedding=vector,
     )

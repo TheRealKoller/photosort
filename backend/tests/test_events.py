@@ -142,7 +142,7 @@ def _latitude_at(distance_meters: float) -> float:
     beiden weichen um den Unterschied zwischen `_METERS_PER_DEGREE_LATITUDE` (111195.0) und dem
     tatsaechlichen Bogen (R * pi/180 ~ 111194.93) ab; das sind 7e-8 relativ, genug, um den Fall
     "genau auf der Grenze" unbemerkt nach innen zu schieben."""
-    return BASE_LAT + math.degrees(distance_meters / scoring_module._EARTH_RADIUS_METERS)
+    return BASE_LAT + math.degrees(distance_meters / scoring_module.EARTH_RADIUS_METERS)
 
 
 def _measured_candidate(
@@ -346,10 +346,10 @@ def assert_event_invariants(
     assert len(assigned) == len(set(assigned)), "ein Foto gehoert zu genau einem Event"
 
     # Die GEGENANZEIGE der Namensregel (Spec 0514): Traegt ein Event ueberhaupt einen Namen, dann
-    # bezeugt ihn mindestens `LANDMARK_MIN_SHARE` seiner Mitglieder. Gezaehlt ueber `_usable_name` -
+    # bezeugt ihn mindestens `LANDMARK_MIN_SHARE` seiner Mitglieder. Gezaehlt ueber `usable_name` -
     # dieselbe Traegerdefinition, die die Produktion benutzt, statt einer zweiten Fassung hier.
     name_by_photo = {
-        candidate.photo_id: events_module._usable_name(candidate.landmark_name)
+        candidate.photo_id: events_module.usable_name(candidate.landmark_name)
         for candidate in candidates
     }
     share = _min_share()
@@ -1966,15 +1966,15 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
 
     def test_without_any_lookup_the_name_falls(self) -> None:
         """Keine Auskunft (`None`) ist kein Freibrief: der Name faellt."""
-        assert events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), None) is False
+        assert events_module.landmark_name_is_plausible(self.NAME, (self._cell(),), None) is False
 
     def test_without_a_measured_cell_the_name_falls_beside_an_empty_point_set(self) -> None:
-        assert events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: ()}) is False
+        assert events_module.landmark_name_is_plausible(self.NAME, (), {self.NAME: ()}) is False
 
     def test_without_a_measured_cell_the_name_falls_beside_a_fitting_point(self) -> None:
         """Ohne Aufnahmeort laesst sich nichts bestaetigen - auch ein vorhandener Fund nicht."""
         assert (
-            events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: (self._inside(),)})
+            events_module.landmark_name_is_plausible(self.NAME, (), {self.NAME: (self._inside(),)})
             is False
         )
 
@@ -1982,7 +1982,7 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
         """Der Zustand "nie nachgeschlagen" faellt am Event wie "ohne Fund" - die Ablage bleibt
         dreiwertig, eine fehlende Zeile wird beim naechsten Lauf nachgeschlagen."""
         assert (
-            events_module._landmark_name_is_plausible(
+            events_module.landmark_name_is_plausible(
                 self.NAME, (self._cell(),), {"Andere Sehenswuerdigkeit": (self._inside(),)}
             )
             is False
@@ -1991,13 +1991,13 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
     def test_a_looked_up_name_without_a_single_point_falls(self) -> None:
         """Zustand 2 (ADR 0123 Punkt 2): nachgeschlagen, kein Fund - der Name faellt."""
         assert (
-            events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), {self.NAME: ()})
+            events_module.landmark_name_is_plausible(self.NAME, (self._cell(),), {self.NAME: ()})
             is False
         )
 
     def test_a_point_inside_the_radius_keeps_the_name(self) -> None:
         assert (
-            events_module._landmark_name_is_plausible(
+            events_module.landmark_name_is_plausible(
                 self.NAME, (self._cell(),), {self.NAME: (self._inside(),)}
             )
             is True
@@ -2005,7 +2005,7 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
 
     def test_a_point_outside_the_radius_drops_the_name(self) -> None:
         assert (
-            events_module._landmark_name_is_plausible(
+            events_module.landmark_name_is_plausible(
                 self.NAME, (self._cell(),), {self.NAME: (self._outside(),)}
             )
             is False
@@ -2023,26 +2023,26 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
 
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(events_module, "LANDMARK_PLAUSIBILITY_RADIUS_METERS", at_the_radius)
-            assert events_module._landmark_name_is_plausible(*args) is False
+            assert events_module.landmark_name_is_plausible(*args) is False
 
             patch.setattr(
                 events_module,
                 "LANDMARK_PLAUSIBILITY_RADIUS_METERS",
                 math.nextafter(at_the_radius, math.inf),
             )
-            assert events_module._landmark_name_is_plausible(*args) is True
+            assert events_module.landmark_name_is_plausible(*args) is True
 
             patch.setattr(
                 events_module,
                 "LANDMARK_PLAUSIBILITY_RADIUS_METERS",
                 math.nextafter(at_the_radius, 0.0),
             )
-            assert events_module._landmark_name_is_plausible(*args) is False
+            assert events_module.landmark_name_is_plausible(*args) is False
 
     def test_one_fitting_pair_is_enough_across_several_points(self) -> None:
         """Verglichen wird jedes Paar (Zelle, Fundort): ein einziger Fund im Umkreis genuegt."""
         assert (
-            events_module._landmark_name_is_plausible(
+            events_module.landmark_name_is_plausible(
                 self.NAME,
                 (self._cell(),),
                 {self.NAME: (self._outside(), self._inside())},
@@ -2054,7 +2054,7 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
         cells = ((BASE_LAT + 2.0, BASE_LON), self._cell())
 
         assert (
-            events_module._landmark_name_is_plausible(
+            events_module.landmark_name_is_plausible(
                 self.NAME, cells, {self.NAME: (self._inside(),)}
             )
             is True
@@ -3448,7 +3448,7 @@ class TestTheThirdStageComesToAStandstill(_UnderShiftedEventConstants):
         """Die Rundenobergrenze greift im Betrieb nie; pruefbar ist sie nur, indem man sie
         unterschreitet. Ein stiller Frueabbruch liesse eine halb zusammengelegte Gliederung
         zurueck, die niemandem auffiele - deshalb WIRFT sie."""
-        monkeypatch.setattr(events_module, "_round_limit", lambda _: 0)
+        monkeypatch.setattr(events_module, "round_limit", lambda _: 0)
         segments = [
             _normal_until(timedelta(0), first_id=1),
             _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),

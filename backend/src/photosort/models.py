@@ -989,7 +989,7 @@ class FineLabel(Base):
     `photo_fine_labels -> photos.project_id` zu skopieren: ein globales SELECT auf diese Tabelle
     würde Label-Häufigkeiten ANDERER Projekte ausliefern.
 
-    `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::_slugify),
+    `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::slugify),
     `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeigehilfe,
     keine kuratierte Übersetzung). `embedding` ist der 384-dimensionale Text-Embedding-Vektor
     (label_embedding.py) als JSON-Liste von float.

@@ -15,7 +15,7 @@ SICHERHEIT:
   die lokale Display-Variante; fehlt sie, ruft kein Endpunkt das Modell.
 * S8 - Ausschnitte sind neu codierte JPEGs; ihre Antworten tragen `Cache-Control: no-store` und
   `X-Content-Type-Options: nosniff`.
-* Schreibsperre - siehe `_person_write_lock`.
+* Schreibsperre - siehe `person_write_lock`.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ _FaceIndex = Annotated[int, PathParam(ge=0, lt=MAX_FACES_PER_PHOTO)]
 # VORAUSSETZUNG: genau ein API-Prozess (`uvicorn` ohne `--workers`, ohne `WEB_CONCURRENCY`; ein
 # Waechter in `tests/test_api_persons.py` liest Dockerfile und Compose-Dateien). Mit mehr als einem
 # Prozess muss die Sperre in die Datenbank.
-_person_write_lock = asyncio.Lock()
+person_write_lock = asyncio.Lock()
 
 
 class PersonOut(BaseModel):
@@ -241,9 +241,7 @@ def _faces(analyzer: FaceAnalyzerLike, path: Path) -> list[Face]:
     return order_faces(analyzer.detect(image))
 
 
-def _embedding_at(
-    analyzer: FaceAnalyzerLike, path: Path, index: int
-) -> tuple[list[float], FaceBox]:
+def embedding_at(analyzer: FaceAnalyzerLike, path: Path, index: int) -> tuple[list[float], FaceBox]:
     """Auflisten, Merkmal und Box in EINEM Aufruf auf dem Modell-Thread - aus demselben
     Detektionslauf. Der Index zeigt auf das Gesicht, das die Auflistung unter ihm zeigt."""
     image = load_image(path)
@@ -276,7 +274,7 @@ def _unnamed_on_photo(
     ]
 
 
-async def _on_model_thread[T](executor: Executor, call: object, *args: object) -> T:
+async def on_model_thread[T](executor: Executor, call: object, *args: object) -> T:
     result: T = await asyncio.get_running_loop().run_in_executor(executor, call, *args)  # type: ignore[arg-type]
     return result
 
@@ -342,13 +340,13 @@ async def post_person(
     path = await _display_path_or_404(session, body.photo_id)
     await _release_connection(session)
     try:
-        found: tuple[list[float], FaceBox] = await _on_model_thread(
-            executor, _embedding_at, analyzer, path, body.face_index
+        found: tuple[list[float], FaceBox] = await on_model_thread(
+            executor, embedding_at, analyzer, path, body.face_index
         )
     except PersonRefusal as refusal:
         raise _refusal(refusal) from None
     embedding, face_box = found
-    async with _person_write_lock:
+    async with person_write_lock:
         try:
             person = await create_person(
                 session,
@@ -409,13 +407,13 @@ async def post_reference(
         raise _refusal(refusal) from None
     await _release_connection(session)
     try:
-        found: tuple[list[float], FaceBox] = await _on_model_thread(
-            executor, _embedding_at, analyzer, path, body.face_index
+        found: tuple[list[float], FaceBox] = await on_model_thread(
+            executor, embedding_at, analyzer, path, body.face_index
         )
     except PersonRefusal as refusal:
         raise _refusal(refusal) from None
     embedding, face_box = found
-    async with _person_write_lock:
+    async with person_write_lock:
         try:
             learned = await assign_face(
                 session,
@@ -443,7 +441,7 @@ async def remove_person(
     """Entfernt eine Person in einer Transaktion samt Korrekturen, Erkennungen und gezeigten
     Gesichtern, in allen Projekten. Die Fotos und ihre Bewertungen bleiben unveraendert."""
     await _release_connection(session)
-    async with _person_write_lock:
+    async with person_write_lock:
         if not await delete_person(session, person_id):
             raise _refusal(PersonNotFound())
         await session.commit()
@@ -461,7 +459,7 @@ async def get_faces(
     oben nach unten. Nur `{index, box}` (Box auf das Bild normiert); gespeichert wird nichts.
     `404` "Bild wird noch verarbeitet.", solange die Display-Variante fehlt."""
     path = await _display_path_or_404(session, photo_id)
-    faces: list[Face] = await _on_model_thread(executor, _faces, analyzer, path)
+    faces: list[Face] = await on_model_thread(executor, _faces, analyzer, path)
     return [
         FaceOut(
             index=index,
@@ -484,7 +482,7 @@ async def get_face_image(
     """Der Ausschnitt eines Gesichts als neu codiertes JPEG, `Cache-Control: no-store`. Nichts
     davon wird gespeichert; `404` bei fehlender Variante oder einem Index ausserhalb der Liste."""
     path = await _display_path_or_404(session, photo_id)
-    crop: bytes | None = await _on_model_thread(executor, _crop_at, analyzer, path, index)
+    crop: bytes | None = await on_model_thread(executor, _crop_at, analyzer, path, index)
     if crop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=FaceNotFound.detail)
     return Response(content=crop, media_type="image/jpeg", headers=_NO_STORE)
@@ -505,7 +503,7 @@ async def put_photo_person(
     Transaktion. Antwort ist die wirksame Liste des Fotos; kein Nacharbeits-Ereignis."""
     user_id = current_user.id
     await _release_connection(session)
-    async with _person_write_lock:
+    async with person_write_lock:
         if await session.get(Photo, photo_id) is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Foto nicht gefunden."
@@ -646,7 +644,7 @@ async def _unnamed_photo(
     if not path.is_file():
         return None
     try:
-        listed: list[tuple[int, bytes]] | None = await _on_model_thread(
+        listed: list[tuple[int, bytes]] | None = await on_model_thread(
             executor, _unnamed_on_photo, analyzer, path, taken
         )
     except Exception as exc:

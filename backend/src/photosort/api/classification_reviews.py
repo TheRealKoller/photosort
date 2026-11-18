@@ -1332,7 +1332,7 @@ _EXPORT_KEYS: Final = {
 # prueft ihre Abwesenheit in der Datei.
 
 
-def _guard_export_shape(payload: dict[str, Any]) -> None:
+def guard_export_shape(payload: dict[str, Any]) -> None:
     """Der Formwaechter: prueft den GEBAUTEN Export gegen die Positivliste.
 
     Er wirft hart statt zu filtern. Ein Filter waere still - die Datei saehe in Ordnung aus, und
@@ -1489,7 +1489,7 @@ async def export_review(
         statements,
         dict(comparison.motif_counts),
     )
-    _guard_export_shape(payload)
+    guard_export_shape(payload)
     return Response(
         content=json.dumps(payload, ensure_ascii=False, indent=2),
         media_type="application/json",

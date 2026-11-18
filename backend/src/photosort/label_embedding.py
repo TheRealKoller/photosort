@@ -59,14 +59,14 @@ def normalize_label_text(raw: str) -> str:
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     """Reine Vektor-Aehnlichkeitsfunktion - beide Embedding-Vektoren sind bereits L2-normiert
-    (`_mean_pool_and_normalize` unten), das Skalarprodukt entspricht deshalb direkt der
+    (`mean_pool_and_normalize` unten), das Skalarprodukt entspricht deshalb direkt der
     Kosinus-Aehnlichkeit, keine erneute Normierung noetig.
 
     Zwei Verbraucher, dieselbe Begruendung wie bei `normalize_label_text` darueber."""
     return sum(x * y for x, y in zip(a, b, strict=True))
 
 
-def _mean_pool_and_normalize(
+def mean_pool_and_normalize(
     token_embeddings: Sequence[Sequence[float]], attention_mask: Sequence[int]
 ) -> list[float]:
     """Reine, modellfreie Pooling-/Normierungsfunktion (Standard-Rezept fuer
@@ -100,7 +100,7 @@ def build_label_embedder() -> LabelEmbedderLike:
     """Baut das echte, lokale Text-Embedding-Modell: laedt den gepinnten Tokenizer + die gepinnte
     ONNX-Session (beide Assets oben, SHA256-verifiziert per eigenem Test, KEIN unverifizierter
     Bezug zur Laufzeit), tokenisiert einen kurzen Text, fuehrt eine InferenceSession-Inferenz aus
-    und mean-poolt+normiert das Ergebnis (siehe _mean_pool_and_normalize). Laeuft WIE
+    und mean-poolt+normiert das Ergebnis (siehe mean_pool_and_normalize). Laeuft WIE
     build_face_detector/build_aesthetics_model NIE in einem automatisierten Test (Ladezeit) -
     lokale Importe von onnxruntime/tokenizers (analog dem lokalen tensorflow-Import in
     aesthetics.py), damit die Abhaengigkeit nicht in einen leichteren Importpfad einsickert, der
@@ -132,7 +132,7 @@ def build_label_embedder() -> LabelEmbedderLike:
             }
             outputs = session.run(None, feed)
             last_hidden_state = outputs[0][0]
-            return _mean_pool_and_normalize(last_hidden_state.tolist(), encoding.attention_mask)
+            return mean_pool_and_normalize(last_hidden_state.tolist(), encoding.attention_mask)
 
     embedder: LabelEmbedderLike = _OnnxLabelEmbedder()
     return embedder

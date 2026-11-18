@@ -58,7 +58,7 @@ def _line_angle_degrees(x1: float, y1: float, x2: float, y2: float) -> float:
     return angle
 
 
-def _select_dominant_candidate_angle(lines: np.ndarray | None) -> float | None:
+def select_dominant_candidate_angle(lines: np.ndarray | None) -> float | None:
     """Filtert die von cv2.HoughLinesP gelieferten Kandidatenlinien auf
     +-HORIZON_MAX_CANDIDATE_ANGLE und waehlt die LAENGSTE als Gewinner ("laengste Kandidatenlinie
     gewinnt"). `lines` hat je nach cv2-Version die Form (N, 1, 4) oder (N, 4) - `reshape(-1, 4)`
@@ -87,7 +87,7 @@ def _select_dominant_candidate_angle(lines: np.ndarray | None) -> float | None:
     return best_angle
 
 
-def _score_from_angle_deviation(angle_degrees: float) -> float:
+def score_from_angle_deviation(angle_degrees: float) -> float:
     """`score = clip(1.0 - |Winkelabweichung| / HORIZON_MAX_PENALIZED_ANGLE_DEGREES, 0, 1)` - eine
     eigene, pure Funktion (analog aesthetics.py::compute_aesthetics_score), damit die Grenzfaelle
     exakt bei/jenseits HORIZON_MAX_PENALIZED_ANGLE_DEGREES unabhaengig von der (rasterungsbedingt
@@ -112,7 +112,7 @@ def compute_horizon_tilt_score(image: Image.Image) -> float:
         minLineLength=_HOUGH_MIN_LINE_LENGTH,
         maxLineGap=_HOUGH_MAX_LINE_GAP,
     )
-    angle = _select_dominant_candidate_angle(lines)
+    angle = select_dominant_candidate_angle(lines)
     if angle is None:
         return _NO_CANDIDATE_FALLBACK_SCORE
-    return _score_from_angle_deviation(angle)
+    return score_from_angle_deviation(angle)

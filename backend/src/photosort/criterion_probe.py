@@ -283,7 +283,7 @@ def _percent(part: int, whole: int) -> str:
     return f"{100.0 * part / whole:.1f} %"
 
 
-def _report_head(probe: CriterionProbeInput) -> str:
+def report_head(probe: CriterionProbeInput) -> str:
     """DIE EINE KOPFZEILE des Berichts: Titel, Projekt-Id, Laufkennung.
 
     BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der verbotenen Klassen aus S2: kein
@@ -312,7 +312,7 @@ def render_report(probe: CriterionProbeInput) -> str:
     das guenstigste aller Messergebnisse ("der Zuwachs ist klein") - behauptet ueber eine Menge,
     die niemand gemessen hat."""
     lines = [
-        _report_head(probe),
+        report_head(probe),
         "",
         f"- Fotos im Projekt: {probe.photos_total}",
     ]
@@ -349,9 +349,8 @@ def render_report(probe: CriterionProbeInput) -> str:
         "## Landmark-Kandidaten",
         "",
         f"- nach is_landmark_candidate ueber die gespeicherten Werte: "
-        f"{_number(probe.landmark_candidates)}",
-        f"- landmark_candidate_count der Projekt-Antwort: "
-        f"{_number(probe.landmark_candidate_count)}",
+        f"{number(probe.landmark_candidates)}",
+        f"- landmark_candidate_count der Projekt-Antwort: {number(probe.landmark_candidate_count)}",
         "",
         "Die beiden Zahlen sind VERSCHIEDENE Mengen und werden nicht verrechnet: Die erste zaehlt",
         "jedes Foto des Projekts, dessen gespeicherte Werte die Schwellen erfuellen. Die zweite",
@@ -363,7 +362,7 @@ def render_report(probe: CriterionProbeInput) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _number(value: int | None) -> str:
+def number(value: int | None) -> str:
     """Eine Anzahl - oder `NICHT GEMESSEN`, wenn keine gemessen wurde. Nie eine ersatzweise
     Null: Sie laese sich als Messergebnis lesen, und genau diese Verwechslung schliesst S2 aus."""
     if value is None:

@@ -161,7 +161,7 @@ def _class_counts(values: Iterable[float], bounds: Sequence[float]) -> tuple[int
     return tuple(counts)
 
 
-def _tally(values: Iterable[int]) -> dict[int, int]:
+def tally(values: Iterable[int]) -> dict[int, int]:
     """Wie oft jeder Wert vorkommt - eine VERTEILUNG, keine Folge. Ein Aggregat ueber eine Menge
     sagt nichts ueber die Reihenfolge, in der ihre Werte entstanden sind."""
     counts: dict[int, int] = {}
@@ -432,7 +432,7 @@ def size_counts(formation: EventFormation) -> SizeCounts:
     dieser Spec, und ein Mittelwert verbirgt ihn."""
     sizes = [len(event.photo_ids) for event in formation.events]
     durations = [(event.ended_at - event.started_at).total_seconds() for event in formation.events]
-    by_size = _tally(sizes)
+    by_size = tally(sizes)
     return SizeCounts(
         events_total=len(sizes),
         photos_total=sum(sizes),
@@ -815,8 +815,8 @@ def coherence_counts(
     return CoherenceCounts(
         events_total=len(rows),
         largest=tuple(ordered[:COHERENCE_TOP_EVENTS]),
-        cells_per_event=_tally(row.place_cells for row in rows),
-        motifs_per_event=_tally(row.motifs for row in rows),
+        cells_per_event=tally(row.place_cells for row in rows),
+        motifs_per_event=tally(row.motifs for row in rows),
     )
 
 
@@ -1147,7 +1147,7 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     ]
 
 
-def _report_head(title: str, probe: EventProbeInput) -> str:
+def report_head(title: str, probe: EventProbeInput) -> str:
     """DIE EINE KOPFZEILE jedes Berichts dieses Kommandos: Titel, Projekt-Id, Laufkennung.
 
     An einer Stelle, nicht je Modus: Vier Fassungen derselben Aussage sind vier Gelegenheiten, eine
@@ -1168,7 +1168,7 @@ def _report_head(title: str, probe: EventProbeInput) -> str:
     return f"# {title}, Projekt {probe.project_id}, Lauf {probe.run_id}"
 
 
-def _quota_lines(reach: QuotaReach) -> list[str]:
+def quota_lines(reach: QuotaReach) -> list[str]:
     """Der Album-Richtwert und die Eventzahl gegen ihn - AUSGESCHRIEBEN ALS AUSSAGE.
 
     Ein Zahlenpaar allein liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass:
@@ -1227,7 +1227,7 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     Die Zeile "aus" nennt ihr Fenster aus demselben Grund nicht: Es ist ein Rechenmittel, und als
     Zahl gelesen sieht es aus wie ein weiterer messbarer Betriebspunkt."""
     lines = [
-        _report_head("Empfindlichkeit des Motivwechsels", probe),
+        report_head("Empfindlichkeit des Motivwechsels", probe),
         "",
         "Dieselbe Kandidatenmenge, durchgerechnet unter mehreren Kombinationen aus der Zahl der",
         "bestaetigenden Fotos und der Motivstaerke-Grenze. BEIDE KONSTANTEN BLEIBEN UNVERAENDERT -",
@@ -1327,7 +1327,7 @@ def render_coherence_report(
     return (
         "\n".join(
             [
-                _report_head("Kohaerenz der Events", probe),
+                report_head("Kohaerenz der Events", probe),
                 "",
                 "Je Event fuenf ANZAHLEN: Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl",
                 "der verschiedenen Ortszellen und Zahl der verschiedenen getragenen Motive. Weder",
@@ -1380,7 +1380,7 @@ def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str
     blocks = block_counts(formation)
 
     lines = [
-        _report_head("Woran eine Zusammenlegung scheitert", probe),
+        report_head("Woran eine Zusammenlegung scheitert", probe),
         "",
         f"- Events: {sizes.events_total}",
         f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
@@ -1442,7 +1442,7 @@ def render_report(
     )
 
     lines = [
-        _report_head("Event-Messung", probe),
+        report_head("Event-Messung", probe),
         "",
         "## A - Verteilung der Events nach Fotozahl",
         "",
@@ -1462,7 +1462,7 @@ def render_report(
             )
             or "-"
         ),
-        *_quota_lines(reach),
+        *quota_lines(reach),
         "",
         "## B - Trennursachen",
         "",

@@ -18,8 +18,8 @@ from photosort.label_embedding import (
     LABEL_EMBEDDER_TOKENIZER_PATH,
     LABEL_EMBEDDER_TOKENIZER_SHA256,
     LabelEmbedderLike,
-    _mean_pool_and_normalize,
     cosine_similarity,
+    mean_pool_and_normalize,
     normalize_label_text,
 )
 from photosort.model_assets import LABEL_EMBEDDER_ONNX
@@ -51,7 +51,7 @@ class TestMeanPoolAndNormalize:
         # es tatsaechlich ignoriert wird (nicht nur zufaellig neutral waere).
         token_embeddings = [[1.0, 0.0], [0.0, 1.0], [100.0, 100.0]]
         attention_mask = [1, 1, 0]
-        pooled = _mean_pool_and_normalize(token_embeddings, attention_mask)
+        pooled = mean_pool_and_normalize(token_embeddings, attention_mask)
         # Erwarteter Mittelwert vor Normierung: (0.5, 0.5) -> normiert (1/sqrt(2), 1/sqrt(2)).
         expected = pytest.approx(1 / math.sqrt(2), abs=1e-6)
         assert pooled == [expected, expected]
@@ -59,7 +59,7 @@ class TestMeanPoolAndNormalize:
     def test_output_is_l2_normalized(self) -> None:
         token_embeddings = [[3.0, 4.0]]
         attention_mask = [1]
-        pooled = _mean_pool_and_normalize(token_embeddings, attention_mask)
+        pooled = mean_pool_and_normalize(token_embeddings, attention_mask)
         norm = math.sqrt(sum(value**2 for value in pooled))
         assert norm == pytest.approx(1.0, abs=1e-6)
 
@@ -69,7 +69,7 @@ class TestMeanPoolAndNormalize:
         # dokumentiertem Fallback fuer eine degenerierte Eingabe.
         token_embeddings = [[1.0, 2.0]]
         attention_mask = [0]
-        pooled = _mean_pool_and_normalize(token_embeddings, attention_mask)
+        pooled = mean_pool_and_normalize(token_embeddings, attention_mask)
         assert pooled == [0.0, 0.0]
 
 
@@ -110,7 +110,7 @@ class TestRealAssetOutputDimension:
             }
             outputs = session.run(None, feed)
             last_hidden_state = outputs[0][0]
-            return _mean_pool_and_normalize(last_hidden_state.tolist(), encoding.attention_mask)
+            return mean_pool_and_normalize(last_hidden_state.tolist(), encoding.attention_mask)
 
         hund = embed("Hund")
         hunde = embed("Hunde")

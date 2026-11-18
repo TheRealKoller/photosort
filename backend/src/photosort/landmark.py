@@ -189,7 +189,7 @@ def _render_place_hint(hint: PlaceHint) -> str:
     )
 
 
-def _build_prompt(hint: PlaceHint | None) -> str:
+def build_prompt(hint: PlaceHint | None) -> str:
     """Der Prompt, wahlweise mit Ortsangabe - ERZEUGT aus dem `PlaceHint`, nie als zweites Literal
     gefuehrt.
 
@@ -230,7 +230,7 @@ def sanitize_landmark_name(raw: object) -> str | None:
     Laengengrenze. `None` heisst "kein verwendbarer Name" - Nicht-String, leer nach der
     Sanitisierung, oder laenger als `MAX_LANDMARK_NAME_LENGTH`.
 
-    Die Funktion wird an ZWEI Stellen angewandt: an der Quelle in `_landmark_detection_from_json`
+    Die Funktion wird an ZWEI Stellen angewandt: an der Quelle in `landmark_detection_from_json`
     unten UND beim Lesen der bereits persistierten Zeilen in `event_inputs.py::_landmark_names`,
     aus dem `events.landmark_name` entsteht. Die Begruendung fuer die doppelte Anwendung steht dort - sie
     deckt den unsanierten Altbestand in `photo_landmark_detections`, fuer den es keinen
@@ -269,9 +269,7 @@ def usable_landmark_name(
     return sanitize_landmark_name(canonical_name) or sanitize_landmark_name(name)
 
 
-def _landmark_detection_from_json(
-    parsed: Any, usage: TokenUsage | None = None
-) -> LandmarkDetection:
+def landmark_detection_from_json(parsed: Any, usage: TokenUsage | None = None) -> LandmarkDetection:
     """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt -
     wird von beiden Clients nach ihrer jeweils providerspezifischen Extraktion des rohen
     JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufgerufen."""
@@ -358,7 +356,7 @@ class AnthropicLandmarkClient:
                                 "data": base64.b64encode(image_bytes).decode(),
                             },
                         },
-                        {"type": "text", "text": _build_prompt(hint)},
+                        {"type": "text", "text": build_prompt(hint)},
                     ],
                 }
             ],
@@ -375,7 +373,7 @@ class AnthropicLandmarkClient:
         )
         payload = response.json()
         parsed = anthropic_response_to_json(payload, LandmarkApiError)
-        return _landmark_detection_from_json(
+        return landmark_detection_from_json(
             parsed, anthropic_usage_from_response(payload, self._model)
         )
 
@@ -436,7 +434,7 @@ class MistralLandmarkClient:
                                 f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
                         },
-                        {"type": "text", "text": _build_prompt(hint)},
+                        {"type": "text", "text": build_prompt(hint)},
                     ],
                 }
             ],
@@ -451,7 +449,7 @@ class MistralLandmarkClient:
         )
         payload = response.json()
         parsed = mistral_response_to_json(payload, LandmarkApiError)
-        return _landmark_detection_from_json(
+        return landmark_detection_from_json(
             parsed, mistral_usage_from_response(payload, self._model)
         )
 

@@ -25,7 +25,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.projects import _build_classification_estimate
+from photosort.api.projects import build_classification_estimate
 from photosort.db import Base
 from photosort.eye_mapping import MAPPING_VERSION
 from photosort.models import ClassificationReviewSideKind, PhotoScore, Project, ScanStatus
@@ -87,7 +87,7 @@ VERBOTENE_NAMEN: frozenset[str] = frozenset(
         "run_remote_category_classification",
         "run_eye_phase",
         "select_remote_category_candidates",
-        "_build_classification_estimate",
+        "build_classification_estimate",
         "build_grouping_and_rankings",
         "_rebuild_run_selection",
         "build_events",
@@ -527,10 +527,10 @@ async def test_a_normal_run_after_a_review_behaves_like_one_without_a_review(
     without_review = await db_session.get(Project, without_review_id)
     assert with_review is not None and without_review is not None
     estimate_a = (
-        await _build_classification_estimate(db_session, with_review, mode="cloud")
+        await build_classification_estimate(db_session, with_review, mode="cloud")
     ).model_dump()
     estimate_b = (
-        await _build_classification_estimate(db_session, without_review, mode="cloud")
+        await build_classification_estimate(db_session, without_review, mode="cloud")
     ).model_dump()
     candidates_a = {
         photo.relative_path

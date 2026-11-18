@@ -183,15 +183,15 @@ ERROR_STATE_PHOTO_COUNT = 6
 # unbelegt, und genau dieser Fehler faellt in keinem Rendering-Test auf. Die sieben bringen dabei
 # auf der breiten Pruefbreite (drei Spalten) eine angebrochene dritte Zeile, also den Umbruch
 # selbst und nicht bloss eine volle Zeile.
-_DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
+DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
 
 # Die dritte Gruppe desselben Projekts (Spec 0639): ZWEI praktisch identische Aufnahmen, vom Lauf
-# automatisch entschieden. Eigene Konstante, weil `_DEMO_DUPLICATE_GROUP_SIZES` die beiden OFFENEN
+# automatisch entschieden. Eigene Konstante, weil `DEMO_DUPLICATE_GROUP_SIZES` die beiden OFFENEN
 # Gruppen bleibt - ein Eintrag dort naehme der Sichtpruefung den Anfangszustand und machte den
 # Gruppenzaehler falsch. Der Gewinner traegt die hoehere Aufloesung und liegt ueber der
 # Schaerfeschwelle; der Verlierer ist das einzige Mitglied mit `auto_decided=True` und hat keine
 # Entscheidungszeile.
-_DEMO_AUTO_DECIDED_GROUP_SIZE = 2
+DEMO_AUTO_DECIDED_GROUP_SIZE = 2
 
 # Der Bestand ist ABSICHTLICH unentschieden: Die Sichtpruefung soll den Anfangszustand beider
 # Gruppen sehen, und der Gruppenzaehler soll "1 von 2" nennen. Eine mitgelieferte Entscheidung
@@ -253,9 +253,9 @@ _OPEN_SUGGESTION_INDEX = 3
 # der Fotoanzahl des bewerteten Projekts (der Groesse des Motivregisters); ein Waechtertest in
 # tests/test_demo_state.py haelt das fest, sonst fiele ein Zustand bei einer Registry-Aenderung
 # still aus dem Bestand.
-_DEMO_UNASSESSED_INDEX = 5
-_DEMO_LOCAL_BASIS_INDEX = 6
-_DEMO_EXCLUDED_INDEX = 7
+DEMO_UNASSESSED_INDEX = 5
+DEMO_LOCAL_BASIS_INDEX = 6
+DEMO_EXCLUDED_INDEX = 7
 
 # Spec 0609: GENAU EIN Foto der Demo traegt eine Eye-Kopfzeile, damit die dritte Grundlage samt
 # Namensnennung, Bilanzzeile und Eye-Band ueberhaupt sichtbar ist. Es ist DASSELBE Foto wie die
@@ -263,10 +263,10 @@ _DEMO_EXCLUDED_INDEX = 7
 # Produktionspfad, in dem die verdraengte lokale Kopfzeile als Schnappschuss in die Rueckbaudaten
 # wandert. Ein von Hand gebauter Eye-Zustand ohne Schnappschuss zeigte der Sichtpruefung einen
 # Bestand, den die Anwendung selbst nie erzeugt.
-_DEMO_EYE_ALBUM_LEVEL = 4
-_DEMO_EYE_MODEL_REVISION = "v1.0.0"
+DEMO_EYE_ALBUM_LEVEL = 4
+DEMO_EYE_MODEL_REVISION = "v1.0.0"
 _DEMO_EYE_FINE_LABELS: tuple[tuple[str, float], ...] = (("hund", 0.82), ("strand", 0.61))
-_DEMO_CORRECTED_INDEX = 1
+DEMO_CORRECTED_INDEX = 1
 _DEMO_CORRECTED_MOTIF_KEY = "menschen"
 
 # Die Austausche im Ereignis-Log der Demo-Instanz: (gewaehltes Foto, ersetztes Foto, eingefrorene
@@ -297,7 +297,7 @@ _DEMO_WITHDRAWN_MOTIF_KEY = "tiere"
 # Korrekturzeile, die der Bestand traegt; die beiden folgenden bilden das Paar aus Korrektur und
 # Ruecknahme, dem im Bestand nichts entspricht.
 _DEMO_MOTIF_EVENTS: tuple[tuple[int, str, FeedbackEventKind], ...] = (
-    (_DEMO_CORRECTED_INDEX, _DEMO_CORRECTED_MOTIF_KEY, FeedbackEventKind.MOTIF_DROPPED),
+    (DEMO_CORRECTED_INDEX, _DEMO_CORRECTED_MOTIF_KEY, FeedbackEventKind.MOTIF_DROPPED),
     (_DEMO_WITHDRAWN_MOTIF_INDEX, _DEMO_WITHDRAWN_MOTIF_KEY, FeedbackEventKind.MOTIF_ADDED),
     (
         _DEMO_WITHDRAWN_MOTIF_INDEX,
@@ -675,7 +675,7 @@ def demo_project_specs(
         DemoProjectSpec(
             name=DUPLICATE_PROJECT_NAME,
             slug="duplikate",
-            photo_count=sum(_DEMO_DUPLICATE_GROUP_SIZES) + _DEMO_AUTO_DECIDED_GROUP_SIZE,
+            photo_count=sum(DEMO_DUPLICATE_GROUP_SIZES) + DEMO_AUTO_DECIDED_GROUP_SIZE,
         ),
         # EIGENES Projekt statt eines Ausschuss-Laufs in der grossen Sammlung: Deren Fotoliste und
         # Pipeline-Startpunkt tragen die Raster- und Navigationspruefungen, ein Vorschlag an jedem
@@ -991,13 +991,13 @@ async def _seed_motif_assessments(
     Sonderdarstellungen (Satz statt Liste, lokale Grundlage mit nicht beurteilbaren Zeilen,
     Ausschluss ohne Korrekturschalter) bleiben ungesehen:
 
-    * `_DEMO_UNASSESSED_INDEX` bekommt GAR KEINE Kopfzeile - "noch nicht klassifiziert".
-    * `_DEMO_LOCAL_BASIS_INDEX` beginnt mit einer lokalen Grundlage ohne Anbieter (die beiden
+    * `DEMO_UNASSESSED_INDEX` bekommt GAR KEINE Kopfzeile - "noch nicht klassifiziert".
+    * `DEMO_LOCAL_BASIS_INDEX` beginnt mit einer lokalen Grundlage ohne Anbieter (die beiden
       lokal nicht beurteilbaren Motive stehen dort auf 0) und wird anschliessend von Eye
       verdraengt - das Foto zeigt damit die dritte Grundlage, und sein lokaler Vektor liegt als
       Schnappschuss daneben (Spec 0609, Produktionspfad statt Nachbau). Die Sichtpruefung sieht
       die lokale Darstellung damit nur noch als Zwischenzustand, nicht als stehende Kopfzeile.
-    * `_DEMO_EXCLUDED_INDEX` ist als Dokument ausgeschlossen - mit erhaltenen Staerken daneben,
+    * `DEMO_EXCLUDED_INDEX` ist als Dokument ausgeschlossen - mit erhaltenen Staerken daneben,
       denn der Ausschluss setzt sie nicht auf 0.
     * Alle uebrigen tragen eine Cloud-Grundlage.
 
@@ -1021,9 +1021,9 @@ async def _seed_motif_assessments(
     antritt). Ohne Nutzer entsteht keine Korrektur, und der Seeder scheitert nicht daran."""
     registry_keys = list(MOTIF_REGISTRY)
     for index, photo in enumerate(photos):
-        if index == _DEMO_UNASSESSED_INDEX:
+        if index == DEMO_UNASSESSED_INDEX:
             continue
-        local = index == _DEMO_LOCAL_BASIS_INDEX
+        local = index == DEMO_LOCAL_BASIS_INDEX
         peak_key = registry_keys[index % len(registry_keys)]
         strengths = {
             motif_key: (
@@ -1040,13 +1040,13 @@ async def _seed_motif_assessments(
             photo.id,
             source=MotifAssessmentSource.LOCAL if local else MotifAssessmentSource.CLOUD,
             strengths=strengths,
-            excluded_document=index == _DEMO_EXCLUDED_INDEX,
+            excluded_document=index == DEMO_EXCLUDED_INDEX,
             provider=None if local else "demo-state",
             computed_at=_BASE_SCORING_AT,
         )
 
-    if len(photos) > _DEMO_LOCAL_BASIS_INDEX:
-        eye_index = _DEMO_LOCAL_BASIS_INDEX
+    if len(photos) > DEMO_LOCAL_BASIS_INDEX:
+        eye_index = DEMO_LOCAL_BASIS_INDEX
         eye_photo = photos[eye_index]
         # Der Eye-Vektor kommt aus demselben deterministischen Generator, aber aus einem EIGENEN
         # Namensraum - gleiche Zahlen wie die verdrängte lokale Kopfzeile machten den Vergleich
@@ -1072,8 +1072,8 @@ async def _seed_motif_assessments(
             PhotoEyeResult(
                 photo_id=eye_photo.id,
                 excluded_document=False,
-                album_level=_DEMO_EYE_ALBUM_LEVEL,
-                model_revision=_DEMO_EYE_MODEL_REVISION,
+                album_level=DEMO_EYE_ALBUM_LEVEL,
+                model_revision=DEMO_EYE_MODEL_REVISION,
                 mapping_version=EYE_MAPPING_VERSION,
                 computed_at=_BASE_SCORING_AT,
             )
@@ -1091,10 +1091,10 @@ async def _seed_motif_assessments(
         )
         await session.flush()
 
-    if user_ids and len(photos) > _DEMO_CORRECTED_INDEX:
+    if user_ids and len(photos) > DEMO_CORRECTED_INDEX:
         session.add(
             PhotoMotifCorrection(
-                photo_id=photos[_DEMO_CORRECTED_INDEX].id,
+                photo_id=photos[DEMO_CORRECTED_INDEX].id,
                 user_id=user_ids[0],
                 motif_key=_DEMO_CORRECTED_MOTIF_KEY,
                 applies=False,
@@ -2094,7 +2094,7 @@ async def _seed_duplicate_project(
 
     mit_vorschlag = 0
     erste = 0
-    for gruppen_index, size in enumerate(_DEMO_DUPLICATE_GROUP_SIZES):
+    for gruppen_index, size in enumerate(DEMO_DUPLICATE_GROUP_SIZES):
         gruppe = photos[erste : erste + size]
         gewinner = gruppe[0]
         # GENAU EINE der beiden Gruppen traegt einen selbst abgelehnten Gewinner. Die andere zeigt
@@ -2130,8 +2130,8 @@ async def _seed_duplicate_project(
 
     # Die automatisch entschiedene Gruppe. Der Gewinner ist die Aufnahme mit der hoeheren
     # Aufloesung - die Regel des Laufs (ADR 0146 Punkt 4), nicht eine abgeschriebene Id.
-    automatisch = photos[erste : erste + _DEMO_AUTO_DECIDED_GROUP_SIZE]
-    assert len(automatisch) == _DEMO_AUTO_DECIDED_GROUP_SIZE
+    automatisch = photos[erste : erste + DEMO_AUTO_DECIDED_GROUP_SIZE]
+    assert len(automatisch) == DEMO_AUTO_DECIDED_GROUP_SIZE
     gewinner = max(automatisch, key=lambda photo: (photo.pixel_count or 0, -photo.id))
     for photo in automatisch:
         ist_gewinner = photo is gewinner

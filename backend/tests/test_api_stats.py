@@ -13,9 +13,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.stats import (
-    _DATABASE_SIZE_SQL,
-    _local_database_bytes_estimate,
+    DATABASE_SIZE_SQL,
     database_share_bytes,
+    local_database_bytes_estimate,
 )
 from photosort.config import settings
 from photosort.models import (
@@ -94,7 +94,7 @@ class TestLocalDatabaseBytesEstimate:
     Verbindungsangaben enthalten)."""
 
     def test_the_database_size_sql_is_a_static_literal_without_interpolation(self) -> None:
-        rendered = str(_DATABASE_SIZE_SQL.compile(dialect=postgresql.dialect()))
+        rendered = str(DATABASE_SIZE_SQL.compile(dialect=postgresql.dialect()))
 
         assert rendered == "SELECT pg_database_size(current_database())"
 
@@ -106,7 +106,7 @@ class TestLocalDatabaseBytesEstimate:
             async def execute(self, *args: object, **kwargs: object) -> object:
                 raise AssertionError("ausserhalb Postgres darf kein SQL abgesetzt werden")
 
-        estimate = await _local_database_bytes_estimate(
+        estimate = await local_database_bytes_estimate(
             _NeverExecutingSession(),  # type: ignore[arg-type]
             project_photo_count=10,
         )
@@ -132,13 +132,13 @@ class TestLocalDatabaseBytesEstimate:
                 # Erste Abfrage: Datenbankgroesse, zweite: Gesamtzahl Fotos aller Projekte.
                 return _StubResult(1_000_000 if len(executed) == 1 else 40)
 
-        estimate = await _local_database_bytes_estimate(
+        estimate = await local_database_bytes_estimate(
             _FakePostgresSession(),  # type: ignore[arg-type]
             project_photo_count=10,
         )
 
         assert estimate == 250_000
-        assert executed[0] is _DATABASE_SIZE_SQL
+        assert executed[0] is DATABASE_SIZE_SQL
 
 
 # --- Integrations-Ebene (Schwerpunkt) ------------------------------------------------------

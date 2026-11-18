@@ -27,13 +27,13 @@ from photosort.criterion_probe import (
     CriterionCounts,
     CriterionProbeError,
     CriterionProbeInput,
-    _number,
-    _report_head,
     criterion_counts,
     landmark_candidates,
     main,
+    number,
     read_criterion_probe_input,
     render_report,
+    report_head,
 )
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.models import (
@@ -444,12 +444,12 @@ class TestTheReportHead:
     """Titel, Projekt-Id, Laufkennung - an genau einer Stelle gebaut."""
 
     def test_the_head_carries_the_title_the_project_and_the_run(self) -> None:
-        assert _report_head(_probe(run_id=7)) == "# Kriterien-Messung, Projekt 1, Lauf 7"
+        assert report_head(_probe(run_id=7)) == "# Kriterien-Messung, Projekt 1, Lauf 7"
 
     def test_a_project_without_a_run_gets_no_invented_identifier(self) -> None:
         """ "Lauf 0" oder "Lauf None" waere eine Kennung, die es nicht gibt - der Kopf sagt
         stattdessen, dass kein erfolgreicher Lauf vorliegt."""
-        head = _report_head(_probe(run_id=None))
+        head = report_head(_probe(run_id=None))
 
         assert head == "# Kriterien-Messung, Projekt 1, ohne erfolgreichen Lauf"
         assert "Lauf 0" not in head
@@ -477,8 +477,8 @@ class TestTheReportWithoutARunReportsNotMeasured:
     """AUSFALLRICHTUNG: "NICHT GEMESSEN" IST NICHT "0"."""
 
     def test_the_number_is_not_measured_instead_of_zero(self) -> None:
-        assert _number(None) == NOT_MEASURED
-        assert _number(0) == "0"
+        assert number(None) == NOT_MEASURED
+        assert number(0) == "0"
 
     def test_the_report_carries_no_numeric_section(self) -> None:
         """Die guenstigste aller Aussagen ("der Zuwachs ist klein") waere eine Null - sie steht

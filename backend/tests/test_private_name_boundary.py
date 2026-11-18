@@ -179,69 +179,17 @@ def _dateien(wurzel: Path) -> list[Path]:
     return sorted(wurzel.rglob("*.py"))
 
 
-# Arbeitsliste waehrend der Abarbeitung (Spec 0648): Datei -> Namen. Geprueft wird GLEICHHEIT in
-# beide Richtungen - ein neuer Verstoss wird rot, ein abgearbeiteter Eintrag ebenfalls.
-_BEKANNTE_FUNDE_TEXT = """
-tests/test_aesthetics.py: _ASSET_PATH
-tests/test_api_classification_reviews.py: _guard_export_shape
-tests/test_api_opencloud_folder_counts.py: _count_images_up_to_limit
-tests/test_api_persons.py: _criterion_scoring_run_summary _name_taken _person_write_lock _phase_progress
-    _phase_remaining_seconds _taken_slots
-tests/test_api_stats.py: _DATABASE_SIZE_SQL _local_database_bytes_estimate
-tests/test_api_unnamed_faces.py: _embedding_at _on_model_thread
-tests/test_classification.py: _FACE_DETECTOR_MODEL_PATH _FACE_LANDMARKER_MODEL_PATH
-    _OBJECT_DETECTOR_MODEL_PATH _SCENE_CLASSIFIER_MODEL_PATH _laplace_edges_without_border_artifact
-    _yaw_degrees_from_rotation_matrix
-tests/test_classification_review_isolation.py: _build_classification_estimate
-tests/test_criteria.py: _OBJECT_DETECTOR_MODEL_PATH _SCENE_CLASSIFIER_MODEL_PATH
-tests/test_criterion_probe.py: _number _report_head
-tests/test_demo_state.py: _DEMO_AUTO_DECIDED_GROUP_SIZE _DEMO_CORRECTED_INDEX _DEMO_DUPLICATE_GROUP_SIZES
-    _DEMO_EXCLUDED_INDEX _DEMO_EYE_ALBUM_LEVEL _DEMO_EYE_MODEL_REVISION _DEMO_LOCAL_BASIS_INDEX
-    _DEMO_UNASSESSED_INDEX
-tests/test_duplicate_probe.py: _distribution _groups_of _summarise
-tests/test_event_probe.py: _quota_lines _report_head _tally
-tests/test_events.py: _EARTH_RADIUS_METERS _landmark_name_is_plausible _round_limit _usable_name
-tests/test_horizon.py: _score_from_angle_deviation _select_dominant_candidate_angle
-tests/test_label_embedding.py: _mean_pool_and_normalize
-tests/test_landmark.py: _build_prompt _landmark_detection_from_json
-tests/test_persons.py: _correction_row _delete_reference _has_correction_face
-    _unlink_references_of_other_models
-tests/test_place_dataset.py: _build_parser _download_archive
-tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _slugify
-"""
-
-
-def _bekannte_funde() -> dict[str, set[str]]:
-    """Arbeitsliste: Datei -> Namen, gelesen aus dem Blocktext."""
-    eintraege: list[str] = []
-    for zeile in _BEKANNTE_FUNDE_TEXT.splitlines():
-        if eintraege and zeile.startswith("   ") and not zeile.startswith(": "):
-            eintraege[-1] += " " + zeile.strip()
-        else:
-            eintraege.append(zeile)
-    funde: dict[str, set[str]] = {}
-    for eintrag in filter(None, eintraege):
-        datei, _, namen = eintrag.partition(":")
-        funde[datei] = set(namen.split())
-    return funde
-
-
+# Das Ziel ist der leere Fund. Die Meldung nennt jeden Fund einzeln, weil ein pauschales
+# "Sichtbarkeitsgrenze verletzt" die Arbeit an der Codestelle nicht anleitet.
 def test_kein_privater_name_ueberschreitet_eine_dateigrenze() -> None:
-    gefunden: dict[str, set[str]] = {}
-    for wurzel in (PRODUCTION_DIR, TESTS_DIR):
-        for pfad in _dateien(wurzel):
-            for _, name, _ in finde_verstoesse(pfad):
-                gefunden.setdefault(_relativ(pfad), set()).add(name)
-    erwartet = _bekannte_funde()
-    neu = sorted(set(gefunden) - set(erwartet))
-    abgearbeitet = sorted(set(erwartet) - set(gefunden))
-    geaendert = sorted(
-        datei for datei in set(gefunden) & set(erwartet) if gefunden[datei] != erwartet[datei]
-    )
-    assert not (neu or abgearbeitet or geaendert), (
-        "Sichtbarkeitsgrenze verletzt (ADR 0150): "
-        f"neu={neu} abgearbeitet={abgearbeitet} geaendert={geaendert}"
-    )
+    gefunden = [
+        f"{_relativ(pfad)}:{zeile}: {name} aus {modul}"
+        for wurzel in (PRODUCTION_DIR, TESTS_DIR)
+        for pfad in _dateien(wurzel)
+        for zeile, name, modul in finde_verstoesse(pfad)
+    ]
+
+    assert gefunden == [], "Sichtbarkeitsgrenze verletzt (ADR 0150): " + "; ".join(gefunden)
 
 
 def test_die_messung_ist_nicht_leer_und_deckt_den_baum() -> None:

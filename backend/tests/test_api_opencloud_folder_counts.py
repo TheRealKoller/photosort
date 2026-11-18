@@ -1,6 +1,6 @@
 """specs/features/0050-dateianzahl-im-ordner-browser.md, ADR decisions/0028-ordner-browser-
 bilddatei-zaehlung.md: begrenzte, parallele Bilddatei-Zaehlung pro Unterordner. Testet
-_count_images_up_to_limit isoliert (gemockte walk()) sowie gegen einen echten OpenCloudClient
+count_images_up_to_limit isoliert (gemockte walk()) sowie gegen einen echten OpenCloudClient
 (httpx.MockTransport, Anfragezaehler - einziger Weg, den Early-Exit-Netzwerkeffekt zu beweisen)
 und den Endpunkt GET /opencloud/folder-counts End-to-End."""
 
@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from photosort.api.deps import get_opencloud_client
-from photosort.api.opencloud import FOLDER_COUNT_LIMIT, _count_images_up_to_limit, folder_counts
+from photosort.api.opencloud import FOLDER_COUNT_LIMIT, count_images_up_to_limit, folder_counts
 from photosort.main import app
 from photosort.opencloud.client import Drive, OpenCloudClient, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
@@ -33,7 +33,7 @@ def _entry(name: str, is_collection: bool = False) -> DavEntry:
 
 
 class _FakeWalkClient:
-    """Minimaler Fake fuer _count_images_up_to_limit-Unit-Tests - kein echtes Netzwerk, nur eine
+    """Minimaler Fake fuer count_images_up_to_limit-Unit-Tests - kein echtes Netzwerk, nur eine
     frei konfigurierbare async-Generator-Funktion als client.walk()."""
 
     def __init__(self, walk_fn: object) -> None:
@@ -48,7 +48,7 @@ async def test_count_images_up_to_limit_counts_only_image_extensions() -> None:
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
 
     assert count == 2
     assert at_limit is False
@@ -69,7 +69,7 @@ async def test_count_images_up_to_limit_stops_consuming_once_limit_reached() -> 
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
 
     assert count == 500
     assert at_limit is True
@@ -83,7 +83,7 @@ async def test_count_images_up_to_limit_exactly_499_images_is_not_at_limit() -> 
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(
+    count, at_limit = await count_images_up_to_limit(
         client, WEBDAV_URL, "CostaRica", limit=FOLDER_COUNT_LIMIT
     )
 
@@ -98,7 +98,7 @@ async def test_count_images_up_to_limit_exactly_500_images_is_at_limit() -> None
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(
+    count, at_limit = await count_images_up_to_limit(
         client, WEBDAV_URL, "CostaRica", limit=FOLDER_COUNT_LIMIT
     )
 
@@ -115,7 +115,7 @@ async def test_count_images_up_to_limit_real_empty_folder_returns_zero_not_at_li
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
 
     assert count == 0
     assert at_limit is False
@@ -131,7 +131,7 @@ async def test_count_images_up_to_limit_folder_with_only_non_images_returns_zero
 
     client = _FakeWalkClient(walk)
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
 
     assert count == 0
     assert at_limit is False
@@ -198,7 +198,7 @@ async def test_count_images_up_to_limit_sends_no_further_propfind_requests_once_
         transport=httpx.MockTransport(handler),
     )
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=2)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=2)
 
     assert count == 2
     assert at_limit is True
@@ -207,7 +207,7 @@ async def test_count_images_up_to_limit_sends_no_further_propfind_requests_once_
 
 async def test_count_images_up_to_limit_preserves_cycle_protection_of_walk() -> None:
     # Akzeptanzkriterium: Zyklenschutz von walk() bleibt unter der neuen Konsumierung wirksam -
-    # _count_images_up_to_limit haelt keinen eigenen visited-Zustand, verlaesst sich vollstaendig
+    # count_images_up_to_limit haelt keinen eigenen visited-Zustand, verlaesst sich vollstaendig
     # auf walk(). Simuliert wie test_opencloud_client.py::
     # test_walk_terminates_when_a_child_entry_points_at_an_already_visited_path eine doppelte
     # "Sub"-Referenz in derselben Listing-Antwort.
@@ -229,7 +229,7 @@ async def test_count_images_up_to_limit_preserves_cycle_protection_of_walk() -> 
     )
     client.list_folder = fake_list_folder  # type: ignore[method-assign]
 
-    count, at_limit = await _count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
+    count, at_limit = await count_images_up_to_limit(client, WEBDAV_URL, "CostaRica", limit=500)
 
     assert count == 1
     assert at_limit is False

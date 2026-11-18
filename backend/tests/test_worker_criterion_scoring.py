@@ -245,7 +245,7 @@ def _no_face_landmarker() -> NoFaceLandmarker:
 
 def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
     # Analog test_classification.py::_rotation_matrix_y (Konvention siehe classification.py::
-    # _yaw_degrees_from_rotation_matrix-Docstring) - kleine, bewusste Duplikation statt einer
+    # yaw_degrees_from_rotation_matrix-Docstring) - kleine, bewusste Duplikation statt einer
     # Test-Utility-Abhaengigkeit zwischen zwei Testdateien.
     theta = math.radians(degrees_value)
     matrix = np.eye(4)

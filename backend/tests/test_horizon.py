@@ -6,9 +6,9 @@ from PIL import Image, ImageDraw
 from photosort.horizon import (
     HORIZON_MAX_CANDIDATE_ANGLE,
     HORIZON_MAX_PENALIZED_ANGLE_DEGREES,
-    _score_from_angle_deviation,
-    _select_dominant_candidate_angle,
     compute_horizon_tilt_score,
+    score_from_angle_deviation,
+    select_dominant_candidate_angle,
 )
 
 
@@ -85,7 +85,7 @@ class TestComputeHorizonTiltScore:
 
 class TestSelectDominantCandidateAngle:
     def test_no_lines_returns_none(self) -> None:
-        assert _select_dominant_candidate_angle(None) is None
+        assert select_dominant_candidate_angle(None) is None
 
     def test_a_candidate_exactly_at_the_max_candidate_angle_boundary_is_still_included(
         self,
@@ -95,11 +95,11 @@ class TestSelectDominantCandidateAngle:
         # derive_active_categories. Eine Linie GENAU an der Grenze zaehlt noch als Kandidat.
         assert HORIZON_MAX_CANDIDATE_ANGLE == 45.0
         lines = np.array([[0, 0, 10, 10]])  # exakt 45 Grad (dx == dy)
-        assert _select_dominant_candidate_angle(lines) == 45.0
+        assert select_dominant_candidate_angle(lines) == 45.0
 
     def test_a_candidate_just_beyond_the_max_candidate_angle_is_excluded(self) -> None:
         lines = np.array([[0, 0, 10, 11]])  # > 45 Grad
-        assert _select_dominant_candidate_angle(lines) is None
+        assert select_dominant_candidate_angle(lines) is None
 
     def test_the_strictly_longer_candidate_wins(self) -> None:
         lines = np.array(
@@ -108,8 +108,8 @@ class TestSelectDominantCandidateAngle:
                 [0, 0, 100, 20],  # laenger, groesserer Winkel
             ]
         )
-        winner = _select_dominant_candidate_angle(lines)
-        assert winner == _select_dominant_candidate_angle(np.array([[0, 0, 100, 20]]))
+        winner = select_dominant_candidate_angle(lines)
+        assert winner == select_dominant_candidate_angle(np.array([[0, 0, 100, 20]]))
 
     def test_tie_break_between_equally_long_candidates_is_deterministic(self) -> None:
         # Tie-Break bei exakt gleicher Laenge (technische Detailentscheidung, ADR 0026 offen
@@ -122,10 +122,10 @@ class TestSelectDominantCandidateAngle:
                 [0, 0, 10, -2],  # exakt dieselbe Laenge, gegensaetzlicher Winkel
             ]
         )
-        first_call = _select_dominant_candidate_angle(lines)
-        second_call = _select_dominant_candidate_angle(lines)
+        first_call = select_dominant_candidate_angle(lines)
+        second_call = select_dominant_candidate_angle(lines)
         assert first_call == second_call
-        assert first_call == _select_dominant_candidate_angle(np.array([[0, 0, 10, 2]]))
+        assert first_call == select_dominant_candidate_angle(np.array([[0, 0, 10, 2]]))
 
     def test_a_line_with_a_raw_atan2_angle_above_ninety_degrees_is_normalized(self) -> None:
         # (x1,y1)-(x2,y2) mit x2 < x1 und y2 > y1 (Endpunkte "rueckwaerts") liefert einen rohen
@@ -133,30 +133,30 @@ class TestSelectDominantCandidateAngle:
         # (-90, 90] normieren (hier: -180 Grad addiert), nicht faelschlich als jenseits von
         # HORIZON_MAX_CANDIDATE_ANGLE ausschliessen.
         lines = np.array([[10, 0, 0, 1]])  # roher Winkel ~174.3 Grad -> normiert ~-5.7 Grad
-        angle = _select_dominant_candidate_angle(lines)
+        angle = select_dominant_candidate_angle(lines)
         assert angle is not None
         assert -6.0 < angle < -5.0
 
     def test_zero_length_entries_are_ignored_without_crashing(self) -> None:
         lines = np.array([[5, 5, 5, 5], [0, 0, 10, 10]])
-        assert _select_dominant_candidate_angle(lines) == 45.0
+        assert select_dominant_candidate_angle(lines) == 45.0
 
 
 class TestScoreFromAngleDeviation:
     def test_zero_deviation_scores_one(self) -> None:
-        assert _score_from_angle_deviation(0.0) == 1.0
+        assert score_from_angle_deviation(0.0) == 1.0
 
     def test_deviation_exactly_at_the_penalty_ceiling_scores_zero(self) -> None:
         # AK der Spec 0048: "Linie exakt bei HORIZON_MAX_PENALIZED_ANGLE_DEGREES -> score == 0.0
         # (nicht negativ)".
         assert HORIZON_MAX_PENALIZED_ANGLE_DEGREES == 15.0
-        assert _score_from_angle_deviation(15.0) == 0.0
-        assert _score_from_angle_deviation(-15.0) == 0.0
+        assert score_from_angle_deviation(15.0) == 0.0
+        assert score_from_angle_deviation(-15.0) == 0.0
 
     def test_deviation_beyond_the_penalty_ceiling_is_clamped_to_zero_not_negative(self) -> None:
         # AK: "Linie jenseits HORIZON_MAX_PENALIZED_ANGLE_DEGREES, aber innerhalb
         # HORIZON_MAX_CANDIDATE_ANGLE -> score auf 0.0 geklemmt".
-        assert _score_from_angle_deviation(30.0) == 0.0
+        assert score_from_angle_deviation(30.0) == 0.0
 
     def test_deviation_within_range_scales_linearly(self) -> None:
-        assert _score_from_angle_deviation(7.5) == 0.5
+        assert score_from_angle_deviation(7.5) == 0.5

@@ -24,8 +24,8 @@ from photosort.landmark import (
     LandmarkDetection,
     MistralLandmarkClient,
     PlaceHint,
-    _build_prompt,
-    _landmark_detection_from_json,
+    build_prompt,
+    landmark_detection_from_json,
     place_hint_for,
     usable_landmark_name,
 )
@@ -310,41 +310,41 @@ async def test_timeout_is_applied_to_the_underlying_http_client() -> None:
 
 
 # specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
-# option-cloud-landmark.md Punkt 2: _landmark_detection_from_json ist die providerneutrale
+# option-cloud-landmark.md Punkt 2: landmark_detection_from_json ist die providerneutrale
 # Hilfsfunktion, die beide Clients nach ihrer jeweils providerspezifischen Extraktion des rohen
 # JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufrufen - direkt gegen ein bereits
 # geparstes Dict getestet, ohne HTTP (Teststrategie-Abschnitt der Spec).
 
 
 def test_landmark_detection_from_json_parses_name_and_confidence() -> None:
-    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": 0.87})
+    detection = landmark_detection_from_json({"name": "Eiffelturm", "confidence": 0.87})
 
     assert detection.name == "Eiffelturm"
     assert detection.confidence == 0.87
 
 
 def test_landmark_detection_from_json_treats_a_missing_name_as_no_landmark() -> None:
-    detection = _landmark_detection_from_json({"name": None, "confidence": 0.0})
+    detection = landmark_detection_from_json({"name": None, "confidence": 0.0})
 
     assert detection.name is None
     assert detection.confidence == 0.0
 
 
 def test_landmark_detection_from_json_clamps_a_confidence_above_one() -> None:
-    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": 1.2})
+    detection = landmark_detection_from_json({"name": "Eiffelturm", "confidence": 1.2})
 
     assert detection.confidence == 1.0
 
 
 def test_landmark_detection_from_json_clamps_a_negative_confidence() -> None:
-    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": -0.3})
+    detection = landmark_detection_from_json({"name": "Eiffelturm", "confidence": -0.3})
 
     assert detection.confidence == 0.0
 
 
 def test_landmark_detection_from_json_rejects_a_non_string_name() -> None:
     with pytest.raises(LandmarkApiError):
-        _landmark_detection_from_json({"name": 42, "confidence": 0.5})
+        landmark_detection_from_json({"name": 42, "confidence": 0.5})
 
 
 def test_landmark_detection_from_json_rejects_a_non_dict_top_level_shape() -> None:
@@ -353,7 +353,7 @@ def test_landmark_detection_from_json_rejects_a_non_dict_top_level_shape() -> No
     # top_level_shape oben) - jetzt in der providerneutralen Funktion, da AttributeError beim
     # .get()-Aufruf auf einer Liste auftritt.
     with pytest.raises(LandmarkApiError):
-        _landmark_detection_from_json(["not", "an", "object"])
+        landmark_detection_from_json(["not", "an", "object"])
 
 
 # specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
@@ -805,7 +805,7 @@ class TestTheLandmarkClientsSitOutARateLimit:
 # specs/features/0051-gps-landmark-cluster-bildung.md, Security-Abschnitt 1 / Sicherheitskonzept
 # "Standortdaten": `PhotoLandmarkDetection.name` verlaesst mit dieser Spec erstmals die API und
 # wird in einer Cluster-Ueberschrift gerendert. Unter Spec 0047 ("kein UI-Verweis in v1") ging er
-# als ROHWERT aus der Modellantwort in die Datenbank - `_landmark_detection_from_json` prueft nur
+# als ROHWERT aus der Modellantwort in die Datenbank - `landmark_detection_from_json` prueft nur
 # `isinstance(name, str)`. Ab hier: Sanitisierung AN DER QUELLE mit derselben Funktion wie der
 # Feinlabel-Pfad, plus eine Laengengrenze mit VERWERFEN statt Abschneiden.
 
@@ -814,19 +814,19 @@ class TestLandmarkNameSanitisation:
     def test_control_and_format_characters_are_stripped_at_the_source(self) -> None:
         """Escapetes Rendering im Frontend schuetzt gegen XSS, aber weder gegen optische
         Verfaelschung durch Bidi-/Zero-Width-Zeichen noch gegen mehrzeilige Logeintraege."""
-        detection = _landmark_detection_from_json({"name": "Eiffel‮turm​", "confidence": 0.9})
+        detection = landmark_detection_from_json({"name": "Eiffel‮turm​", "confidence": 0.9})
 
         assert detection.name == "Eiffelturm"
 
     def test_whitespace_runs_are_collapsed_at_the_source(self) -> None:
-        detection = _landmark_detection_from_json(
+        detection = landmark_detection_from_json(
             {"name": "  Kathedrale\n\tvon   Santiago  ", "confidence": 0.9}
         )
 
         assert detection.name == "Kathedrale von Santiago"
 
     def test_a_name_that_is_empty_after_sanitisation_becomes_none(self) -> None:
-        detection = _landmark_detection_from_json({"name": "​‮", "confidence": 0.9})
+        detection = landmark_detection_from_json({"name": "​‮", "confidence": 0.9})
 
         assert detection.name is None
 
@@ -836,33 +836,33 @@ class TestLandmarkNameSanitisation:
         Cluster zusammen (dieselbe Begruendung wie die Slug-Kollision bei den Feinlabels)."""
         too_long = "A" * (MAX_LANDMARK_NAME_LENGTH + 1)
 
-        detection = _landmark_detection_from_json({"name": too_long, "confidence": 0.9})
+        detection = landmark_detection_from_json({"name": too_long, "confidence": 0.9})
 
         assert detection.name is None
 
     def test_a_name_exactly_at_the_length_limit_is_kept(self) -> None:
         exactly = "A" * MAX_LANDMARK_NAME_LENGTH
 
-        detection = _landmark_detection_from_json({"name": exactly, "confidence": 0.9})
+        detection = landmark_detection_from_json({"name": exactly, "confidence": 0.9})
 
         assert detection.name == exactly
 
     def test_the_limit_is_generous_enough_for_a_real_landmark_name(self) -> None:
         """80 statt der 60 des Feinlabel-Pfads, weil echte Sehenswuerdigkeitsnamen laenger sind."""
-        detection = _landmark_detection_from_json(
+        detection = landmark_detection_from_json(
             {"name": "Kathedrale von Santiago de Compostela", "confidence": 0.9}
         )
 
         assert detection.name == "Kathedrale von Santiago de Compostela"
 
     def test_an_ordinary_name_passes_through_unchanged(self) -> None:
-        detection = _landmark_detection_from_json({"name": "Zugspitze", "confidence": 0.42})
+        detection = landmark_detection_from_json({"name": "Zugspitze", "confidence": 0.42})
 
         assert detection.name == "Zugspitze"
         assert detection.confidence == 0.42
 
     def test_an_explicit_null_name_stays_none(self) -> None:
-        detection = _landmark_detection_from_json({"name": None, "confidence": 0.0})
+        detection = landmark_detection_from_json({"name": None, "confidence": 0.0})
 
         assert detection.name is None
 
@@ -1067,7 +1067,7 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
     Instruktionssatz - und die Instruktion benennt das Feld als Angabe UEBER das Foto."""
 
     def test_without_a_hint_the_prompt_is_the_bare_task(self) -> None:
-        prompt = _build_prompt(None)
+        prompt = build_prompt(None)
 
         assert "AUFNAHMEORT" not in prompt
         assert '"confidence"' in prompt
@@ -1075,27 +1075,27 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
     def test_the_prompt_always_asks_for_the_same_json_shape(self) -> None:
         """Die Antwortform haengt nicht am Hinweis - sonst haette ein Foto ohne Koordinate eine
         andere Auswertung als eines mit."""
-        assert '{"name":' in _build_prompt(None)
-        assert '{"name":' in _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
+        assert '{"name":' in build_prompt(None)
+        assert '{"name":' in build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
 
     def test_the_mismatch_obligation_appears_only_together_with_a_hint(self) -> None:
         """Die Auflage aus ADR 0106 Punkt 5: Passt der Ort nicht zur erkannten Sehenswuerdigkeit,
         soll das Modell `null` bzw. eine niedrige Konfidenz liefern - und der Treffer faellt damit
         unter die Grenze aus ADR 0107. Geprueft ist die ANWESENHEIT der Auflage, nicht, ob das
         Modell ihr folgt."""
-        with_hint = _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
+        with_hint = build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
 
         assert "niedrige" in with_hint
         assert "passt nicht" in with_hint.casefold() or "nicht zu" in with_hint
-        assert "niedrige" not in _build_prompt(None)
+        assert "niedrige" not in build_prompt(None)
 
     def test_the_locality_stage_puts_exactly_the_name_into_the_field(self) -> None:
-        prompt = _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
+        prompt = build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
 
         assert prompt.splitlines()[-1] == "AUFNAHMEORT: Ortsname Garmisch-Partenkirchen"
 
     def test_the_coordinate_stage_puts_exactly_the_rounded_pair_into_the_field(self) -> None:
-        prompt = _build_prompt(PlaceHint(cell=landmark_place_cell(47.4912, 11.0987)))
+        prompt = build_prompt(PlaceHint(cell=landmark_place_cell(47.4912, 11.0987)))
 
         assert prompt.splitlines()[-1] == "AUFNAHMEORT: ungefaehre Koordinate 47.5, 11.1"
 
@@ -1103,17 +1103,17 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
         """Gerendert wird aus den `float`-Werten mit FESTER Nachkommastellenzahl, nie ueber
         `str()`: `str(48.0)` ergaebe `"48.0"`, andere Werte mal eine und mal keine
         Nachkommastelle - die ausgehende Koernung waere aus dem Text nicht mehr ablesbar."""
-        prompt = _build_prompt(PlaceHint(cell=landmark_place_cell(48.0, 11.0)))
+        prompt = build_prompt(PlaceHint(cell=landmark_place_cell(48.0, 11.0)))
 
         assert prompt.splitlines()[-1] == "AUFNAHMEORT: ungefaehre Koordinate 48.0, 11.0"
 
     def test_a_normalised_zero_carries_no_minus_into_the_prompt(self) -> None:
-        prompt = _build_prompt(PlaceHint(cell=landmark_place_cell(-0.04, -0.04)))
+        prompt = build_prompt(PlaceHint(cell=landmark_place_cell(-0.04, -0.04)))
 
         assert "-0.0" not in prompt
 
     def test_a_real_southern_or_western_sign_survives(self) -> None:
-        prompt = _build_prompt(PlaceHint(cell=landmark_place_cell(-33.92, -18.42)))
+        prompt = build_prompt(PlaceHint(cell=landmark_place_cell(-33.92, -18.42)))
 
         assert prompt.splitlines()[-1] == "AUFNAHMEORT: ungefaehre Koordinate -33.9, -18.4"
 
@@ -1122,7 +1122,7 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
         kann keinen Zeilenumbruch enthalten (`sanitize_label_text` zieht jede Whitespace-Folge zu
         einem Leerzeichen zusammen). Eine eingeschleuste Endmarkierung im Namen ist damit inert -
         sie steht innerhalb derselben Zeile."""
-        prompt = _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
+        prompt = build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
 
         assert "letzte Zeile" in prompt
         assert prompt.splitlines()[-1].startswith("AUFNAHMEORT:")
@@ -1131,8 +1131,8 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
         """Nachweis durch Veraenderung der Quelle (Muster test_classification_prompt.py): ein
         anderer Hinweis MUSS einen anderen Prompt ergeben - sonst stuende die Ortsangabe ein
         zweites Mal in einem Literal."""
-        first = _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
-        second = _build_prompt(PlaceHint(locality="Oberammergau"))
+        first = build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))
+        second = build_prompt(PlaceHint(locality="Oberammergau"))
 
         assert "Oberammergau" in second
         assert "Garmisch-Partenkirchen" not in second
@@ -1158,7 +1158,7 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
         hint = place_hint_for(usable_locality(_info(answer)), 47.4912, 11.0987)
 
         assert hint is not None
-        prompt = _build_prompt(hint)
+        prompt = build_prompt(hint)
         assert "VIERTELMARKE" not in prompt
         assert "REGIONMARKE" not in prompt
         assert "LANDMARKE" not in prompt
@@ -1179,7 +1179,7 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
         hint = place_hint_for(usable_locality(_info(answer)), 47.4912, 11.0987)
 
         assert hint is not None
-        prompt = _build_prompt(hint)
+        prompt = build_prompt(hint)
         assert _field_lines(prompt) == ["AUFNAHMEORT: Ortsname Ort AUFNAHMEORT: Ortsname Anderswo"]
 
 

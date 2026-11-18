@@ -263,7 +263,7 @@ def sanitize_label_text(raw: str) -> str:
 
     SICHERHEIT: BEIDE Cloud-Pfade müssen DIESELBE Funktion benutzen, nicht eine zweite Fassung
     davon - der Feinlabel-Pfad (`remote_classification.py::_fine_labels_from_json`, vor der
-    Längenprüfung und vor resolve_canonical_label/_slugify) und der Sehenswürdigkeit-Pfad
+    Längenprüfung und vor resolve_canonical_label/slugify) und der Sehenswürdigkeit-Pfad
     (`landmark.py::sanitize_landmark_name`). Deshalb liegt sie hier, in der providerneutralen
     gemeinsamen Schicht.
 

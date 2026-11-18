@@ -418,7 +418,7 @@ class TestTheEffectiveAssignment:
         assert naming == {
             ("persons.py", "assigned_face_boxes"),
             ("persons.py", "effective_person_assignments"),
-            ("persons.py", "_has_correction_face"),
+            ("persons.py", "has_correction_face"),
             ("persons.py", "_attach_face"),
         }
 
@@ -792,7 +792,7 @@ class TestTheConditionalBox:
         async def _never(session: AsyncSession, *, photo_id: int, person_id: int) -> bool:
             return False
 
-        monkeypatch.setattr(persons_module, "_has_correction_face", _never)
+        monkeypatch.setattr(persons_module, "has_correction_face", _never)
         with pytest.raises(FaceAlreadyAssignedOnPhoto):
             await _assign(db_session, anna, photo, user, axis=0, box=_box(5))
         await db_session.rollback()
@@ -814,7 +814,7 @@ class TestTheConditionalBox:
         async def _unseen(session: AsyncSession, *, photo_id: int, person_id: int) -> None:
             return None
 
-        monkeypatch.setattr(persons_module, "_correction_row", _unseen)
+        monkeypatch.setattr(persons_module, "correction_row", _unseen)
         with pytest.raises(IntegrityError):
             await _assign(db_session, anna, photo, user, axis=0, box=_box(5))
         await db_session.rollback()
@@ -1053,7 +1053,7 @@ class TestTheRevocation:
         async def _boom(session: AsyncSession, reference_id: int) -> None:
             raise RuntimeError("simuliert")
 
-        monkeypatch.setattr(persons_module, "_delete_reference", _boom)
+        monkeypatch.setattr(persons_module, "delete_reference", _boom)
         with pytest.raises(RuntimeError):
             await set_correction(
                 db_session, photo_id=photo.id, person_id=anna.id, applies=False, user_id=user.id
@@ -1140,7 +1140,7 @@ class TestAModelChange:
         async def _skip(session: AsyncSession, *, person_id: int, model_key: str) -> None:
             return None
 
-        monkeypatch.setattr(persons_module, "_unlink_references_of_other_models", _skip)
+        monkeypatch.setattr(persons_module, "unlink_references_of_other_models", _skip)
 
         with pytest.raises(IntegrityError):
             await _assign(db_session, anna, photos[2], user, axis=0)
@@ -1168,8 +1168,8 @@ class TestTheWritePlaces:
 
         assert writes["set"] == [("persons.py", "_attach_face")]
         assert sorted(writes["clear"]) == [
-            ("persons.py", "_unlink_references_of_other_models"),
             ("persons.py", "set_correction"),
+            ("persons.py", "unlink_references_of_other_models"),
         ]
 
 

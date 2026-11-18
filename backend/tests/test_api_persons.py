@@ -246,9 +246,9 @@ async def test_the_constraint_behind_a_bypassed_precheck_gives_409_not_500(
     async def no_name_taken(session: AsyncSession, name_key: str) -> bool:
         return False
 
-    monkeypatch.setattr(persons_module, "_name_taken", no_name_taken)
+    monkeypatch.setattr(persons_module, "name_taken", no_name_taken)
     if bypass == "slot":
-        monkeypatch.setattr(persons_module, "_taken_slots", no_slots_taken)
+        monkeypatch.setattr(persons_module, "taken_slots", no_slots_taken)
     name = "Berta" if bypass == "slot" else "ANNA"
 
     response = await client.post(
@@ -738,13 +738,13 @@ def _run_row(**fields: Any) -> Any:
 
 
 def test_the_persons_phase_counts_on_its_own_counters() -> None:
-    from photosort.api.projects import _phase_progress
+    from photosort.api.projects import phase_progress
 
-    assert _phase_progress(_run_row(persons_photos_total=8, persons_photos_processed=3), []) == (
+    assert phase_progress(_run_row(persons_photos_total=8, persons_photos_processed=3), []) == (
         3,
         8,
     )
-    assert _phase_progress(_run_row(), []) == (None, None)
+    assert phase_progress(_run_row(), []) == (None, None)
 
 
 def test_the_remaining_time_of_the_persons_phase_uses_its_counters(
@@ -755,18 +755,18 @@ def test_the_remaining_time_of_the_persons_phase_uses_its_counters(
     monkeypatch.setattr(projects, "now_utc", lambda: NOW.replace(minute=1))
     counted = _run_row(persons_photos_total=8, persons_photos_processed=4)
 
-    assert projects._phase_remaining_seconds(counted, []) is not None
-    assert projects._phase_remaining_seconds(_run_row(), []) is None
+    assert projects.phase_remaining_seconds(counted, []) is not None
+    assert projects.phase_remaining_seconds(_run_row(), []) is None
 
 
 async def test_the_summary_carries_null_or_the_count(db_session: AsyncSession) -> None:
     """Zwilling: `null` heisst "lief nicht", eine Zahl heisst "lief"."""
-    from photosort.api.projects import _criterion_scoring_run_summary
+    from photosort.api.projects import criterion_scoring_run_summary
     from photosort.models import ScanStatus
 
     finished = {"status": ScanStatus.SUCCESS, "phase": None, "phase_started_at": None}
-    without = await _criterion_scoring_run_summary(db_session, _run_row(**finished))
-    counted = await _criterion_scoring_run_summary(
+    without = await criterion_scoring_run_summary(db_session, _run_row(**finished))
+    counted = await criterion_scoring_run_summary(
         db_session, _run_row(**finished, persons_photos_total=5, persons_photos_processed=5)
     )
 
@@ -1290,7 +1290,7 @@ async def test_no_person_endpoint_moves_the_draft_but_the_next_rebuild_does(
 
 
 class RecordingLock:
-    """Ersatz fuer `_person_write_lock`, der meldet, sobald jemand an ihr wartet."""
+    """Ersatz fuer `person_write_lock`, der meldet, sobald jemand an ihr wartet."""
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -1342,7 +1342,7 @@ class Gate:
 @pytest.fixture
 def recording_lock(monkeypatch: pytest.MonkeyPatch) -> RecordingLock:
     lock = RecordingLock()
-    monkeypatch.setattr(persons_api, "_person_write_lock", lock)
+    monkeypatch.setattr(persons_api, "person_write_lock", lock)
     return lock
 
 

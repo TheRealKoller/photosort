@@ -582,7 +582,7 @@ def _cloud_cost_total(phases: list[CloudPhaseSummaryOut]) -> float | None:
     return sum(phase.cost_usd for phase in phases if phase.cost_usd is not None)
 
 
-def _phase_progress(
+def phase_progress(
     run: CriterionScoringRun, phases: list[CloudPhaseSummaryOut]
 ) -> tuple[int | None, int | None]:
     """Der Zaehler-/Nenner-Stand GENAU DES laufenden Teilschritts.
@@ -619,7 +619,7 @@ _CLOUD_PURPOSE_BY_PHASE: dict[ClassificationPhase, CloudVisionPhase] = {
 }
 
 
-def _phase_remaining_seconds(
+def phase_remaining_seconds(
     run: CriterionScoringRun, phases: list[CloudPhaseSummaryOut]
 ) -> float | None:
     """Die Restdauer des laufenden Teilschritts, oder `null`.
@@ -629,7 +629,7 @@ def _phase_remaining_seconds(
     zaehlte eine laengst beendete Zeile weiter hoch, ohne dass etwas fehlschluege (AK8)."""
     if run.status is not ScanStatus.RUNNING or run.phase is None:
         return None
-    processed, total = _phase_progress(run, phases)
+    processed, total = phase_progress(run, phases)
     return remaining_seconds(
         phase_started_at=run.phase_started_at,
         now=now_utc(),
@@ -638,7 +638,7 @@ def _phase_remaining_seconds(
     )
 
 
-async def _criterion_scoring_run_summary(
+async def criterion_scoring_run_summary(
     session: AsyncSession, run: CriterionScoringRun
 ) -> CriterionScoringRunSummary:
     """FELDWEISE konstruiert, nie ueber `model_validate(run)`: `cloud_phases`,
@@ -663,7 +663,7 @@ async def _criterion_scoring_run_summary(
         estimated_cost_usd=run.estimated_cost_usd,
         cloud_phases=phases,
         cloud_cost_total_usd=_cloud_cost_total(phases),
-        phase_remaining_seconds=_phase_remaining_seconds(run, phases),
+        phase_remaining_seconds=phase_remaining_seconds(run, phases),
         persons_photos_total=run.persons_photos_total,
         persons_photos_processed=run.persons_photos_processed,
         cancel_requested_at=run.cancel_requested_at,
@@ -772,7 +772,7 @@ async def _to_project_out(
             ScoringRunSummary.model_validate(scoring_run) if scoring_run is not None else None
         ),
         last_criterion_scoring_run=(
-            await _criterion_scoring_run_summary(session, criterion_scoring_run)
+            await criterion_scoring_run_summary(session, criterion_scoring_run)
             if criterion_scoring_run is not None
             else None
         ),
@@ -1202,7 +1202,7 @@ async def trigger_classify(
     # Cloud-Aufruf statt, speichert der Lauf `NULL` - "keine Schaetzung", nicht "0 USD geschaetzt".
     # Die ANTWORT von `GET .../classify/estimate` bleibt davon unberuehrt und nennt fuer den
     # kostenfreien Weg weiterhin `0.0` (S7).
-    estimate = await _build_classification_estimate(
+    estimate = await build_classification_estimate(
         session, project, mode="local" if payload.mode == "local" else "project"
     )
     cloud_contact = (
@@ -1327,14 +1327,14 @@ async def estimate_classification(
     project = await _get_project_or_404(project_id, session)
 
     try:
-        return await _build_classification_estimate(session, project, mode=mode)
+        return await build_classification_estimate(session, project, mode=mode)
     except UnknownModelChoiceError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=MODEL_CHOICE_UNAVAILABLE_DETAIL
         ) from None
 
 
-async def _build_classification_estimate(
+async def build_classification_estimate(
     session: AsyncSession,
     project: Project,
     *,

@@ -2140,9 +2140,9 @@ class TestExport:
             "cases": [],
         }
 
-        reviews_api._guard_export_shape(valid)
+        reviews_api.guard_export_shape(valid)
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape({**valid, "projektname": "Costa Rica"})
+            reviews_api.guard_export_shape({**valid, "projektname": "Costa Rica"})
         poisoned = {
             **valid,
             "cases": [
@@ -2158,15 +2158,15 @@ class TestExport:
             ],
         }
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(poisoned)
+            reviews_api.guard_export_shape(poisoned)
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(
+            reviews_api.guard_export_shape(
                 {**valid, "review": {**valid["review"], "finished_at": None}}
             )
         # Auch die Merkmals-Aufschluesselung ist eine Positivliste: ein unbekanntes Merkmal oder
         # eine fremde Ordnung faellt auf, bevor die Datei eine KI erreicht.
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(
+            reviews_api.guard_export_shape(
                 {
                     **valid,
                     "review": {
@@ -2186,14 +2186,14 @@ class TestExport:
             )
         reordered = dict(reversed(list(valid["review"]["counts_by_motif"].items())))
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(
+            reviews_api.guard_export_shape(
                 {**valid, "review": {**valid["review"], "counts_by_motif": reordered}}
             )
         # Die beiden Zaehlformen sind nicht austauschbar: eine Merkmalszeile ohne Richtung und
         # eine Zwecke-Zeile mit Richtung werden beide abgewiesen.
         four_keys = {"compared": 0, "matching": 0, "deviating": 0, "presented": 0}
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(
+            reviews_api.guard_export_shape(
                 {
                     **valid,
                     "review": {
@@ -2207,7 +2207,7 @@ class TestExport:
             )
         six_keys = {**four_keys, "a_only": 0, "b_only": 0}
         with pytest.raises(RuntimeError):
-            reviews_api._guard_export_shape(
+            reviews_api.guard_export_shape(
                 {
                     **valid,
                     "review": {

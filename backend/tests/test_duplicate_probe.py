@@ -20,13 +20,13 @@ from photosort.db import Base, make_engine, make_session_factory
 from photosort.duplicate_probe import (
     OLD_REFERENCE_HAMMING,
     ProbePhoto,
-    _distribution,
-    _groups_of,
-    _summarise,
+    distribution,
+    groups_of,
     largest_similar_span,
     main,
     old_transitive_groups,
     pair_counts,
+    summarise,
 )
 from photosort.models import Photo, PhotoScore, Project, ScanStatus, ScoringRun
 from photosort.scoring import (
@@ -114,9 +114,9 @@ class TestTheNewGroupingSplitsTheChain:
             _fingerprint(3, phash=_mask(12), fine_phash=_mask(40), moment=BASE + 10 * MINUTE),
         ]
 
-        old = _summarise(old_transitive_groups(photos), {p.photo_id: p.taken_at for p in photos})
+        old = summarise(old_transitive_groups(photos), {p.photo_id: p.taken_at for p in photos})
         mapping = assign_duplicate_groups(fingerprints).duplicate_of
-        new = _summarise(_groups_of(mapping), {p.photo_id: p.taken_at for p in photos})
+        new = summarise(groups_of(mapping), {p.photo_id: p.taken_at for p in photos})
 
         assert old.groups == 1
         assert old.largest == 3
@@ -129,7 +129,7 @@ class TestGroupSummary:
     def test_sizes_losers_and_the_largest_group(self) -> None:
         moments = {photo_id: BASE for photo_id in (1, 2, 3, 4, 5)}
 
-        summary = _summarise([[1, 2, 3], [4, 5], [6]], moments)
+        summary = summarise([[1, 2, 3], [4, 5], [6]], moments)
 
         assert summary.groups == 2
         assert summary.losers == 3
@@ -148,8 +148,8 @@ class TestGroupSummary:
         assert span == 5 * MINUTE
 
     def test_a_flat_distribution_is_named_keine(self) -> None:
-        assert _distribution(()) == "keine"
-        assert _distribution((2, 2, 3)) == "2:2, 3:1"
+        assert distribution(()) == "keine"
+        assert distribution((2, 2, 3)) == "2:2, 3:1"
 
 
 class TestPairCounts:
