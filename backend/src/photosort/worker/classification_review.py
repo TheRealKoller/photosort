@@ -42,7 +42,6 @@ from photosort.classification_comparison import (
 )
 from photosort.cloud_vision import TokenUsage
 from photosort.config import settings
-from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.eye_client import (
     EyeClientLike,
@@ -73,7 +72,7 @@ from photosort.remote_classification import (
     RemoteClassification,
     build_category_classification_client,
 )
-from photosort.run_cancel import RunCancelled, watch_cancel_requests
+from photosort.run_cancel import RunCancelled
 from photosort.thumbnails import variant_path
 
 # Der MIME-Typ des `display`-Bildes - dieselbe feste Angabe wie im uebrigen Cloud-Pfad.
@@ -689,6 +688,10 @@ async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int 
     Die Zeile legt die API als `QUEUED` an; hier wird sie uebernommen. Wurde sie in der
     Warteschlange abgebrochen, endet der Job ohne jede Arbeit. Der Abbruch-Beobachter macht die
     Wartezeiten der Cloud-Drosselung unterbrechbar."""
+    # Ueber das Modul nachgeschlagen, nicht beim Import gebunden: nur so trifft ein Test-Double,
+    # das `photosort.db.async_session_factory` ersetzt, den Job auch wirklich.
+    from photosort.db import async_session_factory  # noqa: PLC0415
+    from photosort.run_cancel import watch_cancel_requests  # noqa: PLC0415
 
     async with async_session_factory() as session:
         review = await runs.take_over_queued_run(session, ClassificationReview, review_id)
