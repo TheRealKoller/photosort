@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from photosort.api.photos import _suggestion_reason
+from photosort.api.photos._conversion import suggestion_reason
 from photosort.duplicates import decision_effective_for, effective_decision_for, keep_possible_for
 from photosort.models import (
     DuplicateDecision,
@@ -214,19 +214,19 @@ def test_keep_impossible_means_exactly_low_quality_among_photos_carrying_a_sugge
     low_quality = {
         id(photo)
         for photo in mit_vorschlag
-        if photo.score is not None and _suggestion_reason(photo.score) == "low_quality"
+        if photo.score is not None and suggestion_reason(photo.score) == "low_quality"
     }
 
     # Gegenprobe gegen die selbsterfuellende Variante: beide Seiten leer waere ebenfalls gleich.
     assert unmoeglich
     assert unmoeglich == low_quality
 
-    # Und die Einschraenkung selbst: OHNE Vorschlag nennt `_suggestion_reason` weiterhin
+    # Und die Einschraenkung selbst: OHNE Vorschlag nennt `suggestion_reason` weiterhin
     # `low_quality`, `keep_possible` ist dort aber `true` - ueber dem vollen Bestand liefe die
     # Aequivalenz also auseinander.
     ohne_vorschlag = _photo()
     assert ohne_vorschlag.score is not None
-    assert _suggestion_reason(ohne_vorschlag.score) == "low_quality"
+    assert suggestion_reason(ohne_vorschlag.score) == "low_quality"
     assert keep_possible_for(ohne_vorschlag) is True
 
 

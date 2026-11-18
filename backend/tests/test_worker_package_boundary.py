@@ -281,9 +281,9 @@ def test_a_test_patches_no_name_through_the_package() -> None:
     Patch waere still wirkungslos, weil jeder Aufrufer seine eigene Bindung nachschlaegt. Gepatcht
     wird deshalb an der Nachschlagestelle (ADR 0149 Punkt 3)."""
     probe = ast.parse(
-        "import photosort.worker as w\nmonkeypatch.setattr(w, '_set_phase', lambda *a, **k: None)\n"
+        "import photosort.worker as w\nmonkeypatch.setattr(w, 'set_phase', lambda *a, **k: None)\n"
     )
-    assert _fremde_paket_patches(probe, _PAKET, set()) == ["_set_phase"]
+    assert _fremde_paket_patches(probe, _PAKET, set()) == ["set_phase"]
 
     verstoesse: dict[str, list[str]] = {}
     gelesen = False

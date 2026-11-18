@@ -27,7 +27,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
-from photosort.opencloud.client import Drive, OpenCloudError, _join
+from photosort.opencloud.client import Drive, OpenCloudError, join_remote_path
 from photosort.worker import (
     build_export_folder_name,
     run_export,
@@ -167,11 +167,11 @@ async def test_export_copies_each_included_photo_to_the_run_folder(
     assert client.mkcol_calls[0] == "PhotoSort-Export"
     assert client.mkcol_calls[1] == export_run.target_path
     assert client.mkcol_calls[1].startswith("PhotoSort-Export/Costa Rica ")
-    # Je Foto ein COPY mit Ziel `Lauf-Ordner/relative_path` (ueber `_join` - Segmente werden
+    # Je Foto ein COPY mit Ziel `Lauf-Ordner/relative_path` (ueber `join_remote_path` - Segmente werden
     # quotiert, Leerzeichen zu %20).
     assert {source for source, _ in client.copy_calls} == {"a.jpg", "b.jpg"}
     for source, dest in client.copy_calls:
-        assert dest == _join(DRIVE.webdav_url, f"{export_run.target_path}/{source}")
+        assert dest == join_remote_path(DRIVE.webdav_url, f"{export_run.target_path}/{source}")
 
 
 async def test_subfolders_get_one_deduplicated_mkcol_each(db_session: AsyncSession) -> None:

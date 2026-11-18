@@ -57,7 +57,7 @@ def selection_state_of(
     Seit ADR 0098 kann eine Zeile allein den Favoriten tragen, und ein Existenztest machte aus
     einer Auszeichnung eine Streichung.
 
-    EINE Stelle fuer alle Leser (`_to_photo_out`, der Zustandsfilter von `album_selection` und
+    EINE Stelle fuer alle Leser (`to_photo_out`, der Zustandsfilter von `album_selection` und
     `included_photos`): Mehrmals geschrieben liefen die Felder an dem Tag auseinander, an dem
     eine der Stellen sich aendert."""
     return selection_state(
@@ -72,7 +72,7 @@ def selection_state_of(
 async def included_photos(session: AsyncSession, project_id: int) -> list[IncludedPhoto]:
     """Die inkludierte Endauswahlmenge eines Projekts, deterministisch nach `photo_id`.
 
-    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos/_reads.py::_user_count`),
+    `user_count` ist die GLOBALE Nutzerzahl (dieselbe Ableitung wie `api/photos/_reads.py::user_count`),
     der Vorschlagsbezug der letzte erfolgreiche Kriterien-Lauf. Ohne einen solchen Lauf gibt es
     weder Vorschlag noch Einigkeit - die Menge ist leer."""
     user_count = (await session.execute(select(func.count()).select_from(User))).scalar_one()

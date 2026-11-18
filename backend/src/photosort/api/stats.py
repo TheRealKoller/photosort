@@ -225,7 +225,7 @@ COST_CURRENCY = "USD"
 
 # Statisches SQL-Literal mit `current_database()` - NIE ein per f-String zusammengesetzter
 # Datenbankname (Security-Abschnitt der Spec, Punkt 3).
-_DATABASE_SIZE_SQL = text("SELECT pg_database_size(current_database())")
+DATABASE_SIZE_SQL = text("SELECT pg_database_size(current_database())")
 
 
 def database_share_bytes(
@@ -242,7 +242,7 @@ def database_share_bytes(
     return round(total_database_bytes * project_photo_count / total_photo_count)
 
 
-async def _local_database_bytes_estimate(
+async def local_database_bytes_estimate(
     session: AsyncSession, project_photo_count: int
 ) -> int | None:
     """Dialekt-Weiche ueber `dialect.name`, BEWUSST nicht ueber ein try/except um fehlschlagendes
@@ -251,7 +251,7 @@ async def _local_database_bytes_estimate(
     der Wert ist `None` ("nicht ermittelbar"), nicht `0`."""
     if session.get_bind().dialect.name != "postgresql":
         return None
-    total_database_bytes = (await session.execute(_DATABASE_SIZE_SQL)).scalar_one()
+    total_database_bytes = (await session.execute(DATABASE_SIZE_SQL)).scalar_one()
     total_photo_count = (await session.execute(select(func.count(Photo.id)))).scalar_one()
     return database_share_bytes(
         int(total_database_bytes), project_photo_count, int(total_photo_count)
@@ -275,7 +275,7 @@ def _photos_of_project(project_id: int) -> Select[tuple[int]]:
 async def _latest_successful_criterion_scoring_run_id(
     session: AsyncSession, project_id: int
 ) -> int | None:
-    """Bewusst identisch zu api/photos/_reads.py::_latest_successful_criterion_scoring_run_id (dort
+    """Bewusst identisch zu api/photos/_reads.py::latest_successful_criterion_scoring_run_id (dort
     ebenfalls lokal gehalten): sortiert nach `started_at DESC`, damit ein neuerer FEHLGESCHLAGENER
     Lauf den aelteren erfolgreichen nicht verdraengt."""
     return (
@@ -713,9 +713,7 @@ async def get_project_stats(
         storage=StorageOut(
             opencloud_bytes=opencloud_bytes,
             local_cache_bytes=cache_usage.total_bytes,
-            local_database_bytes_estimate=await _local_database_bytes_estimate(
-                session, photo_count
-            ),
+            local_database_bytes_estimate=await local_database_bytes_estimate(session, photo_count),
         ),
         taken_at_earliest=taken_at_earliest,
         taken_at_latest=taken_at_latest,

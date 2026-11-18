@@ -394,7 +394,7 @@ class TestTheFetchCommandWritesBothExtracts:
             with zipfile.ZipFile(archive, "w") as bundle:
                 bundle.writestr(GEONAMES_ARCHIVE_MEMBER, source)
 
-        monkeypatch.setattr(place_dataset, "_download_archive", fake_download)
+        monkeypatch.setattr(place_dataset, "download_archive", fake_download)
         target = tmp_path / "geonames-auszug.txt.gz"
         landmark = tmp_path / "sehenswuerdigkeits-auszug.txt.gz"
 
@@ -425,7 +425,7 @@ class TestTheFetchCommandWritesBothExtracts:
         assert captured["landmark"] == Path("/daten/sehenswuerdigkeits-auszug.txt.gz")
 
     def test_an_explicit_second_path_wins(self) -> None:
-        parser = place_dataset._build_parser()
+        parser = place_dataset.build_parser()
 
         assert parser.parse_args([]).sehenswuerdigkeits_pfad is None
         assert (

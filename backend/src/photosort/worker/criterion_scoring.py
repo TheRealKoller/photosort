@@ -44,19 +44,19 @@ from photosort.models import (
 from photosort.run_cancel import RunCancelled
 from photosort.worker._criterion import CriterionRunContext
 from photosort.worker._criterion.landmark import (
-    _landmark_place_cells,
-    _landmark_place_hints,
-    _run_landmark_phase,
-    _select_landmark_candidates,
+    landmark_place_cells,
+    landmark_place_hints,
+    run_landmark_phase,
+    select_landmark_candidates,
 )
-from photosort.worker._criterion.local import _run_local_phase, _write_local_motif_header
-from photosort.worker._criterion.persons import _recognize_persons
+from photosort.worker._criterion.local import run_local_phase, write_local_motif_header
+from photosort.worker._criterion.persons import recognize_persons
 from photosort.worker._criterion.ranking import (
     LandmarkGazetteerFactory,
     PlaceResolverFactory,
-    _apply_run_selection,
-    _build_grouping_and_rankings,
-    _place_infos,
+    apply_run_selection,
+    build_grouping_and_rankings,
+    place_infos,
 )
 
 
@@ -107,7 +107,7 @@ async def rebuild_run_selection(session: AsyncSession, project_id: int) -> None:
     run = await _latest_successful_criterion_run(session, project_id)
     if run is None:
         return
-    await _apply_run_selection(session, run, project_id)
+    await apply_run_selection(session, run, project_id)
 
 
 async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
@@ -177,13 +177,13 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     # Sehenswuerdigkeitsnamens - ein Durchgang ueber den zweiten Auszug dauerte gemessen 43 s und
     # waere ueber eine authentifizierte Anfrage beliebig oft wiederholbar. Der Neuaufbau liest die
     # abgelegte Auskunft; unbekannte Namen behalten ihre Namen (Zustand 1).
-    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
+    await build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
     # Der Vorschlag gehoert zur neuen Gliederung: ohne ihn stuende `selection_position` nach dem
     # Loeschen der Rangzeilen ueberall auf `NULL`.
-    await _apply_run_selection(session, run, project_id)
+    await apply_run_selection(session, run, project_id)
 
 
-async def _start_criterion_scoring_run(
+async def start_criterion_scoring_run(
     session: AsyncSession,
     project: Project,
     scoring_run_id: int,
@@ -323,7 +323,7 @@ async def _build_run_context(
         run=run,
         project_id=project_id,
         cache_dir=cache_dir,
-        now=runs._now_utc(),
+        now=runs.now_utc(),
         rows=rows,
         candidate_values={},
         area_fractions_by_photo_id={},
@@ -383,10 +383,10 @@ async def run_criterion_scoring(
       Installationsvorgabe auf. Client, Schrittmacher, Kosten und `provider`-Spalte lesen
       denselben Wert."""
     if run is None:
-        run = await _start_criterion_scoring_run(
+        run = await start_criterion_scoring_run(
             session, project, scoring_run_id, cloud_requested=use_cloud
         )
-    runs._set_phase(run, ClassificationPhase.CRITERIA)
+    runs.set_phase(run, ClassificationPhase.CRITERIA)
     await session.commit()
 
     try:
@@ -411,7 +411,7 @@ async def run_criterion_scoring(
             build_face_analyzer=build_face_analyzer,
         )
 
-        await _run_local_phase(context, models)
+        await run_local_phase(context, models)
 
         # Die Cloud-Phase laeuft NACH der obigen (rein lokalen/synchronen) Foto-Schleife und VOR
         # der Kategorieableitung/rank_photos, damit landmark-Werte noch in die
@@ -429,14 +429,14 @@ async def run_criterion_scoring(
             # unsichtbarer Teil der Kriterien-Phase: bliebe `phase` hier auf `criteria`, waehrend
             # `photos_processed` bereits auf `photos_total` steht, waere ein langer Durchlauf von
             # einem haengengebliebenen nicht zu unterscheiden.
-            runs._set_phase(run, ClassificationPhase.LANDMARK)
+            runs.set_phase(run, ClassificationPhase.LANDMARK)
             await session.commit()
             already_scored_photo_ids = {
                 photo_id
                 for photo_id, criterion_key in context.existing_criterion_scores
                 if criterion_key == "landmark"
             }
-            landmark_candidate_ids = _select_landmark_candidates(
+            landmark_candidate_ids = select_landmark_candidates(
                 context.candidate_values, already_scored_photo_ids
             )
             photos_by_id = {photo.id: photo for photo, _score in rows}
@@ -453,15 +453,15 @@ async def run_criterion_scoring(
             # wird hier nicht aufgerufen, und ein Syntaxbaum-Waechter in
             # tests/test_worker_criterion_scoring.py haelt das fest - ein hinzugefuegter Aufruf
             # roetet sonst keinen Verhaltenstest, solange die Messlage echte Koordinaten traegt.
-            landmark_place_infos = await _place_infos(
+            landmark_place_infos = await place_infos(
                 session,
                 project.id,
-                _landmark_place_cells(landmark_candidate_photos),
+                landmark_place_cells(landmark_candidate_photos),
                 models.build_place_resolver,
             )
-            landmark_hints = _landmark_place_hints(landmark_candidate_photos, landmark_place_infos)
+            landmark_hints = landmark_place_hints(landmark_candidate_photos, landmark_place_infos)
             await session.commit()
-            await _run_landmark_phase(
+            await run_landmark_phase(
                 context,
                 models,
                 candidate_photos=landmark_candidate_photos,
@@ -469,7 +469,7 @@ async def run_criterion_scoring(
                 landmark_model=landmark_model,
             )
 
-        await _write_local_motif_header(context)
+        await write_local_motif_header(context)
 
         # Der RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
         # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
@@ -478,11 +478,11 @@ async def run_criterion_scoring(
         # `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
         # Pruefpunkt vor der Rangfolge: ein Abbruch nach dem letzten Kriterium ueberspringt
         # Rangfolge, Personenangabe und Auswahlvorschlag - der Lauf bleibt ein Teilstand.
-        await runs._raise_if_cancel_requested(session, run)
-        runs._set_phase(run, ClassificationPhase.RANKING)
+        await runs.raise_if_cancel_requested(session, run)
+        runs.set_phase(run, ClassificationPhase.RANKING)
         await session.commit()
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             session,
             run,
             project.id,
@@ -498,29 +498,29 @@ async def run_criterion_scoring(
 
         # Die LETZTE Phase, nach der Rangfolge: Die Personenangabe ist kein Motiv und geht in
         # keine Motivstaerke und keine Rangfolge ein.
-        await _recognize_persons(session, run, project_id, cache_dir, models.build_face_analyzer)
+        await recognize_persons(session, run, project_id, cache_dir, models.build_face_analyzer)
 
         # DER AUSWAHLVORSCHLAG hinter der Phase `persons` und AUSSERHALB von
-        # `_recognize_persons`: Er liest die Namen, die dieser Lauf ergeben hat - auch beim ersten
+        # `recognize_persons`: Er liest die Namen, die dieser Lauf ergeben hat - auch beim ersten
         # Lauf eines Projekts -, und entsteht auch dann, wenn die Phase entfaellt. Kein eigener
         # `ClassificationPhase`-Wert: er rechnet unter der zuletzt gesetzten Phase und landet
         # im selben Commit wie der Erfolgsvermerk.
-        await _apply_run_selection(session, run, project_id)
+        await apply_run_selection(session, run, project_id)
 
         run.status = ScanStatus.SUCCESS
-        runs._set_phase(run, None)
-        run.finished_at = runs._now_utc()
+        runs.set_phase(run, None)
+        run.finished_at = runs.now_utc()
         await session.commit()
         return run
     except RunCancelled:
-        await runs._finish_cancelled(session, run)
+        await runs.finish_cancelled(session, run)
         return run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan/run_project_scoring.
-        await runs._fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+        await runs.fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
         # Kein Rollback bereits committeter Fortschritts-/Kriterien-Zwischenstaende - identisches
         # Muster wie run_project_scoring.
-        await runs._fail_run(session, run, str(exc))
+        await runs.fail_run(session, run, str(exc))
         return run

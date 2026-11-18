@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort import events, pricing, selection, worker
 from photosort import events as events_module
 from photosort.album_suitability import normalize_level
-from photosort.api.projects import _count_landmark_candidates
+from photosort.candidate_counts import count_landmark_candidates
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -78,16 +78,12 @@ from photosort.pricing import compute_cost_usd
 from photosort.quality import LOCAL_CORRECTION_SPAN
 from photosort.thumbnails import display_path
 from photosort.worker import _runs as worker_runs
-from photosort.worker import (
-    _select_landmark_candidates,
-    rebuild_run_grouping,
-    run_criterion_scoring,
-    run_project_scoring,
-)
 from photosort.worker import criterion_scoring as worker_criterion_scoring
+from photosort.worker import rebuild_run_grouping, run_criterion_scoring, run_project_scoring
 from photosort.worker._criterion import landmark as worker_landmark
 from photosort.worker._criterion import local as worker_local
 from photosort.worker._criterion import ranking as worker_ranking
+from photosort.worker._criterion.landmark import select_landmark_candidates
 from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
@@ -249,7 +245,7 @@ def _no_face_landmarker() -> NoFaceLandmarker:
 
 def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
     # Analog test_classification.py::_rotation_matrix_y (Konvention siehe classification.py::
-    # _yaw_degrees_from_rotation_matrix-Docstring) - kleine, bewusste Duplikation statt einer
+    # yaw_degrees_from_rotation_matrix-Docstring) - kleine, bewusste Duplikation statt einer
     # Test-Utility-Abhaengigkeit zwischen zwei Testdateien.
     theta = math.radians(degrees_value)
     matrix = np.eye(4)
@@ -1503,7 +1499,7 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
 
     monkeypatch.setattr(worker_local, "CRITERION_SCORING_COMMIT_BATCH_SIZE", 1)  # type: ignore[attr-defined]
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)  # type: ignore[attr-defined]
+    monkeypatch.setattr(worker_runs, "now_utc", lambda: sentinel)  # type: ignore[attr-defined]
 
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -1833,36 +1829,36 @@ def _failing_landmark_client_builder(model: str) -> NoReturn:
 
 
 class TestSelectLandmarkCandidates:
-    """Reine, DB-freie Funktion (analog _classify_scan_entries) - isoliert testbar, inkl. dem
+    """Reine, DB-freie Funktion (analog classify_scan_entries) - isoliert testbar, inkl. dem
     Grenzfall exakt auf der Schwelle, ohne einen echten Kandidatenlauf aufzusetzen."""
 
     def test_below_both_thresholds_is_not_a_candidate(self) -> None:
         candidate_values = {1: {"landschaft": 0.0, "gebaeude": 0.0}}
-        assert _select_landmark_candidates(candidate_values, set()) == []
+        assert select_landmark_candidates(candidate_values, set()) == []
 
     def test_landschaft_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
         # specs/features/0217, ADR 0047 Punkt 5: Vorfilterung auf `landschaft` statt
         # `content_landscape` UMGESTELLT (nicht ergaenzt).
         candidate_values = {1: {"landschaft": 0.01, "gebaeude": 0.0}}
-        assert _select_landmark_candidates(candidate_values, set()) == [1]
+        assert select_landmark_candidates(candidate_values, set()) == [1]
 
     def test_gebaeude_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
         candidate_values = {1: {"landschaft": 0.0, "gebaeude": 0.01}}
-        assert _select_landmark_candidates(candidate_values, set()) == [1]
+        assert select_landmark_candidates(candidate_values, set()) == [1]
 
     def test_just_below_landschaft_threshold_is_not_a_candidate(self) -> None:
         candidate_values = {1: {"landschaft": 0.009, "gebaeude": 0.0}}
-        assert _select_landmark_candidates(candidate_values, set()) == []
+        assert select_landmark_candidates(candidate_values, set()) == []
 
     def test_a_high_content_landscape_value_alone_is_no_longer_a_candidate(self) -> None:
-        assert _select_landmark_candidates({1: {"content_landscape": 1.0}}, set()) == []
+        assert select_landmark_candidates({1: {"content_landscape": 1.0}}, set()) == []
 
     def test_missing_values_count_as_not_present(self) -> None:
-        assert _select_landmark_candidates({1: {}}, set()) == []
+        assert select_landmark_candidates({1: {}}, set()) == []
 
     def test_already_scored_photo_is_excluded_even_if_it_would_pass_the_threshold(self) -> None:
         candidate_values = {1: {"landschaft": 0.9}}
-        assert _select_landmark_candidates(candidate_values, {1}) == []
+        assert select_landmark_candidates(candidate_values, {1}) == []
 
 
 async def test_consent_disabled_by_default_never_calls_landmark_client_builder(
@@ -2331,8 +2327,8 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
 
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::_record_cloud_vision_error/
-# _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
+# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::record_cloud_vision_error/
+# clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
 # (Teststrategie-Abschnitt der Spec).
 
 
@@ -2856,8 +2852,8 @@ async def test_classify_scene_is_called_exactly_once_per_photo_for_both_criteria
 
 
 def test_landschaft_is_part_of_the_image_analysis_criterion_keys() -> None:
-    assert "landschaft" in worker_local._IMAGE_ANALYSIS_CRITERION_KEYS
-    assert worker_local._IMAGE_ANALYSIS_CRITERION_SOURCES["landschaft"] == CriterionSource.LOCAL_ML
+    assert "landschaft" in worker_local.IMAGE_ANALYSIS_CRITERION_KEYS
+    assert worker_local.IMAGE_ANALYSIS_CRITERION_SOURCES["landschaft"] == CriterionSource.LOCAL_ML
 
 
 async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
@@ -3650,7 +3646,7 @@ class TestLandmarkPhaseLiveCounters:
         liest ausschliesslich `last_progress_at`, ein Test dort verdoppelte diese Zusage."""
         monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
         ticks = iter(datetime(2030, 1, 1, 12, 0, second) for second in range(0, 60))
-        monkeypatch.setattr(worker_runs, "_now_utc", lambda: next(ticks))
+        monkeypatch.setattr(worker_runs, "now_utc", lambda: next(ticks))
 
         project, scoring_run, _photos = await _landmark_cost_setup(
             db_session, tmp_path, photo_count=3
@@ -4246,7 +4242,7 @@ class TestLogCloudVisionThrottling:
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+            worker_runs.log_cloud_vision_throttling("landmark", "anthropic", stats)
 
         assert caplog.records == []
 
@@ -4258,7 +4254,7 @@ class TestLogCloudVisionThrottling:
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-            worker._log_cloud_vision_throttling("remote_category", "mistral", stats)
+            worker_runs.log_cloud_vision_throttling("remote_category", "mistral", stats)
 
         assert len(caplog.records) == 1
         message = caplog.records[0].getMessage()
@@ -4281,7 +4277,7 @@ class TestLogCloudVisionThrottling:
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+            worker_runs.log_cloud_vision_throttling("landmark", "anthropic", stats)
 
         message = caplog.records[0].getMessage()
         assert "1 Anfrage eingereiht" in message
@@ -4297,7 +4293,7 @@ class TestLogCloudVisionThrottling:
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+            worker_runs.log_cloud_vision_throttling("landmark", "anthropic", stats)
 
         message = caplog.records[0].getMessage()
         assert "2 Anfragen eingereiht" in message
@@ -4316,7 +4312,7 @@ class TestLogCloudVisionThrottling:
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+            worker_runs.log_cloud_vision_throttling("landmark", "anthropic", stats)
 
         assert "anbieterweit" in caplog.records[0].getMessage()
 
@@ -5394,7 +5390,7 @@ async def test_an_ausschuss_photo_gets_no_motif_header(
     assert await db_session.get(PhotoMotifAssessment, rejected.id) is None
 
 
-# specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 6: `_compute_content_criteria`
+# specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 6: `compute_content_criteria`
 # unterscheidet ab hier zwei Faelle, die vorher beide `0.0` ergaben - NICHT MESSBAR (die Detektion
 # lief, das Foto traegt das Merkmal nicht) und NICHT BERECHENBAR (Detektor fehlte, Ausnahme,
 # Bild unlesbar). Nur der erste landet in `not_measurable`.
@@ -5462,7 +5458,7 @@ class TestWhatIsNotMeasurable:
         face_landmarker: object | None,
         animal_detector: object | None = None,
     ) -> worker_local.ContentCriteria:
-        return worker._compute_content_criteria(
+        return worker_local.compute_content_criteria(
             cache_dir,
             photo,
             face_detector,  # type: ignore[arg-type]
@@ -5963,7 +5959,7 @@ class TestTheLandmarkEstimateCountsWhatTheRunSends:
         # Erster Lauf OHNE Cloud: er legt die Kriterienwerte an, aus denen die Schaetzung ihre
         # Kandidaten ableitet. Sie ist strukturell eine Schaetzung, keine Vorausberechnung.
         await self._run(db_session, project, scoring_run.id, tmp_path)
-        geschaetzt = await _count_landmark_candidates(db_session, project.id)
+        geschaetzt = await count_landmark_candidates(db_session, project.id)
 
         client = RecordingLandmarkClient()
         await self._run(db_session, project, scoring_run.id, tmp_path, landmark_client=client)
@@ -6021,7 +6017,7 @@ def _locality_answer(locality: str) -> PlaceAnswer:
     )
 
 
-async def _run_landmark_phase(
+async def run_landmark_phase(
     session: AsyncSession,
     project: Project,
     scoring_run_id: int,
@@ -6077,7 +6073,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         client = RecordingLandmarkClient()
 
-        run = await _run_landmark_phase(
+        run = await run_landmark_phase(
             db_session, project, scoring_run.id, tmp_path, client, resolver
         )
 
@@ -6117,7 +6113,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         client = RecordingLandmarkClient()
 
-        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+        await run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
 
         assert client.hints == [PlaceHint(cell=landmark_place_cell(*GARMISCH))]
 
@@ -6147,7 +6143,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         client = RecordingLandmarkClient()
 
-        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+        await run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
 
         assert client.hints == [
             PlaceHint(locality="Garmisch-Partenkirchen"),
@@ -6183,7 +6179,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         client = RecordingLandmarkClient()
 
-        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+        await run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
 
         assert client.hints == [PlaceHint(locality="Garmisch-Partenkirchen"), None]
 
@@ -6211,7 +6207,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
             {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
         )
 
-        await _run_landmark_phase(
+        await run_landmark_phase(
             db_session, project, scoring_run.id, tmp_path, RecordingLandmarkClient(), resolver
         )
 
@@ -6238,7 +6234,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
 
         assert "infer_locations" not in called
         # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
-        assert "_place_infos" in called
+        assert "place_infos" in called
 
     async def test_without_a_resolver_the_coordinate_stage_takes_over_and_the_run_succeeds(
         self, db_session: AsyncSession, tmp_path: Path
@@ -6260,7 +6256,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         _write_display_variant(tmp_path, photo, _flat_image())
         client = RecordingLandmarkClient()
 
-        run = await _run_landmark_phase(
+        run = await run_landmark_phase(
             db_session, project, scoring_run.id, tmp_path, client, _no_resolver
         )
 
@@ -6300,7 +6296,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         client = RecordingLandmarkClient(raise_error=True)
 
         with caplog.at_level(logging.DEBUG):
-            run = await _run_landmark_phase(
+            run = await run_landmark_phase(
                 db_session, project, scoring_run.id, tmp_path, client, resolver
             )
 
@@ -6354,7 +6350,7 @@ class ExplodingEmbedderBuilder:
 
 
 def _no_embedder() -> NoReturn:
-    """Der Fall "Modell nicht ladbar": `_try_build` faengt die Ausnahme und liefert `None`."""
+    """Der Fall "Modell nicht ladbar": `try_build` faengt die Ausnahme und liefert `None`."""
     raise RuntimeError("Einbettungsmodell nicht ladbar")
 
 
@@ -6664,10 +6660,10 @@ class TestTheRegisterMakesTheNamesUniform:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Die Phase wird betreten, aber es gibt nichts zu tun: Im ZWEITEN Lauf ueber dasselbe
-        Projekt sind alle Fotos bereits gescort, `_select_landmark_candidates` liefert die leere
+        Projekt sind alle Fotos bereits gescort, `select_landmark_candidates` liefert die leere
         Liste, und die Blockschleife laeuft null Mal.
 
-        Dieselbe Begruendung wie beim danebenstehenden `_place_infos` ("ein Durchgang durch den
+        Dieselbe Begruendung wie beim danebenstehenden `place_infos` ("ein Durchgang durch den
         Ortsdatensatz ohne offene Zelle waere reine Arbeit"): Ein 113-MB-Modell zu laden, um es
         ungenutzt zu verwerfen, ist Arbeit ohne Gegenwert."""
         project = await _cloud_project(db_session, "kein-kandidat-mehr")
@@ -7105,7 +7101,7 @@ async def test_a_failed_run_leaves_the_old_default_proposal_untouched(
     first_id, project_id = first.id, project.id
     await _seed_old_default_proposal(db_session, first_id, 1)
     before = await _positions_of(db_session, first_id)
-    monkeypatch.setattr(worker_criterion_scoring, "_recognize_persons", failing_phase)
+    monkeypatch.setattr(worker_criterion_scoring, "recognize_persons", failing_phase)
 
     await _run_classification(db_session, project, scoring_run, tmp_path)
 
@@ -7240,7 +7236,7 @@ async def test_the_run_freezes_the_project_category_method_as_its_album_level_so
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
 
-    run = await worker._start_criterion_scoring_run(
+    run = await worker_criterion_scoring.start_criterion_scoring_run(
         db_session, project, scoring_run.id, cloud_requested=False, mode=mode
     )
 

@@ -104,7 +104,7 @@ class DuplicateProbeError(RuntimeError):
     """Ein Abbruch mit einer Meldung fuer den Aufrufer - nie ein Traceback."""
 
 
-def _summarise(groups: Sequence[Sequence[int]], moments: dict[int, datetime]) -> GroupSummary:
+def summarise(groups: Sequence[Sequence[int]], moments: dict[int, datetime]) -> GroupSummary:
     sizes = tuple(sorted((len(members) for members in groups if len(members) > 1), reverse=True))
     spans = [
         max(moments[member] for member in members) - min(moments[member] for member in members)
@@ -144,7 +144,7 @@ def old_transitive_groups(photos: Sequence[ProbePhoto]) -> list[list[int]]:
     return list(grouped.values())
 
 
-def _groups_of(mapping: dict[int, int]) -> list[list[int]]:
+def groups_of(mapping: dict[int, int]) -> list[list[int]]:
     groups: dict[int, list[int]] = defaultdict(list)
     for loser, winner in mapping.items():
         groups[winner].append(loser)
@@ -285,9 +285,9 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
     """Die drei Laeufe und ihre Kennzahlen - eine reine Funktion, kein DB-Zugriff."""
     moments = {photo.photo_id: photo.taken_at for photo in probe.photos}
     by_id = {fingerprint.photo_id: fingerprint for fingerprint in probe.fingerprints}
-    old = _summarise(old_transitive_groups(probe.photos), moments)
+    old = summarise(old_transitive_groups(probe.photos), moments)
     mapping = assign_duplicate_groups(probe.fingerprints)
-    new = _summarise(_groups_of(mapping.duplicate_of), moments)
+    new = summarise(groups_of(mapping.duplicate_of), moments)
     counter_fingerprints = tuple(
         PhotoFingerprint(
             photo_id=fingerprint.photo_id,
@@ -301,8 +301,8 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
         )
         for fingerprint in probe.fingerprints
     )
-    counter = _summarise(
-        _groups_of(assign_duplicate_groups(counter_fingerprints).duplicate_of), moments
+    counter = summarise(
+        groups_of(assign_duplicate_groups(counter_fingerprints).duplicate_of), moments
     )
     candidates, identical, similar = pair_counts(probe.fingerprints)
     return DuplicateMeasurement(
@@ -322,7 +322,7 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
     )
 
 
-def _distribution(sizes: Sequence[int]) -> str:
+def distribution(sizes: Sequence[int]) -> str:
     counts = Counter(sizes)
     return ", ".join(f"{size}:{counts[size]}" for size in sorted(counts)) or "keine"
 
@@ -353,20 +353,20 @@ def render_report(measurement: DuplicateMeasurement) -> str:
         f"- Verlierer: {measurement.old.losers}",
         f"- groesste Gruppe: {measurement.old.largest}",
         f"- groesste Zeitspanne einer Gruppe: {_span(measurement.old.span)}",
-        f"- Groessen: {_distribution(measurement.old.sizes)}",
+        f"- Groessen: {distribution(measurement.old.sizes)}",
         "",
         "## Nachher (mehrstufig, Zeitfenster, Stern)",
         f"- Gruppen: {measurement.new.groups}",
         f"- Verlierer: {measurement.new.losers}",
         f"- groesste Gruppe: {measurement.new.largest}",
         f"- groesste Zeitspanne aehnlicher Mitglieder: {_span(measurement.similar_span)}",
-        f"- Groessen: {_distribution(measurement.new.sizes)}",
+        f"- Groessen: {distribution(measurement.new.sizes)}",
         "",
         "## Gegenlauf ohne Zeit-Herkunft",
         f"- Gruppen: {measurement.counter.groups}",
         f"- Verlierer: {measurement.counter.losers}",
         f"- groesste Gruppe: {measurement.counter.largest}",
-        f"- Groessen: {_distribution(measurement.counter.sizes)}",
+        f"- Groessen: {distribution(measurement.counter.sizes)}",
     ]
     if measurement.measured == 0:
         lines.extend(

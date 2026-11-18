@@ -485,7 +485,7 @@ class BuiltEvent:
     place_cells: tuple[tuple[float, float], ...] = ()
 
 
-def _usable_name(name: str | None) -> str | None:
+def usable_name(name: str | None) -> str | None:
     """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er wird nicht
     geschrieben und zaehlt auch nicht als Traeger eines Eventnamens. Verworfen, nie abgeschnitten:
     Ein gekuerzter Name benennte ein Event falsch."""
@@ -845,7 +845,7 @@ def _name_of(members: Sequence[EventCandidate]) -> str | None:
     KEIN NACHRUECKEN: Der Gewinner hat per Konstruktion das Maximum der Traegerzahlen - reisst
     sein Anteil den Wert, ist jeder andere es erst recht, und das Event traegt keinen Namen.
 
-    Traeger ist ein Foto, dessen Name nach `_usable_name` GENAU der Gewinnername ist. Ein danach
+    Traeger ist ein Foto, dessen Name nach `usable_name` GENAU der Gewinnername ist. Ein danach
     leerer Name zaehlt weder als Traeger noch kann er gewinnen.
 
     Ausgefuehrt NACH Stufe 3 und ausschliesslich hier, an der einen Aufrufstelle `_built`: Gezaehlt
@@ -854,7 +854,7 @@ def _name_of(members: Sequence[EventCandidate]) -> str | None:
     carriers: dict[str, int] = {}
     first_index: dict[str, int] = {}
     for index, member in enumerate(members):
-        name = _usable_name(member.landmark_name)
+        name = usable_name(member.landmark_name)
         if name is None:
             continue
         carriers[name] = carriers.get(name, 0) + 1
@@ -936,7 +936,7 @@ def _place_of(
     return "coordinate", lat, lon
 
 
-def _landmark_name_is_plausible(
+def landmark_name_is_plausible(
     landmark_name: str,
     cells: Sequence[tuple[float, float]],
     landmark_points_by_name: LandmarkPointsByName | None,
@@ -982,7 +982,7 @@ def _built(
     vorher einer mit Ortsbezug stand."""
     landmark_name = _name_of(members)
     cells = _cells_of(members)
-    if landmark_name is not None and not _landmark_name_is_plausible(
+    if landmark_name is not None and not landmark_name_is_plausible(
         landmark_name, cells, landmark_points_by_name
     ):
         landmark_name = None
@@ -1126,7 +1126,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     Der vierte Riegel (d) - das Segment selbst liegt unter der Mindestgroesse - haengt am Segment,
     nicht an der Kante, und steht bei der Auswahl. Weil hier nur Kanteneigenschaften stehen, ist
     eine Kante fuer beide Richtungen gleichzeitig zulaessig oder gleichzeitig gesperrt: Daran haengt
-    die Terminierung (siehe `_round_limit`).
+    die Terminierung (siehe `round_limit`).
 
     KEINE URSACHENMENGE WIRD GELESEN (ADR 0119): Die Unantastbarkeit ist ersatzlos entfallen, und
     damit entscheidet ueber eine Kante allein, was an ihr gemessen wird. Eine Grenze mit
@@ -1213,7 +1213,7 @@ def _smallest_open_index(
     return best
 
 
-def _round_limit(segment_count: int) -> int:
+def round_limit(segment_count: int) -> int:
     """Die Rundenobergrenze: so viele Runden, wie es Segmente gibt.
 
     Sie haelt, weil je Runde genau eines geschieht - zusammenlegen (die Segmentzahl faellt um eins)
@@ -1254,7 +1254,7 @@ def merge_small_segments(
     working = list(segments)
     blocked = [False] * len(working)
     reported: list[BlockedSegment] = []
-    limit = _round_limit(len(working))
+    limit = round_limit(len(working))
     dissolved = 0
     moved: set[int] = set()
     rounds = 0
@@ -1269,7 +1269,7 @@ def merge_small_segments(
         neighbour = _neighbour_for(working, index, merge_max_gap=gap)
         if neighbour is None:
             # BEOBACHTET IN DEM AUGENBLICK, IN DEM ES FESTSTEHT: Ein gesperrtes Segment wird durch
-            # keine spaetere Runde wieder zulaessig (siehe `_round_limit`), und spaeter waeren die
+            # keine spaetere Runde wieder zulaessig (siehe `round_limit`), und spaeter waeren die
             # Nachbarn womoeglich andere.
             reported.append(
                 BlockedSegment(edges=_blocking_edges(working, index, merge_max_gap=gap))
@@ -1404,7 +1404,7 @@ def explain_events(
     `landmark_points_by_name` ist die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): gefalteter
     Name -> Gazetteer-Fundorte. `None` (die Vorgabe) heisst "keine Auskunft vorhanden"; die
     Pruefung ist fail-closed, ohne Auskunft traegt also kein Event einen Sehenswuerdigkeitsnamen -
-    siehe `_landmark_name_is_plausible`."""
+    siehe `landmark_name_is_plausible`."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
     # DIE EINE STELLE, an der ein Ausreisser seinen Ort verliert (ADR 0135 Punkt 2): fuer den
     # Durchlauf, Stufe 3 und `_built` - er bleibt Mitglied, speist aber weder Schritt, Ausdehnung,

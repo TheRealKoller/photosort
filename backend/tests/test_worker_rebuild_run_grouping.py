@@ -633,7 +633,7 @@ class TestTheRebuildLoadsNoEmbeddingModel:
         assert "build_label_embedder" not in mentioned
         assert "build_embedder" not in mentioned
         # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
-        assert "_build_grouping_and_rankings" in mentioned
+        assert "build_grouping_and_rankings" in mentioned
 
 
 async def _run_with_levels(
@@ -785,7 +785,7 @@ async def test_the_same_levels_in_the_eye_table_give_the_same_rank_scores(
 class TestTheRebuildNeverCallsTheEyeService:
     """Spec 0621 S5 (ADR 0144): Der Neuaufbau laeuft IN EINEM REQUEST (Versatz-Endpunkt). Er
     liest die Eye-Stufe ausschliesslich aus `photo_eye_results`; ein Sidecar-Aufruf entsteht nur
-    in `_run_eye_phase` eines bewusst gestarteten Laufs. Ein gestohlenes JWT darf damit keine
+    in `run_eye_phase` eines bewusst gestarteten Laufs. Ein gestohlenes JWT darf damit keine
     Modellarbeit und keinen Netzverkehr ausloesen."""
 
     async def test_the_rebuild_with_an_eye_source_never_builds_the_eye_client(
@@ -814,16 +814,16 @@ class TestTheRebuildNeverCallsTheEyeService:
 
     def test_the_rebuild_mentions_no_eye_phase_at_all(self) -> None:
         """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass ein Bau
-        ueber den Modulnamen laeuft. Ein Weg ueber einen Default-Parameter (`_run_eye_phase`
+        ueber den Modulnamen laeuft. Ein Weg ueber einen Default-Parameter (`run_eye_phase`
         bindet `build_eye_client` beim Import) roetete ihn nicht."""
         rebuild = _function_of("photosort.worker.criterion_scoring", "rebuild_run_grouping")
         classification = _function_of("photosort.worker.classification", "run_classification")
         mentioned = {node.id for node in ast.walk(rebuild) if isinstance(node, ast.Name)}
 
         assert "build_eye_client" not in mentioned
-        assert "_run_eye_phase" not in mentioned
+        assert "run_eye_phase" not in mentioned
         # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
-        assert "_build_grouping_and_rankings" in mentioned
-        assert "_run_eye_phase" in {
+        assert "build_grouping_and_rankings" in mentioned
+        assert "run_eye_phase" in {
             node.id for node in ast.walk(classification) if isinstance(node, ast.Name)
         }

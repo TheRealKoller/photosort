@@ -19,7 +19,7 @@ ein Zwischenspeicher erkennte eine entfernte Person weiter, bis der Prozess neu 
 
 Kein `commit()` hier: Die Transaktionsgrenze gehoert dem Aufrufer. Eine Person entsteht so nur
 zusammen mit ihrer ersten Referenz, und `delete_person` loescht in EINER Transaktion. Gleichzeitige
-Schreiber serialisiert der Aufrufer (`api/persons.py::_person_write_lock`); das bedingte Setzen der
+Schreiber serialisiert der Aufrufer (`api/persons.py::person_write_lock`); das bedingte Setzen der
 Box und `UNIQUE(photo_id, person_id)` sind die zweite Linie dahinter.
 """
 
@@ -344,11 +344,11 @@ async def current_centroids(
 # --- Festlegen und Referenzen ------------------------------------------------------------------
 
 
-async def _taken_slots(session: AsyncSession) -> set[int]:
+async def taken_slots(session: AsyncSession) -> set[int]:
     return set((await session.execute(select(Person.slot))).scalars().all())
 
 
-async def _name_taken(session: AsyncSession, name_key: str) -> bool:
+async def name_taken(session: AsyncSession, name_key: str) -> bool:
     found = (await session.execute(select(Person.id).where(Person.name_key == name_key))).first()
     return found is not None
 
@@ -371,7 +371,7 @@ def _checked_face(embedding: Sequence[float], face_box: FaceBox) -> tuple[float,
     return checked
 
 
-async def _has_correction_face(session: AsyncSession, *, photo_id: int, person_id: int) -> bool:
+async def has_correction_face(session: AsyncSession, *, photo_id: int, person_id: int) -> bool:
     found = (
         await session.execute(
             select(PhotoPersonCorrection.id).where(
@@ -388,7 +388,7 @@ async def refuse_if_face_on_photo(session: AsyncSession, *, photo_id: int, perso
     """Diese Person hat auf diesem Foto schon ein Gesicht PER KORREKTUR. Eine Erkennung mit Box
     sperrt nicht: Ein erkanntes Gesicht ausdruecklich zu zeigen ist Anlernen, und die Box der
     Korrektur geht vor. Laeuft vor dem Modellaufruf und unter der Schreibsperre erneut."""
-    if await _has_correction_face(session, photo_id=photo_id, person_id=person_id):
+    if await has_correction_face(session, photo_id=photo_id, person_id=person_id):
         raise FaceAlreadyAssignedOnPhoto()
 
 
@@ -402,7 +402,7 @@ async def _refuse_if_face_of_other(
         raise FaceAssignedToOtherPerson()
 
 
-async def _unlink_references_of_other_models(
+async def unlink_references_of_other_models(
     session: AsyncSession, *, person_id: int, model_key: str
 ) -> None:
     """Leert die Kante der Korrekturen, die auf Referenzen eines fremden Modells zeigen. MUSS vor
@@ -425,7 +425,7 @@ async def _store_reference(
     """DIE EINZIGE Schreibstelle fuer `PersonReference`. Die erste Referenz des aktuellen Modells
     loescht Referenzen anderer `model_key` derselben Person in derselben Transaktion, nachdem die
     Kante ihrer Korrekturen geleert ist."""
-    await _unlink_references_of_other_models(session, person_id=person_id, model_key=model_key)
+    await unlink_references_of_other_models(session, person_id=person_id, model_key=model_key)
     await session.execute(
         delete(PersonReference).where(
             PersonReference.person_id == person_id, PersonReference.model_key != model_key
@@ -490,11 +490,11 @@ async def create_person(
 
     Die Vorabpruefungen liefern die fachliche Meldung; die Constraints auf `slot` und `name_key`
     tragen den gleichzeitigen Fall und enden beim Flush in einem `IntegrityError`."""
-    taken = await _taken_slots(session)
+    taken = await taken_slots(session)
     if len(taken) >= MAX_PERSONS:
         raise PersonLimitReached()
     name_key = person_name_key(name)
-    if await _name_taken(session, name_key):
+    if await name_taken(session, name_key):
         raise DuplicatePersonName()
     checked = _checked_face(embedding, face_box)
     await _refuse_if_like_the_other(session, checked, person_id=None, model_key=model_key)
@@ -567,7 +567,7 @@ async def assign_face(
     return learned
 
 
-async def _correction_row(
+async def correction_row(
     session: AsyncSession, *, photo_id: int, person_id: int
 ) -> PhotoPersonCorrection | None:
     return (
@@ -580,7 +580,7 @@ async def _correction_row(
     ).scalar_one_or_none()
 
 
-async def _delete_reference(session: AsyncSession, reference_id: int) -> None:
+async def delete_reference(session: AsyncSession, reference_id: int) -> None:
     await session.execute(delete(PersonReference).where(PersonReference.id == reference_id))
 
 
@@ -595,7 +595,7 @@ async def set_correction(
     die verknuepfte Referenz - in DERSELBEN Transaktion, erst die Kante, dann die Referenz. Ein
     gezeigtes Gesicht auf einem Foto, das den Namen nicht mehr traegt, gibt es damit nicht.
     `applies=true` laesst Box und Referenz stehen."""
-    existing = await _correction_row(session, photo_id=photo_id, person_id=person_id)
+    existing = await correction_row(session, photo_id=photo_id, person_id=person_id)
     now = now_utc()
     if existing is None:
         session.add(
@@ -622,7 +622,7 @@ async def set_correction(
     existing.updated_at = now
     await session.flush()
     if revoked is not None:
-        await _delete_reference(session, revoked)
+        await delete_reference(session, revoked)
 
 
 # --- Entfernen ---------------------------------------------------------------------------------

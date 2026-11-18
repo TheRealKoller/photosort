@@ -94,7 +94,7 @@ async def _landmark_names(
 
     SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN (Muss-Kriterium des Sicherheitskonzepts,
     Abschnitt "Standortdaten"): `usable_landmark_name` wendet `sanitize_landmark_name` hier ein
-    ZWEITES Mal an, obwohl `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle
+    ZWEITES Mal an, obwohl `landmark.py::landmark_detection_from_json` sie bereits an der Quelle
     anwendet, und zwar auf den kanonischen Namen EBENSO wie auf den Rohnamen (S9). Sie ist die
     einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
     keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie

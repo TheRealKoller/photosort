@@ -160,7 +160,7 @@ def write_extracts(lines: Iterable[str], targets: Mapping[Path, LineExtractor]) 
     return written
 
 
-def _download_archive(target: Path) -> None:
+def download_archive(target: Path) -> None:
     """Laedt das Archiv stueckweise auf die Platte - nie in den Speicher: es misst rund 400 MB."""
     with httpx.stream(
         "GET",
@@ -186,7 +186,7 @@ def build_dataset(target: Path, landmark_target: Path) -> dict[Path, int]:
     kept: dict[Path, int] = {}
     try:
         print(f"Beziehe {GEONAMES_ARCHIVE_URL} (rund 400 MB)...")
-        _download_archive(archive)
+        download_archive(archive)
         print("Bilde die Auszuege (P/A bzw. S/T/L/H/V, ungebrauchte Spalten geleert)...")
         with zipfile.ZipFile(archive) as bundle, bundle.open(GEONAMES_ARCHIVE_MEMBER) as member:
             kept = write_extracts(
@@ -198,7 +198,7 @@ def build_dataset(target: Path, landmark_target: Path) -> dict[Path, int]:
     return kept
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m photosort.place_dataset",
         description=(
@@ -228,7 +228,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Verdrahtung + Exit-Code. `argv` ist injizierbar - kein `sys.argv`-Zugriff im Testpfad."""
-    args = _build_parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
     target = Path(args.pfad) if args.pfad else Path(settings.place_dataset_path)
     landmark_target = (
         Path(args.sehenswuerdigkeits_pfad)

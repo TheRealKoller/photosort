@@ -9,7 +9,8 @@ import pytest
 
 from photosort.models import Photo
 from photosort.opencloud.webdav_xml import DavEntry
-from photosort.worker import SkipReason, _classify_scan_entries
+from photosort.worker import SkipReason
+from photosort.worker.scan import classify_scan_entries
 
 MODIFIED = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
 
@@ -55,7 +56,7 @@ def _existing_photo(
 def test_unsupported_extension_is_skipped_and_excluded_from_seen_paths() -> None:
     entries = [("CostaRica/notes.txt", _entry("notes.txt", "etag-1"))]
 
-    classification = _classify_scan_entries(entries, existing_photos={})
+    classification = classify_scan_entries(entries, existing_photos={})
 
     assert len(classification.decisions) == 1
     decision = classification.decisions[0]
@@ -69,7 +70,7 @@ def test_unchanged_etag_of_an_already_probed_photo_is_skipped_but_counted_as_see
     entries = [("CostaRica/img.jpg", _entry("img.jpg", "same-etag"))]
     existing = {"CostaRica/img.jpg": _existing_photo("CostaRica/img.jpg", "same-etag")}
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.skip_reason == SkipReason.UNCHANGED_ETAG
@@ -86,7 +87,7 @@ def test_unchanged_etag_of_an_unprobed_photo_becomes_a_probe_only_work_item() ->
     existing_photo = _existing_photo("CostaRica/img.jpg", "same-etag", camera_probed=False)
     existing = {"CostaRica/img.jpg": existing_photo}
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.skip_reason is None
@@ -108,7 +109,7 @@ def test_an_unprobed_heic_of_an_unchanged_etag_is_skipped_without_catch_up(
     entries = [(relative_path, _entry(dateiname, "same-etag"))]
     existing = {relative_path: _existing_photo(relative_path, "same-etag", camera_probed=False)}
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.skip_reason == SkipReason.UNCHANGED_ETAG
@@ -125,7 +126,7 @@ def test_a_changed_etag_stays_a_full_work_item_even_when_unprobed() -> None:
         "CostaRica/img.jpg": _existing_photo("CostaRica/img.jpg", "old-etag", camera_probed=False)
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.work_item is not None
@@ -135,7 +136,7 @@ def test_a_changed_etag_stays_a_full_work_item_even_when_unprobed() -> None:
 def test_a_new_file_is_never_probe_only() -> None:
     entries = [("CostaRica/img.jpg", _entry("img.jpg", "etag-1"))]
 
-    classification = _classify_scan_entries(entries, existing_photos={})
+    classification = classify_scan_entries(entries, existing_photos={})
 
     decision = classification.decisions[0]
     assert decision.work_item is not None
@@ -145,7 +146,7 @@ def test_a_new_file_is_never_probe_only() -> None:
 def test_new_file_becomes_a_work_item_without_existing_photo() -> None:
     entries = [("CostaRica/img.jpg", _entry("img.jpg", "etag-1"))]
 
-    classification = _classify_scan_entries(entries, existing_photos={})
+    classification = classify_scan_entries(entries, existing_photos={})
 
     decision = classification.decisions[0]
     assert decision.skip_reason is None
@@ -161,7 +162,7 @@ def test_changed_etag_becomes_a_work_item_referencing_the_existing_photo() -> No
     existing_photo = _existing_photo("CostaRica/img.jpg", "old-etag")
     existing = {"CostaRica/img.jpg": existing_photo}
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.skip_reason is None
@@ -183,7 +184,7 @@ def test_decisions_preserve_input_order_for_a_mixed_batch() -> None:
         "CostaRica/unchanged.jpg": _existing_photo("CostaRica/unchanged.jpg", "same-etag"),
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     assert [decision.relative_path for decision in classification.decisions] == [
         "CostaRica/notes.txt",
@@ -214,7 +215,7 @@ def test_a_mixed_batch_keeps_the_probe_only_item_in_input_order() -> None:
         "CostaRica/probed.jpg": _existing_photo("CostaRica/probed.jpg", "same-etag"),
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     assert [decision.skip_reason for decision in classification.decisions] == [
         SkipReason.UNSUPPORTED_EXTENSION,
@@ -225,7 +226,7 @@ def test_a_mixed_batch_keeps_the_probe_only_item_in_input_order() -> None:
 
 
 def test_empty_entries_produce_empty_classification() -> None:
-    classification = _classify_scan_entries([], existing_photos={})
+    classification = classify_scan_entries([], existing_photos={})
 
     assert classification.decisions == []
     assert classification.work_items == []
@@ -244,7 +245,7 @@ def test_an_unchanged_photo_without_dimensions_becomes_a_dimensions_only_item() 
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.skip_reason is None
@@ -268,7 +269,7 @@ def test_a_png_with_open_camera_and_dimensions_probe_reads_the_range_for_the_dim
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.work_item is not None
@@ -287,7 +288,7 @@ def test_a_png_camera_probe_with_known_dimensions_does_not_read_the_range() -> N
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.work_item is not None
@@ -305,7 +306,7 @@ def test_an_unprobed_camera_reads_the_dimensions_in_the_same_window() -> None:
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.work_item is not None
@@ -322,7 +323,7 @@ def test_a_fully_probed_photo_stays_skipped() -> None:
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     assert classification.decisions[0].skip_reason == SkipReason.UNCHANGED_ETAG
     assert classification.work_items == []
@@ -338,7 +339,7 @@ def test_a_changed_photo_without_dimensions_stays_a_full_item() -> None:
         )
     }
 
-    classification = _classify_scan_entries(entries, existing_photos=existing)
+    classification = classify_scan_entries(entries, existing_photos=existing)
 
     decision = classification.decisions[0]
     assert decision.work_item is not None

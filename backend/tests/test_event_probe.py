@@ -33,9 +33,6 @@ from photosort.event_probe import (
     CoherenceRow,
     EventProbeError,
     EventProbeInput,
-    _quota_lines,
-    _report_head,
-    _tally,
     block_counts,
     cause_counts,
     coherence_counts,
@@ -45,10 +42,13 @@ from photosort.event_probe import (
     match_distance_counts,
     motif_change_off_window,
     motif_sensitivity,
+    quota_lines,
     quota_reach,
     read_event_probe_input,
     render_coherence_report,
+    report_head,
     size_counts,
+    tally,
 )
 from photosort.events import (
     BOUNDARY_CAUSES,
@@ -540,7 +540,7 @@ class TestBlockAQuotaReach:
     def test_the_verdict_is_written_out_as_a_sentence(self) -> None:
         """Ein Zahlenpaar liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass -
         er gehoert ausgeschrieben."""
-        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=81))
+        lines = quota_lines(quota_reach(_probe_input(selection_target=38), events_total=81))
 
         text = "\n".join(lines)
         assert "kann nicht gewichten" in text
@@ -548,7 +548,7 @@ class TestBlockAQuotaReach:
         assert "kann gewichten:" not in text
 
     def test_the_other_direction_says_so_too(self) -> None:
-        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=20))
+        lines = quota_lines(quota_reach(_probe_input(selection_target=38), events_total=20))
 
         text = "\n".join(lines)
         assert "kann gewichten" in text
@@ -560,8 +560,8 @@ class TestBlockAQuotaReach:
         diverging = _probe_input(selection_target=38, project_photos=400, candidates=3)
         same = _probe_input(selection_target=38, project_photos=3, candidates=3)
 
-        assert "Auswertungsgrenze" in "\n".join(_quota_lines(quota_reach(diverging, 5)))
-        assert "Auswertungsgrenze" not in "\n".join(_quota_lines(quota_reach(same, 5)))
+        assert "Auswertungsgrenze" in "\n".join(quota_lines(quota_reach(diverging, 5)))
+        assert "Auswertungsgrenze" not in "\n".join(quota_lines(quota_reach(same, 5)))
 
 
 MEASURED_RUN_ID = 42
@@ -1436,8 +1436,8 @@ def _coherence_counts(
             )
             for photos, measured, seconds, cells, motifs in rows
         ),
-        cells_per_event=_tally(cells for _, _, _, cells, _ in rows),
-        motifs_per_event=_tally(motifs for _, _, _, _, motifs in rows),
+        cells_per_event=tally(cells for _, _, _, cells, _ in rows),
+        motifs_per_event=tally(motifs for _, _, _, _, motifs in rows),
     )
 
 
@@ -2028,7 +2028,7 @@ class TestTheReportHead:
     """Titel, Projekt-Id und Laufkennung - an genau einer Stelle gebaut."""
 
     def test_the_head_carries_the_title_the_project_and_the_run(self) -> None:
-        head = _report_head("Event-Messung", _probe_input(selection_target=None, run_id=7))
+        head = report_head("Event-Messung", _probe_input(selection_target=None, run_id=7))
 
         assert head == "# Event-Messung, Projekt 1, Lauf 7"
 
@@ -2037,7 +2037,7 @@ class TestTheReportHead:
         Programmierfehler: `main()` bricht vorher ab. Still "Lauf None" zu schreiben waere die
         einzige Art, wie diese Lage doch in ein Protokoll geraten koennte."""
         with pytest.raises(AssertionError):
-            _report_head("Event-Messung", _probe_input(selection_target=None, run_id=None))
+            report_head("Event-Messung", _probe_input(selection_target=None, run_id=None))
 
 
 class TestEveryReportNamesItsRun:
@@ -2864,10 +2864,10 @@ class TestEveryReportHeadComesFromTheOnePlace:
         """Ein fuenfter Modus, der seinen Kopf selbst baut, wird hier rot - und nicht erst, wenn
         jemand einen Protokolleintrag keinem Lauf mehr zuordnen kann."""
         for name, node in _report_functions().items():
-            assert "_report_head" in _called_names(node), name
+            assert "report_head" in _called_names(node), name
 
     def test_no_report_function_writes_a_head_of_its_own(self) -> None:
-        """Die Gegenrichtung zum Fall darueber: Wer `_report_head` ruft UND daneben eine eigene
+        """Die Gegenrichtung zum Fall darueber: Wer `report_head` ruft UND daneben eine eigene
         Ueberschrift der ersten Ebene setzt, hat zwei Koepfe. Abschnitte (`## …`) bleiben
         unberuehrt - gesucht ist genau die eine Raute."""
         for name, node in _report_functions().items():
@@ -3109,7 +3109,7 @@ class TestBothPathsSeeTheSameCandidates:
         monkeypatch.setattr(worker_ranking, "read_event_inputs", recording)
 
         # Der Neuaufbau ist der Lauf-Pfad: er ermittelt die Kandidatenmenge selbst und ruft
-        # `_build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
+        # `build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
         await worker.rebuild_run_grouping(db_session, project_id)
         probe = await read_event_probe_input(db_session, project_id)
 

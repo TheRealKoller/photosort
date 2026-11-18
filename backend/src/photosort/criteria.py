@@ -173,7 +173,7 @@ def normalize_exposure(raw_exposure: float) -> float:
 
 def content_people_from_faces(faces: list[FaceBoundingBox]) -> float:
     """Reine Score-Berechnung aus einer bereits vorhandenen FaceBoundingBox-Liste, OHNE
-    eigene Detektion: worker/_criterion/local.py::_compute_content_criteria ruft detect_person nur EINMAL
+    eigene Detektion: worker/_criterion/local.py::compute_content_criteria ruft detect_person nur EINMAL
     auf und nutzt das Ergebnis für content_people wie für goldener_schnitt weiter."""
     return 1.0 if faces else 0.0
 
@@ -182,7 +182,7 @@ def compute_content_people(image: Image.Image, detector: FaceDetectorLike) -> fl
     """`content_people`-Kriterium, Score-Grundlage `bool(detect_person(...))`.
 
     Reiner Delegations-Wrapper um content_people_from_faces, kein zweiter Logikpfad:
-    worker/_criterion/local.py::_compute_content_criteria ruft diese Funktion NICHT auf, sondern
+    worker/_criterion/local.py::compute_content_criteria ruft diese Funktion NICHT auf, sondern
     detect_person + content_people_from_faces getrennt, um die bereits erkannten faces
     auch für goldener_schnitt zu nutzen."""
     return content_people_from_faces(detect_person(image, detector))
@@ -279,7 +279,7 @@ def compute_golden_ratio_score(
     bewusst nicht umgesetzt.
 
     Bewusst eine reine Funktion OHNE eigenen detect_person/detect_objects-Aufruf:
-    worker/_criterion/local.py::_compute_content_criteria ruft beide bereits für content_people/tier auf und
+    worker/_criterion/local.py::compute_content_criteria ruft beide bereits für content_people/tier auf und
     reicht die Ergebnislisten hier durch - ein zusätzlicher detect()-Aufruf je Foto wäre
     reiner Compute-Overhead. Der Wiederverwendungsnachweis liegt deshalb auf
     Worker-Integrationsebene, siehe test_worker_criterion_scoring.py::
@@ -429,7 +429,7 @@ def _allow_listed_confidence_maximum(
 def compute_fahrzeug_score(objects: Sequence[ObjectDetection]) -> float:
     """`fahrzeug`-Kriterium: Allow-Listen-gefiltertes Konfidenz-Maximum über
     VEHICLE_CATEGORIES. Reine Funktion ohne eigenen detect()-Aufruf -
-    worker/_criterion/local.py::_compute_content_criteria ruft `detect_objects` GENAU EINMAL pro Foto auf und
+    worker/_criterion/local.py::compute_content_criteria ruft `detect_objects` GENAU EINMAL pro Foto auf und
     reicht dieselbe Objektliste an `tier`, `fahrzeug`, `essen_trinken` UND
     `goldener_schnitt` weiter."""
     return _allow_listed_confidence_maximum(objects, VEHICLE_CATEGORIES)
@@ -586,7 +586,7 @@ def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
     sonst 0.0.
 
     Reine Funktion ohne eigenen classify_scene-Aufruf (Trennung analog
-    compute_gebaeude_score/compute_tier_score): worker/_criterion/local.py::_compute_content_criteria ruft
+    compute_gebaeude_score/compute_tier_score): worker/_criterion/local.py::compute_content_criteria ruft
     classify_scene GENAU EINMAL pro Foto auf und reicht dieselbe Label-Liste an
     compute_gebaeude_score UND diese Funktion weiter - es entstehen keine zusätzlichen
     Kosten je Foto. Der Ein-Aufruf-Nachweis liegt deshalb auf Worker-Integrationsebene,
@@ -603,7 +603,7 @@ def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
 
 
 # Genau die Kriterien, die is_landmark_candidate unten auswertet - exportiert, damit die
-# API-seitige Kostenschätzung (api/projects.py::_count_landmark_candidates) nur diese Zeilen
+# API-seitige Kostenschätzung (candidate_counts.py::count_landmark_candidates) nur diese Zeilen
 # laden muss, ohne die Schlüssel ein zweites Mal zu kennen. Wer hier etwas ergänzt, MUSS es
 # auch in is_landmark_candidate tun; der gemeinsame Test in test_criteria.py hält beide
 # Stellen zusammen.
@@ -616,7 +616,7 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     Ein Foto ist Kandidat, wenn `landschaft` ODER `gebaeude` die jeweils registrierte
     presence_threshold erreicht (`>=`, inklusiv, dieselben Registry-Werte wie die
     übrige Presence-Auswertung). Fehlende Werte gelten als 0.0, kein Sonderfall. Von
-    worker/_criterion/landmark.py::_select_landmark_candidates (Live-Lauf) UND
+    worker/_criterion/landmark.py::select_landmark_candidates (Live-Lauf) UND
     api/photos/_conversion.py::_cloud_vision_status_out (Read-Time-Ableitung) gemeinsam genutzt -
     verhindert ein Auseinanderlaufen beider Stellen bei einer Schwellenwert-Änderung.
 
@@ -658,7 +658,7 @@ FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
 def compute_freiraum_score(orientation: FaceOrientation | None) -> float | None:
     """`freiraum`-Kriterium: reine Score-Berechnung aus einer bereits vorhandenen
     FaceOrientation, OHNE eigenen detect_face_orientation-Aufruf (Trennung analog
-    compute_tier_score/compute_gebaeude_score) - worker/_criterion/local.py::_compute_content_criteria ruft
+    compute_tier_score/compute_gebaeude_score) - worker/_criterion/local.py::compute_content_criteria ruft
     detect_face_orientation genau einmal auf und reicht das Ergebnis hier durch.
 
     Drei bewusst UNTERSCHIEDLICHE Antworten, jeder Fall einzeln beantwortet statt nach

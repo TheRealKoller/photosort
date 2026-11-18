@@ -15,8 +15,8 @@ GEZOGEN werden muss, bevor er verschwindet: ``PhotoCriterionScore`` traegt keine
 wird bei jedem Lauf ueberschrieben (``UniqueConstraint(photo_id, criterion_key)``).
 
 Gemessen wird mit den Mitteln des Laufs: ``criteria.py::is_landmark_candidate`` ist dieselbe reine
-Schwellenwert-Pruefung, die auch ``worker/_criterion/landmark.py::_select_landmark_candidates`` nimmt, und
-``api/projects.py::_count_landmark_candidates`` ist woertlich die Funktion hinter dem angezeigten
+Schwellenwert-Pruefung, die auch ``worker/_criterion/landmark.py::select_landmark_candidates`` nimmt, und
+``candidate_counts.py::count_landmark_candidates`` ist woertlich die Funktion hinter dem angezeigten
 ``landmark_candidate_count``. Eine zweite, nachbildende Fassung maesse etwas anderes, als der Lauf
 tatsaechlich tut, waehrend beide fuer sich gruen blieben.
 
@@ -70,7 +70,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # weist `landmark_candidate_count` genau so aus, wie die Projekt-Antwort es tut. Eine Nachbildung
 # hier liefe beim naechsten Grenzfall auseinander, und der Beleg behauptete dann eine Zahl, die
 # niemand zu sehen bekommt. Denselben Weg nimmt `tests/test_worker_criterion_scoring.py` bereits.
-from photosort.api.projects import _count_landmark_candidates
+from photosort.candidate_counts import count_landmark_candidates
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
 from photosort.db import make_engine, make_session_factory
@@ -129,7 +129,7 @@ class CriterionProbeInput:
     `landmark_candidates` und `landmark_candidate_count` stehen NEBENEINANDER, weil sie
     verschiedene Mengen sind: die erste ist die reine Schwellenwert-Zaehlung ueber alle
     gespeicherten Werte des Projekts (`criteria.py::is_landmark_candidate`), die zweite die Zahl
-    der Projekt-Antwort (`api/projects.py::_count_landmark_candidates`) - dort zusaetzlich auf
+    der Projekt-Antwort (`candidate_counts.py::count_landmark_candidates`) - dort zusaetzlich auf
     Ausschuss-Ueberlebende eingeschraenkt und um Fotos mit bereits vorhandener `landmark`-Zeile
     verringert. Sie duerfen abweichen; verrechnet wuerde genau diese Aussage verschwinden. `None`
     heisst bei beiden "nicht gemessen"."""
@@ -266,7 +266,7 @@ async def read_criterion_probe_input(session: AsyncSession, project_id: int) -> 
         # DIE ZAHL DER PROJEKT-ANTWORT, aus ihrer eigenen Funktion: Sie zaehlt gegen
         # `survives_ausschuss()` und laesst Fotos mit vorhandener `landmark`-Zeile weg - beides
         # steht dort und gehoert nicht hierher kopiert.
-        landmark_candidate_count=await _count_landmark_candidates(session, project_id),
+        landmark_candidate_count=await count_landmark_candidates(session, project_id),
     )
 
 
@@ -283,7 +283,7 @@ def _percent(part: int, whole: int) -> str:
     return f"{100.0 * part / whole:.1f} %"
 
 
-def _report_head(probe: CriterionProbeInput) -> str:
+def report_head(probe: CriterionProbeInput) -> str:
     """DIE EINE KOPFZEILE des Berichts: Titel, Projekt-Id, Laufkennung.
 
     BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der verbotenen Klassen aus S2: kein
@@ -312,7 +312,7 @@ def render_report(probe: CriterionProbeInput) -> str:
     das guenstigste aller Messergebnisse ("der Zuwachs ist klein") - behauptet ueber eine Menge,
     die niemand gemessen hat."""
     lines = [
-        _report_head(probe),
+        report_head(probe),
         "",
         f"- Fotos im Projekt: {probe.photos_total}",
     ]
@@ -349,9 +349,8 @@ def render_report(probe: CriterionProbeInput) -> str:
         "## Landmark-Kandidaten",
         "",
         f"- nach is_landmark_candidate ueber die gespeicherten Werte: "
-        f"{_number(probe.landmark_candidates)}",
-        f"- landmark_candidate_count der Projekt-Antwort: "
-        f"{_number(probe.landmark_candidate_count)}",
+        f"{number(probe.landmark_candidates)}",
+        f"- landmark_candidate_count der Projekt-Antwort: {number(probe.landmark_candidate_count)}",
         "",
         "Die beiden Zahlen sind VERSCHIEDENE Mengen und werden nicht verrechnet: Die erste zaehlt",
         "jedes Foto des Projekts, dessen gespeicherte Werte die Schwellen erfuellen. Die zweite",
@@ -363,7 +362,7 @@ def render_report(probe: CriterionProbeInput) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _number(value: int | None) -> str:
+def number(value: int | None) -> str:
     """Eine Anzahl - oder `NICHT GEMESSEN`, wenn keine gemessen wurde. Nie eine ersatzweise
     Null: Sie laese sich als Messergebnis lesen, und genau diese Verwechslung schliesst S2 aus."""
     if value is None:

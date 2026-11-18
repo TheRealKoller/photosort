@@ -160,7 +160,7 @@ async def test_included_photos_is_empty_with_zero_users(db_session: AsyncSession
 
 async def test_selection_state_of_is_the_shared_rule(db_session: AsyncSession) -> None:
     """Die geteilte Regel - derselbe Einstiegspunkt, den der Lesepfad importiert (Auflage S9)."""
-    from photosort.api.photos import _selection_state_of
+    from photosort.api.photos._conversion import selection_state_of as reader_selection_state_of
     from photosort.final_selection import selection_state_of
 
-    assert _selection_state_of is selection_state_of
+    assert reader_selection_state_of is selection_state_of

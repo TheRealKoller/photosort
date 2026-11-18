@@ -16,24 +16,24 @@ from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
     CloudRequestThrottle,
     TokenUsage,
-    _sanitize_label_text,
+    sanitize_label_text,
 )
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
-    _MAX_RESPONSE_TOKENS,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
     MAX_FINE_LABEL_LENGTH,
     MAX_FINE_LABELS_PER_PHOTO,
+    MAX_RESPONSE_TOKENS,
     AnthropicCategoryClient,
     CategoryDetectionClientLike,
     FineLabelSnapshotEntry,
     MistralCategoryClient,
     RemoteCategoryClassificationApiError,
     RemoteClassification,
-    _classification_from_json,
-    _slugify,
+    classification_from_json,
     resolve_canonical_label,
+    slugify,
 )
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
@@ -109,25 +109,25 @@ class TestClassificationFromJsonStructure:
 
     def test_rejects_a_missing_motifs_key(self) -> None:
         with pytest.raises(RemoteCategoryClassificationApiError):
-            _classification_from_json({"fine_labels": ["Hund"]}, photo_id=1)
+            classification_from_json({"fine_labels": ["Hund"]}, photo_id=1)
 
     def test_rejects_a_non_object_motifs_value(self) -> None:
         """Eine LISTE unter `motifs` ist strukturell falsch und kein tolerierbarer Inhalt - das
         Antwortschema nennt eine Abbildung Schluessel -> Zahl."""
         with pytest.raises(RemoteCategoryClassificationApiError):
-            _classification_from_json({"motifs": ["tiere"]}, photo_id=1)
+            classification_from_json({"motifs": ["tiere"]}, photo_id=1)
 
     def test_rejects_a_response_that_is_not_a_json_object(self) -> None:
         with pytest.raises(RemoteCategoryClassificationApiError):
-            _classification_from_json(["tiere"], photo_id=1)
+            classification_from_json(["tiere"], photo_id=1)
 
     def test_rejects_a_present_but_non_list_fine_labels_value(self) -> None:
         with pytest.raises(RemoteCategoryClassificationApiError):
-            _classification_from_json({"motifs": {"tiere": 0.5}, "fine_labels": "Hund"}, photo_id=1)
+            classification_from_json({"motifs": {"tiere": 0.5}, "fine_labels": "Hund"}, photo_id=1)
 
     def test_a_missing_fine_labels_key_is_not_an_error(self) -> None:
         # Feinlabels sind optional, der Staerkevektor nicht.
-        result = _classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
         assert result == RemoteClassification(
             motif_strengths=_vector(tiere=0.5), fine_labels=(), excluded=False
         )
@@ -142,7 +142,7 @@ class TestClassificationFromJsonMotifs:
         """Der Vektor ist VOLLSTAENDIG oder er existiert nicht: ein Motiv, das die Antwort nicht
         nennt, steht mit `0.0` da und fehlt nicht. `upsert_assessment` schreibt genau diese
         Abbildung, und `PhotoOut.motifs` traegt acht Eintraege."""
-        result = _classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
 
         assert result.motif_strengths == _vector(tiere=0.5)
         assert list(result.motif_strengths) == list(MOTIF_REGISTRY)
@@ -150,7 +150,7 @@ class TestClassificationFromJsonMotifs:
     def test_a_strong_building_and_weak_people_answer_keeps_exactly_that_relation(self) -> None:
         """Akzeptanzkriterium "Bauwerk deutlich, Menschen schwach - nicht umgekehrt": die Zahlen
         des Modells kommen unveraendert an, keine Vorrangreihenfolge greift dazwischen."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"bauwerk_sehenswuerdigkeit": 0.9, "menschen": 0.2}}, photo_id=1
         )
 
@@ -163,7 +163,7 @@ class TestClassificationFromJsonMotifs:
     def test_the_swapped_answer_yields_the_swapped_relation(self) -> None:
         """Die Gegenprobe zum Fall oben. Der Fall mit GLEICHEN Zahlen gehoert ausdruecklich nicht
         dazu - er deckte jede Implementierung."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"bauwerk_sehenswuerdigkeit": 0.2, "menschen": 0.9}}, photo_id=1
         )
 
@@ -175,7 +175,7 @@ class TestClassificationFromJsonMotifs:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            result = _classification_from_json(
+            result = classification_from_json(
                 {"motifs": {"einhorn": 0.9, "tiere": 0.4}}, photo_id=42
             )
 
@@ -192,7 +192,7 @@ class TestClassificationFromJsonMotifs:
         """Sicherheitsauflage S11: ein mehrzeiliger Modellwert darf keine gefaelschten Logzeilen
         erzeugen - `repr` escaped den Zeilenumbruch sichtbar, die Laenge bleibt begrenzt."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json(
+            classification_from_json(
                 {"motifs": {"boes\nWARNING gefaelschte Zeile " + "x" * 200: 0.5}}, photo_id=7
             )
 
@@ -204,7 +204,7 @@ class TestClassificationFromJsonMotifs:
     def test_all_keys_unknown_yields_eight_zeros_not_an_error(self) -> None:
         """Der wichtigste Grenzfall: `motifs` ist ein Objekt, aber ALLE Schluessel sind unbekannt
         -> KEIN Fehler, sondern acht Nullen; die Feinlabels desselben Fotos bleiben erhalten."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"einhorn": 0.9, "drache": 0.8}, "fine_labels": ["Fabelwesen"]}, photo_id=1
         )
 
@@ -212,13 +212,13 @@ class TestClassificationFromJsonMotifs:
         assert result.fine_labels == ("Fabelwesen",)
 
     def test_an_empty_motifs_object_yields_eight_zeros(self) -> None:
-        result = _classification_from_json({"motifs": {}}, photo_id=1)
+        result = classification_from_json({"motifs": {}}, photo_id=1)
         assert result.motif_strengths == _vector()
 
     def test_a_key_is_not_normalized_before_the_membership_check(self) -> None:
         """Reine Mitgliedschaftspruefung im geschlossenen Schluesselraum - kein `strip()`, kein
         `casefold()`, kein Praefixvergleich (`motifs.py::is_motif_key`)."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"TIERE": 0.9, " tiere": 0.8, "tiere_": 0.7}}, photo_id=1
         )
         assert result.motif_strengths == _vector()
@@ -226,20 +226,20 @@ class TestClassificationFromJsonMotifs:
     def test_the_exclusion_key_is_not_a_motif(self) -> None:
         """ "Dokument und Screenshot" ist ein Ausschluss-SIGNAL und steht ausserhalb der Registry -
         als Motivschluessel wird er wie jeder andere unbekannte Wert verworfen."""
-        result = _classification_from_json({"motifs": {"dokument_screenshot": 1.0}}, photo_id=1)
+        result = classification_from_json({"motifs": {"dokument_screenshot": 1.0}}, photo_id=1)
 
         assert result.motif_strengths == _vector()
         assert "dokument_screenshot" not in result.motif_strengths
 
     def test_a_non_string_key_is_discarded_not_fatal(self) -> None:
         parsed = {"motifs": {42: 0.9, "tiere": 0.4}}
-        result = _classification_from_json(parsed, photo_id=1)
+        result = classification_from_json(parsed, photo_id=1)
         assert result.motif_strengths == _vector(tiere=0.4)
 
     def test_a_former_category_key_is_no_longer_accepted(self) -> None:
         """Die entfallenden Kategorieschluessel sind keine Motive - eine Antwort im alten
         Vokabular liefert acht Nullen, nie eine stille Teilaussage."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"pflanze": 0.9, "innenraum": 0.8, "nicht_erkannt": 1.0}}, photo_id=1
         )
         assert result.motif_strengths == _vector()
@@ -250,22 +250,22 @@ class TestClassificationFromJsonExcluded:
     nimmt ein Foto aus JEDER Motivauswahl und ist von Hand nicht korrigierbar."""
 
     def test_a_real_true_is_taken(self) -> None:
-        result = _classification_from_json({"motifs": {}, "excluded": True}, photo_id=1)
+        result = classification_from_json({"motifs": {}, "excluded": True}, photo_id=1)
         assert result.excluded is True
 
     def test_a_real_false_is_taken(self) -> None:
-        result = _classification_from_json({"motifs": {}, "excluded": False}, photo_id=1)
+        result = classification_from_json({"motifs": {}, "excluded": False}, photo_id=1)
         assert result.excluded is False
 
     def test_a_missing_field_is_false(self) -> None:
-        result = _classification_from_json({"motifs": {}}, photo_id=1)
+        result = classification_from_json({"motifs": {}}, photo_id=1)
         assert result.excluded is False
 
     @pytest.mark.parametrize("raw", ["true", "ja", 1, 0.5, [], {}, "false", None, -1])
     def test_a_non_bool_value_is_false_never_coerced(self, raw: object) -> None:
         """Kein `bool(...)` auf einen Fremdwert und keine Umdeutung von `1`, `"true"` oder `"ja"` -
         jeder nicht-leere Fremdwert fuehrte sonst zum Ausschluss."""
-        result = _classification_from_json({"motifs": {}, "excluded": raw}, photo_id=1)
+        result = classification_from_json({"motifs": {}, "excluded": raw}, photo_id=1)
         assert result.excluded is False
 
     def test_a_discarded_excluded_value_logs_one_warning_with_a_fixed_reason_token(
@@ -273,7 +273,7 @@ class TestClassificationFromJsonExcluded:
     ) -> None:
         """S11: die Zeile traegt ein festes Grund-Token und KEINEN Fremdtext."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json({"motifs": {}, "excluded": "JA-GANZ-SICHER"}, photo_id=42)
+            classification_from_json({"motifs": {}, "excluded": "JA-GANZ-SICHER"}, photo_id=42)
 
         assert len(caplog.records) == 1
         message = caplog.records[0].getMessage()
@@ -284,14 +284,14 @@ class TestClassificationFromJsonExcluded:
     def test_a_missing_excluded_key_logs_nothing(self, caplog: pytest.LogCaptureFixture) -> None:
         """Nichts wurde verworfen - eine fehlende Angabe ist keine entartete."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
+            classification_from_json({"motifs": {"tiere": 0.5}}, photo_id=1)
 
         assert caplog.records == []
 
     def test_high_strengths_survive_an_exclusion_unchanged(self) -> None:
         """Der Ausschluss gewinnt in der AUSWAHL, er loescht aber keine Zahl: die Staerken bleiben
         gespeichert und werden nicht auf 0 gesetzt."""
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"menschen": 0.9}, "excluded": True}, photo_id=1
         )
 
@@ -301,7 +301,7 @@ class TestClassificationFromJsonExcluded:
 
 class TestClassificationFromJsonFineLabels:
     def test_three_fine_labels_are_truncated_to_the_first_two(self) -> None:
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": ["Hund", "Strand", "Urlaub"]}, photo_id=1
         )
         assert result.fine_labels == ("Hund", "Strand")
@@ -311,33 +311,33 @@ class TestClassificationFromJsonFineLabels:
         """Ein abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren canonical_key in
         der projektuebergreifenden Registry (Entscheidung 5 der Spec)."""
         too_long = "x" * (MAX_FINE_LABEL_LENGTH + 1)
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": [too_long, "Hund"]}, photo_id=1
         )
         assert result.fine_labels == ("Hund",)
 
     def test_a_fine_label_exactly_at_the_maximum_is_kept(self) -> None:
         exact = "x" * MAX_FINE_LABEL_LENGTH
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": [exact]}, photo_id=1
         )
         assert result.fine_labels == (exact,)
 
     @pytest.mark.parametrize("raw", ["", "   ", "\n\t"])
     def test_an_empty_or_whitespace_only_fine_label_is_discarded(self, raw: str) -> None:
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": [raw, "Hund"]}, photo_id=1
         )
         assert result.fine_labels == ("Hund",)
 
     def test_duplicate_fine_labels_are_removed(self) -> None:
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": ["Hund", "Hund", "Strand"]}, photo_id=1
         )
         assert result.fine_labels == ("Hund", "Strand")
 
     def test_a_non_string_fine_label_is_discarded(self) -> None:
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": [17, "Hund"]}, photo_id=1
         )
         assert result.fine_labels == ("Hund",)
@@ -346,7 +346,7 @@ class TestClassificationFromJsonFineLabels:
         # Sanitisierung laeuft VOR der Laengenpruefung: ein Label, das erst durch
         # Steuerzeichen ueber die Grenze rutscht, bleibt erhalten.
         raw = "\u200b" * 20 + "x" * MAX_FINE_LABEL_LENGTH
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": 0.5}, "fine_labels": [raw]}, photo_id=1
         )
         assert result.fine_labels == ("x" * MAX_FINE_LABEL_LENGTH,)
@@ -366,22 +366,22 @@ class TestSanitizeLabelText:
         ],
     )
     def test_control_and_format_characters_are_removed(self, raw: str) -> None:
-        assert _sanitize_label_text(raw) == "HundGnud"
+        assert sanitize_label_text(raw) == "HundGnud"
 
     def test_newlines_and_tabs_collapse_to_a_single_space(self) -> None:
-        assert _sanitize_label_text("Hund\n\tam   Strand") == "Hund am Strand"
+        assert sanitize_label_text("Hund\n\tam   Strand") == "Hund am Strand"
 
     def test_leading_and_trailing_whitespace_is_removed(self) -> None:
-        assert _sanitize_label_text("  Hund  ") == "Hund"
+        assert sanitize_label_text("  Hund  ") == "Hund"
 
     def test_a_non_breaking_space_is_normalized_too(self) -> None:
-        assert _sanitize_label_text("Hund\u00a0Strand") == "Hund Strand"
+        assert sanitize_label_text("Hund\u00a0Strand") == "Hund Strand"
 
     def test_regular_german_text_survives_unchanged(self) -> None:
-        assert _sanitize_label_text("Geburtstagsfeier im Grünen") == "Geburtstagsfeier im Grünen"
+        assert sanitize_label_text("Geburtstagsfeier im Grünen") == "Geburtstagsfeier im Grünen"
 
     def test_a_label_consisting_only_of_control_characters_becomes_empty(self) -> None:
-        assert _sanitize_label_text("\u200b\u202e") == ""
+        assert sanitize_label_text("\u200b\u202e") == ""
 
 
 class TestAnthropicCategoryClient:
@@ -484,13 +484,13 @@ class TestMistralCategoryClient:
 
 class TestSlugify:
     def test_lowercases_and_replaces_whitespace(self) -> None:
-        assert _slugify("Hund Katze") == "hund_katze"
+        assert slugify("Hund Katze") == "hund_katze"
 
     def test_collapses_repeated_underscores(self) -> None:
-        assert _slugify("Hund   Katze!!") == "hund_katze"
+        assert slugify("Hund   Katze!!") == "hund_katze"
 
     def test_strips_leading_and_trailing_underscores(self) -> None:
-        assert _slugify("  Hund  ") == "hund"
+        assert slugify("  Hund  ") == "hund"
 
     def test_falls_back_to_a_hash_based_slug_when_no_latin_chars_remain(self) -> None:
         # Review-Fund (security-engineer, spec 0055-Followup): ein rein nicht-lateinisches
@@ -498,15 +498,15 @@ class TestSlugify:
         # verschiedene solche Label wuerden dann denselben (leeren) canonical_key produzieren und
         # an UniqueConstraint(category_labels.canonical_key) scheitern (Verfuegbarkeitsrisiko:
         # bricht den ganzen Batch-Lauf statt nur dieses eine Foto zu ueberspringen).
-        dog_slug = _slugify("犬")
-        cat_slug = _slugify("猫")
+        dog_slug = slugify("犬")
+        cat_slug = slugify("猫")
 
         assert dog_slug != ""
         assert cat_slug != ""
         assert dog_slug != cat_slug
 
     def test_hash_fallback_is_deterministic_for_the_same_text(self) -> None:
-        assert _slugify("犬") == _slugify("犬")
+        assert slugify("犬") == slugify("犬")
 
 
 # `TestNormalizeLabelText` und `TestCosineSimilarity` stehen seit Spec 0469 in
@@ -640,7 +640,7 @@ class TestRemoteClassificationUsage:
     def test_the_strength_mapping_is_immutable_after_parsing(self) -> None:
         """`frozen=True` sichert nur die Referenz - fuer den INHALT braucht es
         `MappingProxyType`, analog dem Feinlabel-Tupel daneben."""
-        classification = _classification_from_json({"motifs": {"tiere": 0.4}}, photo_id=1)
+        classification = classification_from_json({"motifs": {"tiere": 0.4}}, photo_id=1)
 
         with pytest.raises(TypeError):
             classification.motif_strengths["menschen"] = 1.0  # type: ignore[index]
@@ -782,32 +782,32 @@ class TestStrengthValueBand:
 
     @pytest.mark.parametrize("raw", [0.0, 1.0, 0.5, 0, 1, -0.0])
     def test_values_inside_the_band_are_kept(self, raw: float) -> None:
-        result = _classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
         assert result.motif_strengths["tiere"] == float(raw)
 
     def test_zero_is_a_value_not_an_absence(self) -> None:
         """`0.0` heisst "nicht zu sehen" - es ist eine Aussage des Modells und unterscheidet sich
         nicht in der Darstellung, wohl aber in der Herkunft von einem verworfenen Wert."""
-        result = _classification_from_json({"motifs": {"tiere": 0.0}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": 0.0}}, photo_id=1)
         assert result.motif_strengths["tiere"] == 0.0
 
     @pytest.mark.parametrize("raw", [1.0000001, -0.1, 1.5, 2, 100, -1])
     def test_values_outside_the_band_become_zero_not_clamped(self, raw: float) -> None:
         """`1.4 -> 1.0` waere die staerkste Aussage, die das Produkt kennt, erfunden aus einer
         kaputten Antwort - und ein spaeteres Klemmen liesse `NaN` wieder durch."""
-        result = _classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
         assert result.motif_strengths["tiere"] == 0.0
 
     @pytest.mark.parametrize("raw", [True, False])
     def test_booleans_are_rejected_even_though_bool_is_an_int(self, raw: bool) -> None:
         """`isinstance(True, int)` ist `True` - ohne expliziten Ausschluss erschiene
         `"menschen": true` als die staerkste Aussage, die das Produkt kennt."""
-        result = _classification_from_json({"motifs": {"menschen": raw}}, photo_id=1)
+        result = classification_from_json({"motifs": {"menschen": raw}}, photo_id=1)
         assert result.motif_strengths["menschen"] == 0.0
 
     @pytest.mark.parametrize("raw", ["0.7", None, ["0.7"], {"value": 0.7}, ""])
     def test_non_numeric_values_are_discarded_without_conversion(self, raw: object) -> None:
-        result = _classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
+        result = classification_from_json({"motifs": {"tiere": raw}}, photo_id=1)
         assert result.motif_strengths["tiere"] == 0.0
 
     @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
@@ -819,12 +819,12 @@ class TestStrengthValueBand:
         SQLite-Testdatenbank zeigt den Defekt strukturell nicht."""
         parsed = json.loads(f'{{"motifs":{{"tiere":{literal}}}}}')
 
-        result = _classification_from_json(parsed, photo_id=1)
+        result = classification_from_json(parsed, photo_id=1)
 
         assert result.motif_strengths["tiere"] == 0.0
 
     def test_a_discarded_value_does_not_affect_the_other_seven_motifs(self) -> None:
-        result = _classification_from_json(
+        result = classification_from_json(
             {"motifs": {"tiere": "hoch", "menschen": 0.6}}, photo_id=1
         )
         assert result.motif_strengths == _vector(menschen=0.6)
@@ -850,7 +850,7 @@ class TestStrengthDiscardLogging:
         parsed = json.loads(f'{{"motifs":{{"tiere":{raw_literal}}}}}')
 
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json(parsed, photo_id=42)
+            classification_from_json(parsed, photo_id=42)
 
         assert len(caplog.records) == 1
         message = caplog.records[0].getMessage()
@@ -864,7 +864,7 @@ class TestStrengthDiscardLogging:
         systematische Skalenverwechslung greppbar, der Rohwert sagt darueber hinaus nichts und
         waere Fremdtext im Log."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json({"motifs": {"tiere": "SEHR-VIEL"}}, photo_id=1)
+            classification_from_json({"motifs": {"tiere": "SEHR-VIEL"}}, photo_id=1)
 
         assert "SEHR-VIEL" not in caplog.records[0].getMessage()
 
@@ -874,14 +874,14 @@ class TestStrengthDiscardLogging:
         """Nichts wurde verworfen: ein fehlender Schluessel ist keine entartete Aussage, sondern
         gar keine - er steht mit `0.0` im Vektor."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            result = _classification_from_json({"motifs": {"tiere": 0.4}}, photo_id=1)
+            result = classification_from_json({"motifs": {"tiere": 0.4}}, photo_id=1)
 
         assert result.motif_strengths["menschen"] == 0.0
         assert caplog.records == []
 
     def test_each_discarded_value_logs_exactly_once(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json(
+            classification_from_json(
                 {
                     "motifs": {
                         "tiere": 1.7,
@@ -901,7 +901,7 @@ class TestStrengthDiscardLogging:
         """Der Schluessel ist bereits verworfen - die Zahl wird gar nicht erst bewertet, es gibt
         also KEINE zweite Warnung fuer denselben Eintrag."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            result = _classification_from_json({"motifs": {"einhorn": 1.7}}, photo_id=7)
+            result = classification_from_json({"motifs": {"einhorn": 1.7}}, photo_id=7)
 
         assert result.motif_strengths == _vector()
         assert len(caplog.records) == 1
@@ -913,7 +913,7 @@ class TestStrengthDiscardLogging:
         """S11: geloggt wird ausschliesslich der einzelne verworfene Wert plus `photo_id` - nie
         die vollstaendige Antwort, nie der Request-Body, nie Base64-Bilddaten, nie der API-Key."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            _classification_from_json(
+            classification_from_json(
                 {
                     "motifs": {"tiere": 1.7},
                     "excluded": False,
@@ -928,7 +928,7 @@ class TestStrengthDiscardLogging:
 
 
 class TestResponseBudgetAfterTheMotifSchema:
-    """Sicherheitsauflage S12: `_MAX_RESPONSE_TOKENS` ist eine SICHERHEITSschranke, nicht nur eine
+    """Sicherheitsauflage S12: `MAX_RESPONSE_TOKENS` ist eine SICHERHEITSschranke, nicht nur eine
     Kostenschranke - sie begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
     potenziell geloggt werden kann.
 
@@ -944,7 +944,7 @@ class TestResponseBudgetAfterTheMotifSchema:
         Begruendung und auf die drei zusammen nachzuziehenden Dinge stossen. Angehoben wurde die
         SCHRANKE, nicht die Annahme gesenkt: bei den alten Zahlen reisst die Reserve-Invariante
         unten rechnerisch (384 gegen 2 x 250)."""
-        assert _MAX_RESPONSE_TOKENS == 512
+        assert MAX_RESPONSE_TOKENS == 512
 
     def test_the_assumed_output_tokens_still_cover_the_longer_response(self) -> None:
         """Die Schaetzung ist die einzige Absicherung VOR der kostenpflichtigen Aktion - sie darf
@@ -960,7 +960,7 @@ class TestResponseBudgetAfterTheMotifSchema:
         die Annahme anzupassen: reisst sie, ist das der Anlass fuer eine Meldung, nicht fuer eine
         neue Zahl an dieser Stelle."""
         for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
-            assert _MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider
+            assert MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider
 
 
 class TestTheAlbumSuitabilityInTheResponse:
@@ -970,7 +970,7 @@ class TestTheAlbumSuitabilityInTheResponse:
     Feld die uebrige Antwort NICHT kostet (inhaltlich tolerant)."""
 
     def test_a_well_formed_field_is_carried_through(self) -> None:
-        classification = _classification_from_json(
+        classification = classification_from_json(
             {
                 "motifs": {"landschaft": 0.8},
                 "album_suitability": {"level": 4, "reason": "Klarer Blick."},
@@ -981,7 +981,7 @@ class TestTheAlbumSuitabilityInTheResponse:
         assert classification.album_suitability == AlbumSuitability(level=4, reason="Klarer Blick.")
 
     def test_a_missing_field_is_no_error_and_costs_the_rest_of_the_answer_nothing(self) -> None:
-        classification = _classification_from_json(_VALID_BODY, photo_id=1)
+        classification = classification_from_json(_VALID_BODY, photo_id=1)
 
         assert classification.album_suitability is None
         assert classification.motif_strengths == _vector(landschaft=0.8)
@@ -1001,7 +1001,7 @@ class TestTheAlbumSuitabilityInTheResponse:
             f'"album_suitability": {raw_literal}}}'
         )
 
-        classification = _classification_from_json(parsed, photo_id=1)
+        classification = classification_from_json(parsed, photo_id=1)
 
         assert classification.album_suitability is None
         assert classification.motif_strengths == _vector(landschaft=0.8)
@@ -1009,7 +1009,7 @@ class TestTheAlbumSuitabilityInTheResponse:
 
     def test_a_missing_field_logs_nothing_at_all(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING"):
-            _classification_from_json(_VALID_BODY, photo_id=1)
+            classification_from_json(_VALID_BODY, photo_id=1)
 
         assert caplog.records == []
 
@@ -1018,7 +1018,7 @@ class TestTheAlbumSuitabilityInTheResponse:
         Fassung der Regel."""
         raw = "A‮" + "b" * (MAX_ALBUM_SUITABILITY_REASON_LENGTH + 40)
 
-        classification = _classification_from_json(
+        classification = classification_from_json(
             {"motifs": {}, "album_suitability": {"level": 2, "reason": raw}}, photo_id=1
         )
 
@@ -1059,7 +1059,7 @@ class TestTheCategoryClientsSitOutARateLimit:
 
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
-        expected = _classification_from_json(_VALID_BODY, 7).motif_strengths
+        expected = classification_from_json(_VALID_BODY, 7).motif_strengths
         assert classification.motif_strengths == expected
         assert waits == [2.0]
 
@@ -1098,7 +1098,7 @@ class TestTheCategoryClientsSitOutARateLimit:
 
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
-        expected = _classification_from_json(_VALID_BODY, 7).motif_strengths
+        expected = classification_from_json(_VALID_BODY, 7).motif_strengths
         assert classification.motif_strengths == expected
         assert waits == [2.0]
 

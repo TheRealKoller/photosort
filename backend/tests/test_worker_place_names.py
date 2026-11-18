@@ -37,11 +37,11 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.places import PlaceAnswer, PlaceResolver
-from photosort.worker import (
-    _build_grouping_and_rankings,
-    _landmark_points_by_name,
-    _place_infos,
-    rebuild_run_grouping,
+from photosort.worker import rebuild_run_grouping
+from photosort.worker._criterion.ranking import (
+    build_grouping_and_rankings,
+    landmark_points_by_name,
+    place_infos,
 )
 from tests.import_closure import module_file
 
@@ -179,7 +179,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
         project = await _project(db_session, "leer")
         factory = _factory(CountingResolver({}))
 
-        infos = await _place_infos(db_session, project.id, set(), factory)  # type: ignore[arg-type]
+        infos = await place_infos(db_session, project.id, set(), factory)  # type: ignore[arg-type]
 
         assert infos == {}
         assert factory.calls == []  # type: ignore[attr-defined]
@@ -203,7 +203,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
         resolver = CountingResolver({SPLIT: _answer("Split")})
         factory = _factory(resolver)
 
-        infos = await _place_infos(db_session, project.id, {KREUZBERG, SPLIT}, factory)  # type: ignore[arg-type]
+        infos = await place_infos(db_session, project.id, {KREUZBERG, SPLIT}, factory)  # type: ignore[arg-type]
 
         assert resolver.asked == [SPLIT]
         assert factory.calls == [frozenset({SPLIT})]  # type: ignore[attr-defined]
@@ -229,7 +229,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
         await db_session.flush()
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _place_infos(db_session, mine.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
+        await place_infos(db_session, mine.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
 
         assert resolver.asked == [SPLIT]
         assert len(await _lookup_rows(db_session, mine.id)) == 1
@@ -247,7 +247,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
 
         db_session.commit = _spy  # type: ignore[method-assign]
         try:
-            await _place_infos(
+            await place_infos(
                 db_session,
                 project.id,
                 {SPLIT},
@@ -266,12 +266,12 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
         wiederliest, in die er geschrieben hat, beweist das nicht."""
         project = await _project(db_session, "rundgang")
         first = CountingResolver({SPLIT: _answer("Split"), MITTE: _answer("Berlin", "Mitte")})
-        await _place_infos(db_session, project.id, {SPLIT, MITTE}, _factory(first))  # type: ignore[arg-type]
+        await place_infos(db_session, project.id, {SPLIT, MITTE}, _factory(first))  # type: ignore[arg-type]
         await db_session.flush()
         db_session.expunge_all()
 
         second = CountingResolver({SPLIT: _answer("Split"), MITTE: _answer("Berlin", "Mitte")})
-        infos = await _place_infos(db_session, project.id, {SPLIT, MITTE}, _factory(second))  # type: ignore[arg-type]
+        infos = await place_infos(db_session, project.id, {SPLIT, MITTE}, _factory(second))  # type: ignore[arg-type]
 
         assert first.asked
         assert second.asked == []
@@ -286,7 +286,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
         project = await _project(db_session, "fremde-ebene")
         resolver = CountingResolver({SPLIT: _answer("Split", matched_level="stadtbezirk")})
 
-        infos = await _place_infos(db_session, project.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
+        infos = await place_infos(db_session, project.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
 
         [row] = await _lookup_rows(db_session, project.id)
         assert row.matched_level is None
@@ -310,7 +310,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
             }
         )
 
-        await _place_infos(db_session, project.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
+        await place_infos(db_session, project.id, {SPLIT}, _factory(resolver))  # type: ignore[arg-type]
 
         [row] = await _lookup_rows(db_session, project.id)
         assert row.neighbourhood is None
@@ -318,7 +318,7 @@ class TestPlaceInfosAsksOnlyWhatIsMissing:
 
 
 class TestTheLandmarkPointsAreAskedOncePerProject:
-    """Spec 0529, Abschnitt 5: `_landmark_points_by_name` nach dem Muster `_place_infos`.
+    """Spec 0529, Abschnitt 5: `landmark_points_by_name` nach dem Muster `place_infos`.
 
     Die drei Zustaende der Auskunft fallen nicht zusammen (ADR 0123 Punkt 2): keine Zeile heisst
     "nie nachgeschlagen" und wird beim naechsten Lauf mit Auszug nachgeschlagen, eine leere
@@ -331,7 +331,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         project = await _project(db_session, "keine-landmark-namen")
         factory = _landmark_factory(CountingGazetteer({}))
 
-        points = await _landmark_points_by_name(db_session, project.id, set(), factory)  # type: ignore[arg-type]
+        points = await landmark_points_by_name(db_session, project.id, set(), factory)  # type: ignore[arg-type]
 
         assert points == {}
         assert factory.calls == []  # type: ignore[attr-defined]
@@ -351,7 +351,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         gazetteer = CountingGazetteer({"trevi brunnen": ((41.9009, 12.4833),)})
         factory = _landmark_factory(gazetteer)
 
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             project.id,
             {"Brandenburger Tor", "Trevi-Brunnen"},
@@ -373,7 +373,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         project = await _project(db_session, "landmark-roh-und-gefaltet")
         gazetteer = CountingGazetteer({"trevi brunnen": ((41.9009, 12.4833),)})
 
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             project.id,
             {"Trevi-Brunnen"},
@@ -398,7 +398,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         await db_session.flush()
         gazetteer = CountingGazetteer({})
 
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             mine.id,
             {"Trevi-Brunnen"},
@@ -422,7 +422,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
 
         db_session.commit = _spy  # type: ignore[method-assign]
         try:
-            await _landmark_points_by_name(
+            await landmark_points_by_name(
                 db_session,
                 project.id,
                 {"Trevi-Brunnen"},
@@ -442,7 +442,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         first = CountingGazetteer(
             {"trevi brunnen": ((41.9009, 12.4833),), "brandenburger tor": ((52.5163, 13.3777),)}
         )
-        await _landmark_points_by_name(
+        await landmark_points_by_name(
             db_session,
             project.id,
             {"Trevi-Brunnen", "Brandenburger Tor"},
@@ -452,7 +452,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         db_session.expunge_all()
 
         second = CountingGazetteer({})
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             project.id,
             {"Trevi-Brunnen", "Brandenburger Tor"},
@@ -471,7 +471,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         Name ist im Ergebnis ENTHALTEN (er faellt spaeter am leeren Eintrag)."""
         project = await _project(db_session, "landmark-ohne-fund")
 
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             project.id,
             {"Stonehenge"},
@@ -491,7 +491,7 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
         project = await _project(db_session, "landmark-kein-auszug")
         factory = _landmark_factory(None)
 
-        points = await _landmark_points_by_name(
+        points = await landmark_points_by_name(
             db_session,
             project.id,
             {"Trevi-Brunnen"},
@@ -578,7 +578,7 @@ class TestTheRunWritesTheNames:
         project, run, values = await _run_with_photos(db_session, "benannt", [SPLIT])
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -596,7 +596,7 @@ class TestTheRunWritesTheNames:
         project, run, values = await _run_with_photos(db_session, "zweimal", [SPLIT, SPLIT])
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -625,7 +625,7 @@ class TestTheRunWritesTheNames:
         await _add_landmark(db_session, landmark_photo, "Brandenburger Tor")
         resolver = CountingResolver({MITTE: _answer("Berlin", "Mitte"), SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -654,7 +654,7 @@ class TestTheRunWritesTheNames:
         project, run, values = await _run_with_photos(db_session, "stoerung", [SPLIT])
         first = CountingResolver({})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -670,7 +670,7 @@ class TestTheRunWritesTheNames:
         await db_session.flush()
         db_session.expunge_all()
         second = CountingResolver({SPLIT: _answer("Split")})
-        infos = await _place_infos(db_session, project.id, {SPLIT}, _factory(second))  # type: ignore[arg-type]
+        infos = await place_infos(db_session, project.id, {SPLIT}, _factory(second))  # type: ignore[arg-type]
 
         assert second.asked == [SPLIT]
         assert infos[SPLIT].locality == "Split"
@@ -693,7 +693,7 @@ class TestTheRunWritesTheNames:
             }
         )
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -710,7 +710,7 @@ class TestTheRunWritesTheNames:
         await db_session.flush()
         db_session.expunge_all()
         second = CountingResolver({SPLIT: _answer("Split")})
-        await _place_infos(db_session, project.id, {SPLIT}, _factory(second))  # type: ignore[arg-type]
+        await place_infos(db_session, project.id, {SPLIT}, _factory(second))  # type: ignore[arg-type]
 
         assert second.asked == []
 
@@ -730,7 +730,7 @@ class TestTheRunWritesTheNames:
             {(52.52, 13.4): _answer("Berlin"), (52.53, 13.4): _answer("Hamburg")}
         )
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -762,7 +762,7 @@ class TestTheRunWritesTheNames:
         )
         await db_session.flush()
 
-        await _build_grouping_and_rankings(db_session, run, project.id, values, None, None)
+        await build_grouping_and_rankings(db_session, run, project.id, values, None, None)
 
         [event] = await _events_of(db_session, run)
         assert event.place_name == "Split"
@@ -776,7 +776,7 @@ class TestTheRunWritesTheNames:
         auch dann, wenn dieser Pfad das Merkmal gar nicht mehr kennte."""
         project, run, values = await _run_with_photos(db_session, "unbekannt", [SPLIT])
 
-        await _build_grouping_and_rankings(db_session, run, project.id, values, None, None)
+        await build_grouping_and_rankings(db_session, run, project.id, values, None, None)
 
         [event] = await _events_of(db_session, run)
         assert event.place_name is None
@@ -803,7 +803,7 @@ class TestTheShareOfThePhotosDecides:
         await _add_landmark(db_session, min(values), "Brandenburger Tor")
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -829,7 +829,7 @@ class TestTheShareOfThePhotosDecides:
         await _add_landmark(db_session, min(values), "Brandenburger Tor")
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -863,7 +863,7 @@ class TestTheShareOfThePhotosDecides:
         )
         await _collapse_into_one_event(db_session, ohne_treffer)
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_a,
             mit_treffer.id,
@@ -871,7 +871,7 @@ class TestTheShareOfThePhotosDecides:
             _factory(CountingResolver({SPLIT: _answer("Split")})),  # type: ignore[arg-type]
             _landmark_factory(),
         )
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_b,
             ohne_treffer.id,
@@ -900,7 +900,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         await _add_landmark(db_session, min(values), "Diokletianpalast")
         gazetteer = CountingGazetteer({"diokletianpalast": ((43.5081, 16.4402),)})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -920,7 +920,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         await _add_landmark(db_session, min(values), "Tower of London")
         gazetteer = CountingGazetteer({"tower of london": ((51.5007, -0.1246),)})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -948,7 +948,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             {"diokletianpalast": ((51.5007, -0.1246), (43.5081, 16.4402))}
         )
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -969,7 +969,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         await _add_landmark(db_session, min(values), "Brandenburger Tor")
         gazetteer = CountingGazetteer({"brandenburger tor": (MITTE,)})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1001,7 +1001,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             }
         )
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1029,7 +1029,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         # Ein Tag Abstand je Foto: zwei Events, EIN Name.
         gazetteer = CountingGazetteer({"diokletianpalast": ((43.5081, 16.4402),)})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1055,7 +1055,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         await _add_landmark(db_session, min(values), "Diokletianpalast")
 
         with caplog.at_level(logging.ERROR, logger="photosort.geonames"):
-            await _build_grouping_and_rankings(
+            await build_grouping_and_rankings(
                 db_session,
                 run,
                 project.id,
@@ -1088,7 +1088,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         dataset_hash_path(path).write_text("0" * 64 + "\n", encoding="utf-8")
 
         with caplog.at_level(logging.ERROR, logger="photosort.geonames"):
-            await _build_grouping_and_rankings(
+            await build_grouping_and_rankings(
                 db_session,
                 run,
                 project.id,
@@ -1120,7 +1120,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         # Erster Lauf: Sehenswuerdigkeitsauszug da, Ortsauszug fehlt.
         project_a, run_a, values_a = await _run_with_photos(db_session, "nur-landmark", [SPLIT])
         await _add_landmark(db_session, min(values_a), "Diokletianpalast")
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_a,
             project_a.id,
@@ -1135,7 +1135,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         # Zweiter Lauf: Ortsauszug da, Sehenswuerdigkeitsauszug fehlt.
         project_b, run_b, values_b = await _run_with_photos(db_session, "nur-ort", [SPLIT])
         await _add_landmark(db_session, min(values_b), "Diokletianpalast")
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_b,
             project_b.id,
@@ -1175,7 +1175,7 @@ class TestTheRebuildObeysTheThresholdOfTheDay:
         await _add_landmark(db_session, min(values), "Brandenburger Tor")
         resolver = CountingResolver({SPLIT: _answer("Split")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1278,7 +1278,7 @@ class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
 
         resolver_a = CountingResolver({KREUZBERG: _answer("Berlin")})
         resolver_b = CountingResolver({KREUZBERG: _answer("Berlin")})
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_a,
             mit_verworfener_zeile.id,
@@ -1286,7 +1286,7 @@ class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
             _factory(resolver_a),  # type: ignore[arg-type]
             _landmark_factory(),
         )
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run_b,
             ohne_zeile.id,
@@ -1313,7 +1313,7 @@ class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
         )
         resolver = CountingResolver({KREUZBERG: _answer("Berlin")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1338,7 +1338,7 @@ class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
             confidence=LANDMARK_CONFIDENCE_THRESHOLD,
         )
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1361,7 +1361,7 @@ class TestTheRebuildIsFailClosedToo:
         project, run, values = await _run_with_photos(db_session, "neuaufbau-zeile", [SPLIT, MITTE])
         confirmed_photo, unconfirmed_photo = sorted(values)
         await _add_landmark(db_session, confirmed_photo, "Diokletianpalast")
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1404,7 +1404,7 @@ class TestAnExcursionThroughTheWorker:
         await db_session.flush()
         resolver = CountingResolver({SPLIT: _answer("Split"), MITTE: _answer("Berlin")})
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,
@@ -1450,7 +1450,7 @@ class TestNothingLeaksIntoALogOrIntoTheRunRow:
         gazetteer = CountingGazetteer({"trevi brunnen": ((41.9009, 12.4833),)})
 
         with caplog.at_level(logging.DEBUG):
-            await _build_grouping_and_rankings(
+            await build_grouping_and_rankings(
                 db_session,
                 run,
                 project.id,
@@ -1497,7 +1497,7 @@ class TestTheRequestPathAsksNobody:
             for node in ast.walk(function)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
-            and node.func.id == "_build_grouping_and_rankings"
+            and node.func.id == "build_grouping_and_rankings"
         )
         return [*call.args, *(keyword.value for keyword in call.keywords)]
 
@@ -1545,11 +1545,11 @@ class TestTheRunUsesTheConfiguredFactory:
         assert defaults is build_landmark_gazetteer
 
     def test_the_grouping_helper_demands_the_second_factory(self) -> None:
-        """S8: KEIN Vorgabewert an `_build_grouping_and_rankings` - mit einer Vorgabe `None` waere
+        """S8: KEIN Vorgabewert an `build_grouping_and_rankings` - mit einer Vorgabe `None` waere
         eine vergessene Aufrufstelle ein stiller Totalausfall der Ortspruefung."""
         import inspect as python_inspect
 
-        parameter = python_inspect.signature(_build_grouping_and_rankings).parameters[
+        parameter = python_inspect.signature(build_grouping_and_rankings).parameters[
             "build_landmark_gazetteer"
         ]
 
@@ -1563,7 +1563,7 @@ class TestTheRunUsesTheConfiguredFactory:
         project, run, values = await _run_with_photos(db_session, "kein-datensatz", [SPLIT])
 
         with caplog.at_level(logging.ERROR, logger="photosort.geonames"):
-            await _build_grouping_and_rankings(
+            await build_grouping_and_rankings(
                 db_session,
                 run,
                 project.id,
@@ -1581,7 +1581,7 @@ class TestTheRunUsesTheConfiguredFactory:
         """Kein aufgeloester Name gefaehrdet je einen Lauf (ADR 0102 Punkt 5)."""
         project, run, values = await _run_with_photos(db_session, "erfolgreich", [SPLIT])
 
-        await _build_grouping_and_rankings(
+        await build_grouping_and_rankings(
             db_session,
             run,
             project.id,

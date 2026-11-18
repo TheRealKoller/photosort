@@ -401,7 +401,7 @@ class ScanRun(Base):
     # (worker/scan.py::_maybe_commit_progress_checkpoint), gelesen von worker/stall_reaper.py.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Abbruchwunsch des Nutzers (`NULL` = keiner). Der Worker liest ihn an seinen Pruefpunkten
-    # frisch und beendet den Lauf dort als `CANCELLED` (worker/_runs.py::_finish_cancelled).
+    # frisch und beendet den Lauf dort als `CANCELLED` (worker/_runs.py::finish_cancelled).
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # default=None (nicht 0) - unterscheidet "Enumerationsphase noch nicht abgeschlossen,
     # Gesamtzahl unbekannt" von "Projekt enthält 0 Dateien". Überall mit `is not None` statt
@@ -656,7 +656,7 @@ class CriterionScoringRun(Base):
     # `started_at` ist der Beginn des GESAMTEN Laufs, und `last_progress_at` wird in der
     # Folgephase weitergeschrieben.
     #
-    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker/_runs.py::_set_phase.
+    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker/_runs.py::set_phase.
     # `NULL` heißt hier "kein laufender Teilschritt" (beendet, abgebrochen, oder Altzeile), nie
     # "gerade begonnen"; mit `phase = NULL` fällt auch dieser Wert auf `NULL` zurück. Bricht die
     # Bindung, rechnet die Restdauer den Beginn des VORIGEN Teilschritts gegen den Fortschritt des
@@ -676,7 +676,7 @@ class CriterionScoringRun(Base):
     # beim Laufstart aus `Project.category_method`; Rangwerte, Neuberechnung, Entwurfsanzeige und
     # Feedback-Ereignisse lesen sie von HIER, nie von der heutigen Projekteinstellung - sonst
     # wechselte ein Umschalten ohne neuen Lauf still die Grundlage des bestehenden Entwurfs.
-    # Altzeilen tragen `cloud`. Einzige Schreibstelle: `worker._start_criterion_scoring_run`.
+    # Altzeilen tragen `cloud`. Einzige Schreibstelle: `worker.start_criterion_scoring_run`.
     album_level_source: Mapped[CategoryMethod] = mapped_column(
         SQLEnum(
             CategoryMethod,
@@ -933,7 +933,7 @@ class PhotoRanking(Base):
     # LAUF-GLOBAL und ausdrücklich ohne Nutzerbezug: `user_id` fließt in keine Abfrage und in
     # keine Schreibanweisung des Neuaufbaus, es gibt keine je Nutzer verschiedene Position. Wäre
     # der Wert nutzerbezogen, fiele die Antwort unter dieselbe Cache-Schlüssel-Auflage wie
-    # `PhotoOut.suggestion` (siehe `api/photos/_conversion.py::_to_photo_out`).
+    # `PhotoOut.suggestion` (siehe `api/photos/_conversion.py::to_photo_out`).
     #
     # GESCHRIEBEN wird die Spalte an genau einer Stelle (`photosort.worker`); ein struktureller Wächter
     # in tests/test_models.py hält das fest. Eine zweite Vergaberegel daneben sähe im Ergebnis
@@ -989,7 +989,7 @@ class FineLabel(Base):
     `photo_fine_labels -> photos.project_id` zu skopieren: ein globales SELECT auf diese Tabelle
     würde Label-Häufigkeiten ANDERER Projekte ausliefern.
 
-    `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::_slugify),
+    `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::slugify),
     `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeigehilfe,
     keine kuratierte Übersetzung). `embedding` ist der 384-dimensionale Text-Embedding-Vektor
     (label_embedding.py) als JSON-Liste von float.
@@ -1012,7 +1012,7 @@ class PhotoFineLabel(Base):
     zulässig: der Prompt erzwingt kein Feinlabel, die Pflichtaussage je Foto ist der
     Motivstärkevektor (PhotoMotifAssessment/PhotoMotifStrength), nicht das Label.
 
-    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text) - vom
+    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::sanitize_label_text) - vom
     Vision-LLM gelieferte Text, als Audit-/Debug-Spur, welche Formulierung auf welchen
     canonical_key gemappt wurde.
 
@@ -1092,9 +1092,9 @@ class CloudVisionPhase(enum.StrEnum):
 
 class PhotoCloudVisionError(Base):
     """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs für ein Foto - bewusst KEIN
-    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker/_runs.py::_record_cloud_vision_error)
+    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker/_runs.py::record_cloud_vision_error)
     die bestehende Zeile, ein erfolgreicher Retry LÖSCHT sie
-    (worker/_runs.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
+    (worker/_runs.py::clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
     id+UniqueConstraint-Paars: es gibt strukturell höchstens eine sinnvolle "letzter
     Fehlschlag"-Zeile je Foto x CloudVisionPhase.
 
@@ -1265,7 +1265,7 @@ class PhotoEyeFineLabel(Base):
     Getrennt von `photo_fine_labels`/`fine_labels`: die dortige Registry ist geschlossen und
     dient der Cloud-Kategorieableitung; Eyes Vokabular ist ein anderes, und eine erzwungene
     Zuordnung waere eine Aussage, die das Modell nie getroffen hat (ADR 0138 Punkt 4). Der Text
-    ist fremder Modelltext und wird am Parser mit `cloud_vision._sanitize_label_text` saniert,
+    ist fremder Modelltext und wird am Parser mit `cloud_vision.sanitize_label_text` saniert,
     laengenbegrenzt und leer weggelassen - gerendert ausschliesslich als React-Textknoten."""
 
     __tablename__ = "photo_eye_fine_labels"

@@ -80,13 +80,13 @@ async def _fail_if_stalled(
         | ClassificationReview
     ),
 ) -> bool:
-    """Setzt eine einzelne Zeile über _fail_run auf FAILED, isoliert von den übrigen
+    """Setzt eine einzelne Zeile über fail_run auf FAILED, isoliert von den übrigen
     Zeilen/Tabellen: ein Fehler bei einer Zeile/Tabelle darf die Bereinigung der übrigen
     nicht blockieren - ein Fehlschlag hier (z.B. ein DB-Fehler beim
     Commit dieser einen Zeile) rollt nur die aktuelle, noch nicht committete Teiltransaktion
     zurueck, bereits zuvor erfolgreich committete Zeilen bleiben unberuehrt."""
     try:
-        await runs._fail_run(session, run, _stall_message())
+        await runs.fail_run(session, run, _stall_message())
         return True
     except Exception:
         await session.rollback()
@@ -96,7 +96,7 @@ async def _fail_if_stalled(
 async def _fail_export_if_stalled(session: AsyncSession, run: ExportRun) -> bool:
     """Dasselbe wie `_fail_if_stalled`, aber fuer den eigenen Status-Enum des Exports."""
     try:
-        await runs._fail_export_run(session, run, _stall_message())
+        await runs.fail_export_run(session, run, _stall_message())
         return True
     except Exception:
         await session.rollback()
@@ -109,21 +109,21 @@ async def reap_stalled_runs(
 ) -> int:
     """Schicht 2 des Fortschritts-Watchdogs: periodischer arq-Cron-Job (alle 5 Minuten, siehe
     WorkerSettings.cron_jobs), unabhaengig von einer ggf. tatsaechlich noch haengenden Coroutine -
-    deckt exakt den Fall ab, den reines Exception-Handling (Schicht 1, _fail_run oben) strukturell
+    deckt exakt den Fall ab, den reines Exception-Handling (Schicht 1, fail_run oben) strukturell
     nie schliessen kann (ein nie zurueckkehrender await liefert nie eine Exception, an die sich
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
     Jeder Block erfasst laufende Zeilen ueber STALL_THRESHOLD und wartende ueber
     QUEUED_STALL_THRESHOLD; ein gesetzter Abbruchwunsch gewinnt in beiden Faellen und endet
-    `CANCELLED` (siehe _fail_run).
+    `CANCELLED` (siehe fail_run).
     Die sechs Tabellen werden bewusst nacheinander in sechs eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
     ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ClassificationReview/ExportRun
     bleiben sechs eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
-    threshold = runs._now_utc() - STALL_THRESHOLD
-    queued_threshold = runs._now_utc() - QUEUED_STALL_THRESHOLD
+    threshold = runs.now_utc() - STALL_THRESHOLD
+    queued_threshold = runs.now_utc() - QUEUED_STALL_THRESHOLD
     async with session_factory() as session:
         try:
             stalled_scan_runs = (

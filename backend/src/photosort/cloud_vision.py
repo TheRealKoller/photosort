@@ -258,12 +258,12 @@ def mistral_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
     return _usage_from_response(payload, model, "prompt_tokens", "completion_tokens")
 
 
-def _sanitize_label_text(raw: str) -> str:
+def sanitize_label_text(raw: str) -> str:
     """Zeichensanitisierung eines frei formulierten, von einem Vision-Modell erzeugten Textes.
 
     SICHERHEIT: BEIDE Cloud-Pfade müssen DIESELBE Funktion benutzen, nicht eine zweite Fassung
     davon - der Feinlabel-Pfad (`remote_classification.py::_fine_labels_from_json`, vor der
-    Längenprüfung und vor resolve_canonical_label/_slugify) und der Sehenswürdigkeit-Pfad
+    Längenprüfung und vor resolve_canonical_label/slugify) und der Sehenswürdigkeit-Pfad
     (`landmark.py::sanitize_landmark_name`). Deshalb liegt sie hier, in der providerneutralen
     gemeinsamen Schicht.
 

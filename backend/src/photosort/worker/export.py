@@ -18,7 +18,7 @@ from photosort.models import (
     ExportRunStatus,
     Project,
 )
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
+from photosort.opencloud.client import OpenCloudClient, OpenCloudError, join_remote_path
 from photosort.run_cancel import cancel_requested
 
 
@@ -64,7 +64,7 @@ def sanitize_project_name(name: str) -> str:
 
     Entfernt werden C0/C1-Steuerzeichen sowie Schraeg- und Rueckwaertsschraegstrich; anschliessend
     wird Leerraum zusammengezogen und die Laenge begrenzt. Reine Punkt-Namen (`.`, `..`) werden
-    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `_join`'s `..`-Ablehnung,
+    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `join_remote_path`'s `..`-Ablehnung,
     nicht der alleinige Schutz."""
     cleaned = "".join(ch for ch in name if ch not in _CONTROL_CHARS)
     cleaned = cleaned.replace("/", " ").replace("\\", " ")
@@ -121,7 +121,7 @@ async def run_export(
     Ein Abbruchwunsch wird vor jedem COPY gelesen: der Ordner und die bereits kopierten Fotos
     bleiben auf OpenCloud, der Lauf endet `cancelled`."""
     if run_id is not None:
-        taken_over = await runs._take_over_queued_run(session, ExportRun, run_id)
+        taken_over = await runs.take_over_queued_run(session, ExportRun, run_id)
         if taken_over is None:
             return None
         run = taken_over
@@ -138,7 +138,7 @@ async def run_export(
     # Der Zeitstempel wird HIER genommen - im nacheinander arbeitenden Worker -, damit zwei Laeufe
     # nicht in derselben Mikrosekunde beginnen (ADR 0136 Punkt 2: ein erneuter Export erzeugt immer
     # einen weiteren neuen Ordner).
-    target_path = f"{EXPORT_ROOT_FOLDER}/{build_export_folder_name(project.name, runs._now_utc())}"
+    target_path = f"{EXPORT_ROOT_FOLDER}/{build_export_folder_name(project.name, runs.now_utc())}"
     run.target_path = target_path
     run.photo_count = len(included)
     snapshots: dict[int, ExportPhoto] = {}
@@ -190,12 +190,12 @@ async def run_export(
             if await cancel_requested(session, run):
                 break
             try:
-                # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
-                # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
+                # Das Ziel laeuft AUSSCHLIESSLICH ueber `join_remote_path` - nie manuelle Konkatenation roher
+                # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `join_remote_path`
                 # steht INNERHALB des je-Foto-try: ein Foto, dessen Name die Regeln verletzt
                 # (`..`-Segment), scheitert als Einzelfehler in `export_photos.error`, nie bricht
                 # es den Lauf ab.
-                dest_url = _join(webdav_url, f"{target_path}/{entry.relative_path}")
+                dest_url = join_remote_path(webdav_url, f"{target_path}/{entry.relative_path}")
                 await client.copy(webdav_url, entry.relative_path, dest_url)
                 exported += 1
             except OpenCloudError as exc:
@@ -203,36 +203,36 @@ async def run_export(
                 snapshots[entry.photo_id].error = str(exc)
             run.exported_count = exported
             run.failed_count = failed
-            run.last_progress_at = runs._now_utc()
+            run.last_progress_at = runs.now_utc()
             if (index + 1) % EXPORT_COMMIT_BATCH_SIZE == 0:
                 await session.commit()
 
         if await cancel_requested(session, run):
-            # Der bis hierher erzielte Stand wird committet, BEVOR _finish_cancelled zurueckrollt -
+            # Der bis hierher erzielte Stand wird committet, BEVOR finish_cancelled zurueckrollt -
             # Zielpfad und Kopierzahl bleiben sichtbar, damit der Ordner auffindbar ist.
             await session.commit()
-            await runs._finish_cancelled(session, run)
+            await runs.finish_cancelled(session, run)
             return run
         run.status = ExportRunStatus.SUCCESS
-        run.finished_at = runs._now_utc()
+        run.finished_at = runs.now_utc()
         await session.commit()
     except asyncio.CancelledError:
-        # Persistiert den bis hierher erzielten Stand, BEVOR _fail_export_run zurueckrollt - der
+        # Persistiert den bis hierher erzielten Stand, BEVOR fail_export_run zurueckrollt - der
         # failed-Bericht bildet so die real erfolgten COPYs ab (Muss-Fix 3).
         run.exported_count = exported
         run.failed_count = failed
-        run.last_progress_at = runs._now_utc()
+        run.last_progress_at = runs.now_utc()
         await session.commit()
-        await runs._fail_export_run(
+        await runs.fail_export_run(
             session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
     except Exception as exc:
         run.exported_count = exported
         run.failed_count = failed
-        run.last_progress_at = runs._now_utc()
+        run.last_progress_at = runs.now_utc()
         await session.commit()
-        await runs._fail_export_run(session, run, str(exc))
+        await runs.fail_export_run(session, run, str(exc))
         return run
     return run
 

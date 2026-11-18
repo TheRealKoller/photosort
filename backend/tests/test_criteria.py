@@ -12,10 +12,10 @@ import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
-    _OBJECT_DETECTOR_MODEL_PATH,
-    _SCENE_CLASSIFIER_MODEL_PATH,
     ANIMAL_CATEGORIES,
+    OBJECT_DETECTOR_MODEL_PATH,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+    SCENE_CLASSIFIER_MODEL_PATH,
     SCENE_LABEL_MIN_CONFIDENCE,
     FaceBoundingBox,
     FaceOrientation,
@@ -916,11 +916,11 @@ _CURATED_ALLOW_LIST_MODULES = ("photosort.criteria", "photosort.classification")
 # den Modulkonstanten, nicht als Zeichenkette aus dem Test: der SHA-256-Integritaetstest in
 # test_classification.py bindet dieselben Konstanten, und beide Tests muessen dieselbe Datei meinen.
 _ALLOW_LIST_ASSETS: dict[str, Path] = {
-    "ARCHITECTURE_CATEGORIES": _SCENE_CLASSIFIER_MODEL_PATH,
-    "LANDSCAPE_SCENE_CATEGORIES": _SCENE_CLASSIFIER_MODEL_PATH,
-    "VEHICLE_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
-    "FOOD_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
-    "ANIMAL_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
+    "ARCHITECTURE_CATEGORIES": SCENE_CLASSIFIER_MODEL_PATH,
+    "LANDSCAPE_SCENE_CATEGORIES": SCENE_CLASSIFIER_MODEL_PATH,
+    "VEHICLE_CATEGORIES": OBJECT_DETECTOR_MODEL_PATH,
+    "FOOD_CATEGORIES": OBJECT_DETECTOR_MODEL_PATH,
+    "ANIMAL_CATEGORIES": OBJECT_DETECTOR_MODEL_PATH,
 }
 
 
@@ -1063,7 +1063,7 @@ class TestEveryCuratedAllowListMatchesItsModelLabels:
         Fehlermodus 2 (stilles Falten): dieselbe Klasse steht als `bell cote` in derselben Datei.
         Eine normalisierende Pruefung (`_`->` `, `casefold`, `strip`) liesse `bell_cote` durchgehen;
         dass dieser Fall trotzdem scheitert, ist der Positiv-Beleg fuer das Normalisierungsverbot."""
-        asset = _SCENE_CLASSIFIER_MODEL_PATH
+        asset = SCENE_CLASSIFIER_MODEL_PATH
         assert "bell cote" in _labels_of(asset)
 
         with pytest.raises(AssertionError) as excinfo:

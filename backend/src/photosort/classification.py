@@ -38,7 +38,7 @@ FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 # blaze_face_short_range.tflite, sha256 b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380
 # b0152f). "assets/" statt "models/" als Verzeichnisname, um keine Namenskollision mit dem
 # bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
-_FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
+FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test - eine
 # versehentliche Beschaedigung oder Ersetzung der Binaerdatei faellt sonst erst auf, wenn die
@@ -49,7 +49,7 @@ FACE_DETECTOR_MODEL_SHA256 = "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
 
-def _laplace_edges_without_border_artifact(grayscale: Image.Image) -> Image.Image:
+def laplace_edges_without_border_artifact(grayscale: Image.Image) -> Image.Image:
     """Wendet den Laplace-Kernel auf das GESAMTE Bild an (nicht pro Kachel), gepolstert mit
     Rand-Wiederholung (`np.pad(..., mode="edge")`), statt Pillows Standardverhalten (unveraenderter
     Originalwert am Bildrand, kein Zero-Padding - siehe scoring.py::compute_sharpness-Kommentar).
@@ -72,7 +72,7 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
     texturiert/kontrastreich."""
     grayscale = image.convert("L")
     width, height = grayscale.size
-    edges = _laplace_edges_without_border_artifact(grayscale)
+    edges = laplace_edges_without_border_artifact(grayscale)
     tile_width = max(1, width // _UNIFORM_TILE_GRID)
     tile_height = max(1, height // _UNIFORM_TILE_GRID)
 
@@ -97,7 +97,7 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
 
 
 # --- Symmetrie: Quadranten-Energie-Vergleich auf der bereits vorhandenen Laplace-Kantenkarte -
-# keine neue Abhängigkeit, reine Wiederverwendung von _laplace_edges_without_border_artifact.
+# keine neue Abhängigkeit, reine Wiederverwendung von laplace_edges_without_border_artifact.
 
 
 def _mean_abs_edge_energy(edges: np.ndarray) -> float:
@@ -138,7 +138,7 @@ def compute_symmetry_score(image: Image.Image) -> float:
     ist trivial "balanciert", eine Asymmetrie ist nicht messbar."""
     grayscale = image.convert("L")
     width, height = grayscale.size
-    edges = np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
+    edges = np.asarray(laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
 
     mid_x = width // 2
     mid_y = height // 2
@@ -245,7 +245,7 @@ def build_face_detector() -> FaceDetectorLike:
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
     options = vision.FaceDetectorOptions(
-        base_options=BaseOptions(model_asset_path=str(_FACE_DETECTOR_MODEL_PATH)),
+        base_options=BaseOptions(model_asset_path=str(FACE_DETECTOR_MODEL_PATH)),
         min_detection_confidence=FACE_DETECTION_CONFIDENCE_THRESHOLD,
     )
     detector: FaceDetectorLike = vision.FaceDetector.create_from_options(options)
@@ -275,7 +275,7 @@ OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 # analog zum FaceDetector-Muster oben. Quelle: offizielles mediapipe-Modell-Repository
 # (https://storage.googleapis.com/mediapipe-models/object_detector/
 # efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante (~4,4 MB).
-_OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
+OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
 # tests/test_classification.py::TestObjectDetectorModelAsset (ein Fall).
@@ -331,7 +331,7 @@ def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[Obj
     Konfidenzschwelle, die inhaltliche Filterung liegt bei den Konsumenten
     (criteria.py::compute_tier_score/compute_fahrzeug_score/compute_essen_trinken_score/
     animal_detections), die sie jeweils SELBST durchsetzen. Der Detektorlauf selbst bleibt
-    genau EINER pro Foto (worker/_criterion/local.py::_compute_content_criteria)."""
+    genau EINER pro Foto (worker/_criterion/local.py::compute_content_criteria)."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
     detections: list[ObjectDetection] = []
@@ -366,7 +366,7 @@ def build_object_detector() -> ObjectDetectorLike:
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
     options = vision.ObjectDetectorOptions(
-        base_options=BaseOptions(model_asset_path=str(_OBJECT_DETECTOR_MODEL_PATH)),
+        base_options=BaseOptions(model_asset_path=str(OBJECT_DETECTOR_MODEL_PATH)),
         score_threshold=OBJECT_DETECTION_CONFIDENCE_THRESHOLD,
     )
     detector: ObjectDetectorLike = vision.ObjectDetector.create_from_options(options)
@@ -408,7 +408,7 @@ SCENE_LABEL_MAX_RESULTS = 5
 # Quelle: offizielles mediapipe-Modell-Repository
 # (https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/
 # efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
-_SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
+SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
 # tests/test_classification.py::TestSceneClassifierModelAsset (ein Fall).
@@ -476,7 +476,7 @@ def build_scene_classifier() -> SceneClassifierLike:
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
     options = vision.ImageClassifierOptions(
-        base_options=BaseOptions(model_asset_path=str(_SCENE_CLASSIFIER_MODEL_PATH)),
+        base_options=BaseOptions(model_asset_path=str(SCENE_CLASSIFIER_MODEL_PATH)),
         score_threshold=SCENE_LABEL_MIN_CONFIDENCE,
         max_results=SCENE_LABEL_MAX_RESULTS,
     )
@@ -498,7 +498,7 @@ def build_scene_classifier() -> SceneClassifierLike:
 # ~3,6 MB). output_face_blendshapes wird zur Laufzeit ueber ein Options-Flag desselben Bundles
 # gesteuert (siehe build_face_landmarker unten), es gibt kein separates "ohne
 # Blendshapes"-Asset im mediapipe-Modell-Repository.
-_FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarker.task"
+FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarker.task"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
 # tests/test_classification.py::TestFaceLandmarkerModelAsset (ein Fall).
@@ -526,7 +526,7 @@ class FaceLandmarkerResultLike(Protocol):
     face_landmarks: list[list[LandmarkLike]]
     # Liste von 4x4-Rotations-/Transformationsmatrizen (eine je erkanntem Gesicht) - als `object`
     # statt `np.ndarray` typisiert, damit ein FakeFaceLandmarker in Tests keine echte mediapipe-
-    # Ausgabe nachbauen muss (_yaw_degrees_from_rotation_matrix akzeptiert alles, was
+    # Ausgabe nachbauen muss (yaw_degrees_from_rotation_matrix akzeptiert alles, was
     # np.asarray(...) versteht).
     facial_transformation_matrixes: list[object]
 
@@ -553,7 +553,7 @@ class FaceOrientation:
     max_x: float
 
 
-def _yaw_degrees_from_rotation_matrix(matrix: object) -> float:
+def yaw_degrees_from_rotation_matrix(matrix: object) -> float:
     """Extrahiert den Gier-/Yaw-Winkel (Kopfdrehung links/rechts) aus dem Rotationsanteil
     (obere-linke 3x3) einer 4x4-Transformationsmatrix - Standard-Rotationsmatrix-zu-Winkel-
     Mathematik, KEIN mediapipe-spezifischer Code, isoliert mit synthetischen Matrizen testbar
@@ -583,7 +583,7 @@ def detect_face_orientation(
     xs = [landmark.x for landmark in landmarks]
     matrix = result.facial_transformation_matrixes[0]
     return FaceOrientation(
-        yaw_degrees=_yaw_degrees_from_rotation_matrix(matrix),
+        yaw_degrees=yaw_degrees_from_rotation_matrix(matrix),
         min_x=min(xs),
         max_x=max(xs),
     )
@@ -601,7 +601,7 @@ def build_face_landmarker() -> FaceLandmarkerLike:
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
     options = vision.FaceLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=str(_FACE_LANDMARKER_MODEL_PATH)),
+        base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_MODEL_PATH)),
         num_faces=1,
         output_facial_transformation_matrixes=True,
         output_face_blendshapes=False,

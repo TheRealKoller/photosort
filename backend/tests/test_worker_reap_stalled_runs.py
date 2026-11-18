@@ -36,7 +36,7 @@ _SENTINEL_NOW = datetime(2030, 1, 1, 12, 0, 0)
 
 @pytest.fixture(autouse=True)
 def _freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(worker_runs, "_now_utc", lambda: _SENTINEL_NOW)
+    monkeypatch.setattr(worker_runs, "now_utc", lambda: _SENTINEL_NOW)
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
@@ -351,7 +351,7 @@ async def test_error_reaping_one_run_does_not_block_others(
     db_session.add_all([stalled_a, stalled_b])
     await db_session.commit()
 
-    original_fail_run = worker_runs._fail_run
+    original_fail_run = worker_runs.fail_run
     call_count = {"n": 0}
 
     async def flaky_fail_run(session: AsyncSession, run: object, message: str) -> None:
@@ -360,7 +360,7 @@ async def test_error_reaping_one_run_does_not_block_others(
             raise RuntimeError("simulated failure reaping one row")
         await original_fail_run(session, run, message)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(worker_runs, "_fail_run", flaky_fail_run)
+    monkeypatch.setattr(worker_runs, "fail_run", flaky_fail_run)
 
     session_factory = make_session_factory(db_session.bind)
     reaped = await reap_stalled_runs({}, session_factory=session_factory)

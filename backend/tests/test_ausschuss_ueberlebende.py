@@ -389,7 +389,7 @@ _ERWARTETE_VERWENDUNGEN = {
     # oder Eye), Sehenswuerdigkeits-Erkennung und - seit Spec 0383 - die Eye-Anzahl als EIGENER
     # Anteil der Vorschau (dieselbe Menge wie die Eye-Phase im Lauf). Sie folgen der Auswahl NICHT
     # von selbst (S1).
-    ("api/projects.py", "survives_ausschuss"): 3,
+    ("candidate_counts.py", "survives_ausschuss"): 3,
     # Spec 0525: die Auswahlmenge des Massenwegs im Abschluss des Ausschuss-Schritts. Die Menge
     # bestimmt der SERVER aus dem offenen Vorschlag - eine mitgeschickte Id-Liste wird nie gelesen.
     ("api/projects.py", "has_open_suggestion"): 1,

@@ -6,8 +6,8 @@ import numpy as np
 from PIL import Image
 
 from photosort.aesthetics import (
-    _ASSET_PATH,
     AESTHETICS_MODEL_SHA256,
+    ASSET_PATH,
     compute_aesthetics,
     compute_aesthetics_score,
 )
@@ -17,7 +17,7 @@ class TestAestheticsModelAsset:
     def test_committed_weights_file_matches_the_documented_sha256(self) -> None:
         # Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3): je gepinntem
         # Modell-Asset ein eigener Integritaets-Test, analog test_classification.py.
-        digest = hashlib.sha256(_ASSET_PATH.read_bytes()).hexdigest()
+        digest = hashlib.sha256(ASSET_PATH.read_bytes()).hexdigest()
         assert digest == AESTHETICS_MODEL_SHA256
 
 

@@ -54,7 +54,7 @@ def _cancel_after(
         return value
 
     pending: list[int] = []
-    original_check = worker_runs._raise_if_cancel_requested
+    original_check = worker_runs.raise_if_cancel_requested
 
     async def _check(check_session: AsyncSession, run: object) -> None:
         if pending:
@@ -67,7 +67,7 @@ def _cancel_after(
         await original_check(check_session, run)  # type: ignore[arg-type]
 
     monkeypatch.setattr(worker_scoring, "compute_sharpness", _counting)
-    monkeypatch.setattr(worker_runs, "_raise_if_cancel_requested", _check)
+    monkeypatch.setattr(worker_runs, "raise_if_cancel_requested", _check)
     return calls
 
 
@@ -189,7 +189,7 @@ async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
             pending.append(1)
         return value
 
-    original_check = worker_runs._raise_if_cancel_requested
+    original_check = worker_runs.raise_if_cancel_requested
 
     async def _check(check_session: AsyncSession, run: object) -> None:
         if pending:
@@ -211,7 +211,7 @@ async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
         await original_check(check_session, run)
 
     monkeypatch.setattr(worker_scoring, "compute_sharpness", _counting)
-    monkeypatch.setattr(worker_runs, "_raise_if_cancel_requested", _check)
+    monkeypatch.setattr(worker_runs, "raise_if_cancel_requested", _check)
 
     result = await worker_module.run_project_scoring(db_session, project, cache_dir=tmp_path)
 

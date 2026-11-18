@@ -191,7 +191,7 @@ _SHARED_SANITISATION_CASES = [
 
 class TestBothSanitisersAreTheSameFunction:
     """Die Auflage lautet DIESELBE Funktion, nicht eine zweite Fassung davon (Spec 0434, S7).
-    Beide Grenzen liegen bei 80, beide Wege durchlaufen `cloud_vision.py::_sanitize_label_text`."""
+    Beide Grenzen liegen bei 80, beide Wege durchlaufen `cloud_vision.py::sanitize_label_text`."""
 
     def test_the_two_length_limits_agree(self) -> None:
         assert MAX_PLACE_NAME_LENGTH == MAX_LANDMARK_NAME_LENGTH

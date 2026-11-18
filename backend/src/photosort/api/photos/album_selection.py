@@ -15,21 +15,21 @@ from photosort.api.photos._conversion import (
     NO_PLACE,
     AlbumParticipantOut,
     AlbumSelectionOut,
-    _to_photo_out,
+    to_photo_out,
 )
 from photosort.api.photos._reads import (
-    _album_level_source,
-    _event_and_location_by_photo_id,
-    _final_selection_decisions,
-    _get_project_or_404,
-    _latest_successful_criterion_scoring_run_id,
-    _partition_sizes,
-    _photos_by_id,
-    _place_in_events,
-    _ranking_by_photo_id,
-    _run_events,
+    album_level_source,
+    event_and_location_by_photo_id,
+    final_selection_decisions,
+    get_project_or_404,
+    latest_successful_criterion_scoring_run_id,
+    partition_sizes,
+    photos_by_id,
+    place_in_events,
+    ranking_by_photo_id,
+    run_events,
 )
-from photosort.final_selection import selection_state_of as _selection_state_of
+from photosort.final_selection import selection_state_of
 from photosort.models import FinalSelectionDecision, Photo, PhotoRanking, Rating, User
 from photosort.motif_strengths import load_effective_strengths
 from photosort.persons import load_effective_persons
@@ -54,7 +54,7 @@ async def album_selection(
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen
     # Parameter vergisst, waere STILL OEFFENTLICH. `current_user.id` geht unveraendert an
-    # `_to_photo_out`: die MENGE dieser Antwort ist zwar nutzerunabhaengig, `PhotoOut.suggestion`
+    # `to_photo_out`: die MENGE dieser Antwort ist zwar nutzerunabhaengig, `PhotoOut.suggestion`
     # bleibt es nicht.
     current_user: User = Depends(get_current_user),
 ) -> AlbumSelectionOut:
@@ -89,19 +89,19 @@ async def album_selection(
     Projektpraedikat ist syntaktisch unauffaellig und liesse jedes jemals bewertete oder
     entschiedene Foto ALLER Projekte in die Antwort - die Endauswahl eines Projekts enthielte dann
     kohaerent aussehende Fotos eines anderen, und das ist die Menge, die der Export nimmt.
-    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
+    `photos` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
 
-    SICHERHEIT (S8): `user_count` stammt aus DERSELBEN Leseoperation wie `participants`. Gingen
+    SICHERHEIT (S8): `users` stammt aus DERSELBEN Leseoperation wie `participants`. Gingen
     beide auseinander, behauptete die Ansicht Einigkeit ueber zwei Teilnehmer, waehrend die Regel
     ueber drei rechnet - kein Feld der Antwort saehe dabei widerspruechlich aus."""
-    project = await _get_project_or_404(project_id, session)
-    album_level_source = await _album_level_source(session, project)
+    project = await get_project_or_404(project_id, session)
+    album_source = await album_level_source(session, project)
 
     # (1) Teilnehmer UND Nenner aus EINER Leseoperation (S8).
     participants = await _participants(session)
-    user_count = len(participants)
+    users = len(participants)
 
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         # Ohne erfolgreichen Lauf gibt es weder Vorschlag noch Events, in die einzuordnen waere -
         # die Teilnehmerliste steht trotzdem, sonst waere der Leerzustand nicht von einer Instanz
@@ -109,7 +109,7 @@ async def album_selection(
         return AlbumSelectionOut(participants=participants, has_proposal=False, items=[])
 
     # (2) Die Events des Laufs - einmal, ueber dieselbe Beschaffung wie der Entwurfszweig.
-    run_events = await _run_events(session, latest_run_id)
+    events = await run_events(session, latest_run_id)
 
     # (3) DIE KANDIDATENMENGE, eine Obermenge, in EINER Abfrage: vorgeschlagen ODER entschieden
     # ODER jemals mit einer Albumentscheidung versehen. Sie ist vollstaendig - ohne jede
@@ -151,59 +151,59 @@ async def album_selection(
     # (4) Hydratation der Kandidaten - `photo.ratings` samt `Rating.user` ist dort bereits eager
     # geladen, die Zaehlung darunter loest deshalb keinen Lazy-Load aus.
     candidate_ids = [row.id for row in candidate_rows]
-    photos_by_id = await _photos_by_id(session, candidate_ids)
-    decisions = await _final_selection_decisions(session, candidate_ids)
+    photos = await photos_by_id(session, candidate_ids)
+    decisions = await final_selection_decisions(session, candidate_ids)
 
     # (5) DER ZUSTANDSFILTER: behalten wird, was strittig ist ODER zur Endauswahl gehoert ODER
-    # eine Entscheidung traegt - derselbe `selection_state`-Aufruf, den `_to_photo_out` danach
+    # eine Entscheidung traegt - derselbe `selection_state`-Aufruf, den `to_photo_out` danach
     # fuer die Felder benutzt. Ohne ihn stuende jedes von beiden gestrichene Foto in der Antwort.
     kept_rows: list[tuple[int, datetime, int | None]] = []
     for row in candidate_rows:
         # Direkter Zugriff, KEIN `.get(...)` mit stillem Ueberspringen: Jede Kandidaten-Id stammt
-        # aus `select(Photo.id)` derselben Transaktion, `_photos_by_id` liefert sie also alle.
+        # aus `select(Photo.id)` derselben Transaktion, `photos` liefert sie also alle.
         # Ein fehlender Eintrag waere ein Fehler und soll laut scheitern - stillschweigend
         # uebersprungen verschwaende ein Foto aus dem Album, ohne dass etwas es meldet.
-        photo = photos_by_id[row.id]
+        photo = photos[row.id]
         decision = decisions.get(row.id)
-        state = _selection_state_of(
+        state = selection_state_of(
             photo,
             proposed=row.selection_position is not None,
             decision=decision,
-            user_count=user_count,
+            user_count=users,
         )
         if state.contested or state.included or decision is not None:
             kept_rows.append((row.id, row.taken_at, row.event_id))
 
-    placed = _place_in_events(kept_rows, run_events.spans, run_events.position_by_event_id)
+    placed = place_in_events(kept_rows, events.spans, events.position_by_event_id)
     ids = placed.ordered_ids
-    rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
-    partition_sizes = await _partition_sizes(session, latest_run_id)
-    place_by_id = await _event_and_location_by_photo_id(
+    rankings_by_id = await ranking_by_photo_id(session, latest_run_id, ids)
+    sizes = await partition_sizes(session, latest_run_id)
+    place_by_id = await event_and_location_by_photo_id(
         session,
         project_id,
         latest_run_id,
-        {photo_id: photos_by_id[photo_id] for photo_id in ids},
+        {photo_id: photos[photo_id] for photo_id in ids},
         placed.event_id_by_photo_id,
-        run_events.out_by_id,
+        events.out_by_id,
     )
     persons_by_id = await load_effective_persons(session, ids)
     motifs_by_id = await load_effective_strengths(session, ids)
     items = [
-        _to_photo_out(
-            photos_by_id[photo_id],
+        to_photo_out(
+            photos[photo_id],
             current_user.id,
             project,
             rankings_by_id.get(photo_id),
-            partition_sizes,
+            sizes,
             # KEINE `curation_position`: Die Endauswahl ist keine numerierte Auswahl, und eine
             # Zahl hier waere eine Rangaussage ueber eine Menge, die keinen Rang kennt.
             None,
             place_by_id.get(photo_id, NO_PLACE),
             motifs_by_id.get(photo_id),
             decisions=decisions,
-            user_count=user_count,
+            user_count=users,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
-            album_level_source=album_level_source,
+            album_level_source=album_source,
         )
         for photo_id in ids
     ]

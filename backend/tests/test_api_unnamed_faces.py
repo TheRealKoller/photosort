@@ -589,16 +589,16 @@ async def test_an_assignment_waits_for_at_most_one_photo_of_a_running_listing(
     target_project = await stack.project("Ziel")
     target = await stack.photo(target_project, "ziel", ANCHOR)
     release, paused, order = _model_thread_gate(analyzer, colors[0])
-    original = persons_api._on_model_thread
+    original = persons_api.on_model_thread
 
     async def signalling(executor: Any, call: Any, *args: Any) -> Any:
         running = asyncio.ensure_future(original(executor, call, *args))
-        if call is persons_api._embedding_at:
+        if call is persons_api.embedding_at:
             await asyncio.sleep(0)
             release.set()
         return await running
 
-    monkeypatch.setattr(persons_api, "_on_model_thread", signalling)
+    monkeypatch.setattr(persons_api, "on_model_thread", signalling)
 
     async def assign() -> httpx.Response:
         await paused.wait()

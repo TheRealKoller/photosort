@@ -21,7 +21,7 @@ from photosort.cameras import CameraIdentity, camera_label
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
 from photosort.duplicates import has_open_suggestion_for, survives_ausschuss_for
 from photosort.events import EffectiveLocation
-from photosort.final_selection import selection_state_of as _selection_state_of
+from photosort.final_selection import selection_state_of
 from photosort.models import (
     CategoryMethod,
     CloudVisionPhase,
@@ -40,7 +40,7 @@ from photosort.motifs import MOTIF_REGISTRY
 from photosort.selection import motif_is_present
 
 
-def _suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality"]:
+def suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality"]:
     return "duplicate" if score.duplicate_of is not None else "low_quality"
 
 
@@ -109,7 +109,7 @@ class RankingOut(BaseModel):
     rank_score: float | None
     rank_position: int | None
     # Größe der GESAMTEN Event-Partition (nicht nur der angeforderten top_n), für "Rang M von N"
-    # im Info-Popover - lauf-global berechnet (siehe _partition_sizes), nicht nutzerspezifisch
+    # im Info-Popover - lauf-global berechnet (siehe partition_sizes), nicht nutzerspezifisch
     # gefiltert.
     partition_size: int
     # Traegt der LAUF dieses Foto vor? `selection_position IS NOT NULL`, LAUF-GLOBAL und ohne
@@ -162,7 +162,7 @@ class FineLabelOut(BaseModel):
 
     `display_name` und
     `raw_label` sind freier, extern erzeugter LLM-Text - sie sind beim Uebernehmen der
-    Modellantwort zeichensaniert worden (cloud_vision.py::_sanitize_label_text) und
+    Modellantwort zeichensaniert worden (cloud_vision.py::sanitize_label_text) und
     duerfen im Frontend ausschliesslich als regulaerer Textknoten gerendert werden."""
 
     canonical_key: str
@@ -453,7 +453,7 @@ class PhotoOut(BaseModel):
     # ALLE DREI OHNE VORGABEWERT, anders als `location`/`event`/`ranking` darueber (Auflage S9):
     # Ein `= False` waere die stille Ausfallrichtung "nicht im Album" - plausibel, ohne Ausnahme
     # und ohne Fehlercode, und der Fehler zeigte sich erst an einem leeren Album statt an der
-    # Stelle, an der er entsteht. Zusammen mit den pflichtigen `_to_photo_out`-Parametern
+    # Stelle, an der er entsteht. Zusammen mit den pflichtigen `to_photo_out`-Parametern
     # scheitert ein vergessener Aufrufer damit VOR der Laufzeit.
     final_selection_decision: bool | None
     # Gehoert das Foto zur Endauswahl? `album_selection.py::selection_state(...).included`. Das
@@ -464,7 +464,7 @@ class PhotoOut(BaseModel):
     contested: bool
     # Je WIRKSAM zugeordneter Person nur Id und Herkunft (`recognized`/`corrected`), nach Slot -
     # nie ein Name, ein Merkmal oder eine Aehnlichkeit (S5). Ohne Vorgabewert: wie
-    # `decisions` ist `persons` ein pflichtiger Schluesselwortparameter von `_to_photo_out`, damit
+    # `decisions` ist `persons` ein pflichtiger Schluesselwortparameter von `to_photo_out`, damit
     # ein vergessener Aufrufer vor der Laufzeit scheitert statt still eine leere Liste zu liefern.
     persons: list[PhotoPersonOut]
 
@@ -523,7 +523,7 @@ class AlbumDraftOut(BaseModel):
     events: list[EventOut]
     items: list[PhotoOut]
     # Die Zahl AUSWAHLFAEHIGER Kandidaten des Laufs - dieselbe Menge, aus der
-    # `worker/_criterion/ranking.py::_apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
+    # `worker/_criterion/ranking.py::apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
     # `excluded_document`). Lauf-global, ohne Nutzerbezug. Speist allein den Hinweis
     # "kleinerer Vorschlag": Er erscheint nur, wenn der Vorschlag diese Menge ausschoepft.
     eligible_candidate_count: int
@@ -532,7 +532,7 @@ class AlbumDraftOut(BaseModel):
 def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
     return SuggestionOut(
         status=score.suggested_status,  # type: ignore[arg-type]  # caller already checked not None
-        reason=_suggestion_reason(score),
+        reason=suggestion_reason(score),
         duplicate_of=score.duplicate_of,
         sharpness=score.sharpness,
         exposure=score.exposure,
@@ -619,7 +619,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     IMMER genau 2 Eintraege in fester Reihenfolge [landmark, remote_category] (unabhaengig von
     DB-/Insert-Reihenfolge von photo.cloud_vision_errors). Erwartet, dass `photo` bereits ueber
     selectinload(Photo.criterion_scores/landmark_detection/motif_assessment/album_suitability/
-    cloud_vision_errors) eager geladen ist (siehe _photos_by_id) - kein Lazy-Load hier."""
+    cloud_vision_errors) eager geladen ist (siehe photos_by_id) - kein Lazy-Load hier."""
     errors_by_phase = {row.phase: row for row in photo.cloud_vision_errors}
 
     # Landmark: Erfolgssignal ist entweder eine tatsaechliche Detection ("gefunden", RESULT) oder
@@ -645,7 +645,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     # LOKALE Kopfzeile; ein reiner Existenztest meldete jedes lokal beurteilte Foto als
     # erfolgreich cloud-klassifiziert, obwohl nie ein Cloud-Aufruf stattfand. Dieselbe Bedingung
     # steht in worker/remote_categories.py::select_remote_category_candidates und
-    # api/projects.py::_count_remote_category_candidates.
+    # candidate_counts.py::count_remote_category_candidates.
     # SICHERHEITSAUFLAGE S6: das Erfolgssignal ist ZUSAMMENGESETZT, genau wie das Skip-Kriterium
     # der Auswahl - Cloud-Kopfzeile UND Albumtauglichkeitszeile. Ohne die zweite Haelfte meldete
     # diese Stelle fuer jedes Bestandsfoto `RESULT`, waehrend dasselbe Foto in Auswahl und
@@ -712,7 +712,7 @@ def _event_place_out(event: Event) -> EventPlaceOut | None:
     return None
 
 
-def _event_out(event: Event) -> EventOut:
+def event_out(event: Event) -> EventOut:
     return EventOut(
         id=event.id,
         position=event.position,
@@ -723,7 +723,7 @@ def _event_out(event: Event) -> EventOut:
     )
 
 
-def _location_out(location: EffectiveLocation | None) -> PhotoLocationOut | None:
+def location_out(location: EffectiveLocation | None) -> PhotoLocationOut | None:
     """`source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail: es entsteht ausschliesslich aus
     `EffectiveLocation.inferred` und wird nie aus einem anderen Signal nachgebildet."""
     if location is None:
@@ -826,7 +826,7 @@ def _motifs_out(
     return entries
 
 
-def _to_photo_out(
+def to_photo_out(
     photo: Photo,
     current_user_id: int,
     project: Project,
@@ -884,7 +884,7 @@ def _to_photo_out(
     Pruefung, die ihn vor der Laufzeit faengt.
 
     `album_level_source` ist ebenfalls PFLICHTIGES Schluesselwort (S9) und kommt aus
-    `_album_level_source`, EINMAL je Anfrage berechnet. Er kommt nie aus einem Query- oder
+    `album_level_source`, EINMAL je Anfrage berechnet. Er kommt nie aus einem Query- oder
     Body-Parameter und nie aus einem anderen Feld derselben Antwort (S2): Ein vergessener Aufrufer
     scheiterte an `mypy --strict`, statt still die Tabelle des anderen Verfahrens zu lesen.
 
@@ -905,7 +905,7 @@ def _to_photo_out(
     has_suggestion = has_open_suggestion_for(photo) and not has_own_album_decision
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
     decision = decisions.get(photo.id)
-    state = _selection_state_of(
+    state = selection_state_of(
         photo,
         proposed=ranking is not None and ranking.selection_position is not None,
         decision=decision,

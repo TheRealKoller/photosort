@@ -13,10 +13,6 @@ Fehlerbild: Ein einzelnes Foto, das eine Seite nicht beurteilen kann, wird ueber
 gezaehlt. Liefert eine Seite auf KEINEM Foto ein Ergebnis, endet die Pruefung `FAILED` statt mit
 einer leeren Uebersicht. `error_message` traegt ausschliesslich einen festen deutschen Satz aus
 `ERROR_MESSAGES` - nie `str(exc)` eines fremden Systems.
-
-Zyklus: `photosort.worker` registriert diesen Job in `WorkerSettings.functions` und importiert das Modul
-deshalb am Modulanfang. Der umgekehrte Import (zwei reine Helfer aus `photosort.worker`) steht deshalb
-INNERHALB des Laufs, nicht am Modulanfang - sonst waere der Importring geschlossen.
 """
 
 from __future__ import annotations
@@ -31,6 +27,8 @@ from typing import Any, Final
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import photosort.worker._criterion.local as criterion_local
+import photosort.worker._runs as runs
 from photosort.aesthetics import build_aesthetics_model
 from photosort.classification import (
     build_face_detector,
@@ -207,9 +205,6 @@ async def _run_eye_sides(
     Rueckfall auf die Lauf-Fassung: die Pruefung endet `FAILED` (`ERROR_GENERIC`), statt eine
     Fassung zu pruefen, die niemand gewaehlt hat.
     """
-    # Zyklus wie in `execute_classification_review` unten: der Pruefpunkt steht genau einmal in
-    # `photosort.worker`.
-    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
 
     versions: list[tuple[str, str]] = []
     for side in sides:
@@ -227,7 +222,7 @@ async def _run_eye_sides(
         review.photos_processed = 0
         await session.commit()
         for index, photo in enumerate(photos, start=1):
-            await _raise_if_cancel_requested(session, review)
+            await runs.raise_if_cancel_requested(session, review)
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             if not path.exists():
                 continue
@@ -271,35 +266,32 @@ async def _run_local_sides(
     sides: Sequence[ClassificationReviewSide],
     cache_dir: Path,
     *,
-    compute_content_criteria: Callable[..., Any],
-    try_build: Callable[[Callable[[], Any]], Any],
     build_detector: Callable[[], Any],
     build_animal_detector: Callable[[], Any],
     build_classifier: Callable[[], Any],
     build_aesthetics: Callable[[], Any],
     build_landmarker: Callable[[], Any],
 ) -> set[int]:
-    """Die lokale Seite: `_compute_content_criteria` + `local_motif_strengths`, ohne
+    """Die lokale Seite: `compute_content_criteria` + `local_motif_strengths`, ohne
     Sehenswuerdigkeits-Beitrag und ohne eine Zeile in `photo_criterion_scores`.
 
     Die Detektoren werden EINMAL gebaut; ein einzelner Fehlschlag laesst nur die davon
     abhaengigen Kriterien fehlen (dieselbe Best-effort-Regel wie im Kriterienlauf). Ein Foto ohne
     `display`-Datei ergibt acht Nullen - das ist eine Beurteilung und kein fehlendes Ergebnis.
     """
-    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
 
-    detector = try_build(build_detector)
-    animal_detector = try_build(build_animal_detector)
-    scene_classifier = try_build(build_classifier)
-    aesthetics_model = try_build(build_aesthetics)
-    face_landmarker = try_build(build_landmarker)
+    detector = runs.try_build(build_detector)
+    animal_detector = runs.try_build(build_animal_detector)
+    scene_classifier = runs.try_build(build_classifier)
+    aesthetics_model = runs.try_build(build_aesthetics)
+    face_landmarker = runs.try_build(build_landmarker)
     _set_side_phase(review, sides[0])
     review.photos_processed = 0
     await session.commit()
     with_result: set[int] = set()
     for index, photo in enumerate(photos, start=1):
-        await _raise_if_cancel_requested(session, review)
-        criteria = compute_content_criteria(
+        await runs.raise_if_cancel_requested(session, review)
+        criteria = criterion_local.compute_content_criteria(
             cache_dir,
             photo,
             detector,
@@ -353,14 +345,12 @@ async def _run_cloud_side(
 ) -> set[int]:
     """Die kostenpflichtige Seite. Der Client wird nur gebaut, wenn die Einwilligung des Projekts
     vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall (ADR 0139 Punkt 5)."""
-    # Zyklus wie oben: der Pruefpunkt steht genau einmal in `photosort.worker`.
-    from photosort.worker import _raise_if_cancel_requested  # noqa: PLC0415
 
     if not project.cloud_vision_detection_enabled:
-        raise _ReviewAbort(ERROR_NO_CONSENT)
+        raise ReviewAbort(ERROR_NO_CONSENT)
     model = side.model
     if model is None:
-        raise _ReviewAbort(ERROR_GENERIC)
+        raise ReviewAbort(ERROR_GENERIC)
     client = build_client(model)
 
     # VOR dem `try` gebunden: der `finally`-Block liest diese Namen auch dann, wenn die erste
@@ -378,7 +368,7 @@ async def _run_cloud_side(
         concurrency = settings.remote_category_classification_concurrency
         processed = 0
         for start in range(0, len(photos), concurrency):
-            await _raise_if_cancel_requested(session, review)
+            await runs.raise_if_cancel_requested(session, review)
             block = photos[start : start + concurrency]
             results = await asyncio.gather(
                 *[_classify_for_review(client, cache_dir, photo) for photo in block],
@@ -450,7 +440,7 @@ async def _run_cloud_side(
     return with_result
 
 
-class _ReviewAbort(RuntimeError):
+class ReviewAbort(RuntimeError):
     """Ein Abbruch mit einer Meldung aus der geschlossenen Menge."""
 
     def __init__(self, message: str) -> None:
@@ -574,14 +564,6 @@ async def execute_classification_review(
     Die Modell-Builder der lokalen Seite sind injizierbar; ohne Angabe kommen die echten Builder
     aus `photosort.worker` - in keinem automatisierten Test werden sie aufgerufen.
     """
-    # Zyklus: photosort.worker importiert dieses Modul fuer `WorkerSettings.functions`. Der Gegenimport
-    # steht deshalb hier drin - und nur fuer diese reinen Helfer.
-    from photosort.worker import (  # noqa: PLC0415
-        _compute_content_criteria,
-        _finish_cancelled,
-        _raise_if_cancel_requested,
-        _try_build,
-    )
 
     if project is None:
         loaded_project = await session.get(Project, review.project_id)
@@ -612,8 +594,6 @@ async def execute_classification_review(
                 photos,
                 local_sides,
                 cache_dir,
-                compute_content_criteria=_compute_content_criteria,
-                try_build=_try_build,
                 build_detector=build_detector or build_face_detector,
                 build_animal_detector=build_animal_detector or build_object_detector,
                 build_classifier=build_classifier or build_scene_classifier,
@@ -641,11 +621,11 @@ async def execute_classification_review(
             not ids and not (sides[letter].failed_calls or 0)
             for letter, ids in results_by_side.items()
         ):
-            raise _ReviewAbort(ERROR_NO_RESULTS)
+            raise ReviewAbort(ERROR_NO_RESULTS)
 
         # Pruefpunkt vor den Faellen: ein abgebrochener Prueflauf legt keine an, damit bleibt
         # jedes Urteil dem erfolgreich abgeschlossenen Lauf vorbehalten.
-        await _raise_if_cancel_requested(session, review)
+        await runs.raise_if_cancel_requested(session, review)
         review.phase = ReviewPhase.CASES
         review.last_progress_at = _now_utc()
         await session.commit()
@@ -662,36 +642,34 @@ async def execute_classification_review(
         await session.commit()
         return review
     except RunCancelled:
-        await _finish_cancelled(session, review)
+        await runs.finish_cancelled(session, review)
         return review
     except asyncio.CancelledError:
-        await _fail(session, review, ERROR_CANCELLED)
+        await fail_review(session, review, ERROR_CANCELLED)
         raise
-    except _ReviewAbort as abort:
-        await _fail(session, review, str(abort))
+    except ReviewAbort as abort:
+        await fail_review(session, review, str(abort))
         return review
     except EyeServiceUnavailableError:
-        await _fail(session, review, ERROR_EYE_UNAVAILABLE)
+        await fail_review(session, review, ERROR_EYE_UNAVAILABLE)
         return review
     except Exception:
-        await _fail(session, review, ERROR_GENERIC)
+        await fail_review(session, review, ERROR_GENERIC)
         return review
 
 
-async def _fail(session: AsyncSession, review: ClassificationReview, message: str) -> None:
+async def fail_review(session: AsyncSession, review: ClassificationReview, message: str) -> None:
     """Setzt den Lauf auf `FAILED` mit einem Satz aus der geschlossenen Menge und raeumt den
     Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
     behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
-    Ursache sichtbar (derselbe Grundsatz wie `worker/_runs.py::_commit_phase_costs`)."""
-    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in photosort.worker.
-    from photosort.worker import _finish_cancelled  # noqa: PLC0415
+    Ursache sichtbar (derselbe Grundsatz wie `worker/_runs.py::commit_phase_costs`)."""
 
     assert message in ERROR_MESSAGES
     try:
         await session.rollback()
         await session.refresh(review)
         if review.cancel_requested_at is not None:
-            await _finish_cancelled(session, review)
+            await runs.finish_cancelled(session, review)
             return
         review.status = ScanStatus.FAILED
         review.phase = None
@@ -710,12 +688,13 @@ async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int 
     Die Zeile legt die API als `QUEUED` an; hier wird sie uebernommen. Wurde sie in der
     Warteschlange abgebrochen, endet der Job ohne jede Arbeit. Der Abbruch-Beobachter macht die
     Wartezeiten der Cloud-Drosselung unterbrechbar."""
+    # Ueber das Modul nachgeschlagen, nicht beim Import gebunden: nur so trifft ein Test-Double,
+    # das `photosort.db.async_session_factory` ersetzt, den Job auch wirklich.
     from photosort.db import async_session_factory  # noqa: PLC0415
     from photosort.run_cancel import watch_cancel_requests  # noqa: PLC0415
-    from photosort.worker import _take_over_queued_run  # noqa: PLC0415
 
     async with async_session_factory() as session:
-        review = await _take_over_queued_run(session, ClassificationReview, review_id)
+        review = await runs.take_over_queued_run(session, ClassificationReview, review_id)
         if review is None:
             return None
         async with watch_cancel_requests(async_session_factory, ClassificationReview, review_id):

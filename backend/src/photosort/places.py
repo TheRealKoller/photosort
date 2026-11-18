@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from photosort.cloud_vision import _sanitize_label_text
+from photosort.cloud_vision import sanitize_label_text
 
 # Die Koernung, mit der gefragt und abgelegt wird: zwei Nachkommastellen sind rund 1,1 km x
 # 0,7 km. SICHERHEITSENTSCHEIDUNG, keine Anzeigerundung - verlaesst etwas das System, dann diese
@@ -94,7 +94,7 @@ def sanitize_place_name(raw: object) -> str | None:
     """Der einzige Weg, auf dem ein Ortsname in PhotoSort verwendbar wird.
 
     Zeichensanitisierung mit DERSELBEN Funktion wie der Sehenswuerdigkeits- und der
-    Feinlabel-Pfad (`cloud_vision.py::_sanitize_label_text`, nie eine zweite Fassung davon),
+    Feinlabel-Pfad (`cloud_vision.py::sanitize_label_text`, nie eine zweite Fassung davon),
     danach die Laengengrenze. `None` heisst "kein verwendbarer Name" - Nicht-String, leer nach der
     Sanitisierung, oder laenger als `MAX_PLACE_NAME_LENGTH`.
 
@@ -103,7 +103,7 @@ def sanitize_place_name(raw: object) -> str | None:
     anzuwenden: eine unbrauchbare Stufe wird `None`, nie die ganze Antwort verworfen."""
     if not isinstance(raw, str):
         return None
-    sanitized = _sanitize_label_text(raw)
+    sanitized = sanitize_label_text(raw)
     if not sanitized or len(sanitized) > MAX_PLACE_NAME_LENGTH:
         return None
     return sanitized

@@ -451,7 +451,7 @@ async def test_scoring_run_marked_failed_on_cancelled_error(
     run_project_scoring durch.
 
     project_id wird VOR dem Aufruf gelesen und als lokale Variable verwendet (nicht project.id
-    danach): session.rollback() in _fail_run expired alle Objekte der Session - ein direkter
+    danach): session.rollback() in fail_run expired alle Objekte der Session - ein direkter
     project.id-Zugriff DANACH wuerde einen impliziten Lazy-Load ausloesen, der ausserhalb des
     von SQLAlchemy fuer Async-Sessions vorausgesetzten greenlet-Kontexts mit
     sqlalchemy.exc.MissingGreenlet fehlschlaegt (kein Bug dieser Spec, sondern ein bekanntes
@@ -489,7 +489,7 @@ async def test_scoring_updates_last_progress_at_at_each_checkpoint(
 
     monkeypatch.setattr(worker_scoring, "SCORE_COMMIT_BATCH_SIZE", 1)
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)
+    monkeypatch.setattr(worker_runs, "now_utc", lambda: sentinel)
 
     project = await _make_project(db_session)
     photo = await _add_photo(

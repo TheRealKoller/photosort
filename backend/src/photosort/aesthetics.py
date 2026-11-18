@@ -30,7 +30,7 @@ from PIL import Image
 # Lambda-Layer-Deserialisierungsrisiko fuer dieses Asset-Format strukturell nicht anwendbar. Die
 # SHA256-Integritaetspruefung bleibt trotzdem als Schutz gegen nachtraegliche Manipulation; sie
 # bricht in tests/test_aesthetics.py::TestAestheticsModelAsset (ein Fall).
-_ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.07.hdf5"
+ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.07.hdf5"
 
 AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c681a21a91cb2"
 
@@ -102,6 +102,6 @@ def build_aesthetics_model() -> AestheticsModelLike:
     x = Dropout(0.75)(base_model.output)
     x = Dense(_RATING_COUNT, activation="softmax")(x)
     model = Model(base_model.input, x)
-    model.load_weights(str(_ASSET_PATH))
+    model.load_weights(str(ASSET_PATH))
     typed_model: AestheticsModelLike = model
     return typed_model

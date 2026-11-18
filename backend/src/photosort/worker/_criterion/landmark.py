@@ -44,11 +44,11 @@ if TYPE_CHECKING:
     from photosort.worker.criterion_scoring import ModelSet
 
 
-def _select_landmark_candidates(
+def select_landmark_candidates(
     candidate_values: dict[int, dict[str, float]], already_scored_photo_ids: set[int]
 ) -> list[int]:
     """Vorfilterung + Skip-bereits-gescorter-Fotos für den landmark-Cloud-Aufruf - reine, DB-freie
-    Funktion, isoliert unit-testbar (analog _classify_scan_entries). Ein Foto wird nur dann
+    Funktion, isoliert unit-testbar (analog classify_scan_entries). Ein Foto wird nur dann
     Kandidat, wenn im selben Lauf content_landscape ODER gebaeude die jeweils registrierte
     presence_threshold erreicht (`>=`, inklusiv; die Registry-Schwellwerte werden
     wiederverwendet, es gibt hier KEINEN zweiten, doppelt gepflegten Grenzwert) UND noch keine
@@ -68,7 +68,7 @@ def _select_landmark_candidates(
     return candidates
 
 
-def _landmark_place_hints(
+def landmark_place_hints(
     photos: Collection[Photo], info_by_cell: Mapping[tuple[float, float], PlaceInfo]
 ) -> dict[int, PlaceHint | None]:
     """Die Ortsangabe je Kandidatenfoto - rein, DB-frei und ohne Netzwerk.
@@ -90,7 +90,7 @@ def _landmark_place_hints(
     return hints
 
 
-def _landmark_place_cells(photos: Collection[Photo]) -> set[tuple[float, float]]:
+def landmark_place_cells(photos: Collection[Photo]) -> set[tuple[float, float]]:
     """Die abgelegten Zellen der Kandidatenfotos, fuer die es ueberhaupt eine gibt.
 
     Die Zellen, nach denen gefragt und unter denen abgelegt wird, sind unveraendert die von
@@ -104,7 +104,7 @@ def _landmark_place_cells(photos: Collection[Photo]) -> set[tuple[float, float]]
     }
 
 
-async def _detect_landmark_for_photo(
+async def detect_landmark_for_photo(
     client: LandmarkClientLike, cache_dir: Path, photo: Photo, hint: PlaceHint | None
 ) -> LandmarkDetection:
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten (analog
@@ -116,10 +116,10 @@ async def _detect_landmark_for_photo(
     aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
-    return await client.detect(image_bytes, runs._CLOUD_VISION_IMAGE_MIME_TYPE, hint)
+    return await client.detect(image_bytes, runs.CLOUD_VISION_IMAGE_MIME_TYPE, hint)
 
 
-async def _upsert_landmark_detection(
+async def upsert_landmark_detection(
     session: AsyncSession,
     photo_id: int,
     detection: LandmarkDetection,
@@ -130,7 +130,7 @@ async def _upsert_landmark_detection(
     """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
     wurde (kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn detection.name is not None
     (siehe Aufrufer). `provider` wird atomar mit name/confidence gesetzt -dieser Aufruf feuert
-    praktisch nie fuer ein bereits gescortes Foto (Skip ueber _select_landmark_candidates anhand von
+    praktisch nie fuer ein bereits gescortes Foto (Skip ueber select_landmark_candidates anhand von
     PhotoCriterionScore, providerunabhaengig), ein
     Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht.
 
@@ -183,11 +183,11 @@ async def _landmark_register(
     113-MB-Modell in einen Anfragepfad (S10).
 
     UND NUR, WENN ES UEBERHAUPT KANDIDATEN GIBT: Die Phase wird auch dann betreten, wenn
-    `_select_landmark_candidates` alles herausgefiltert hat (ein zweiter Lauf ueber ein bereits
+    `select_landmark_candidates` alles herausgefiltert hat (ein zweiter Lauf ueber ein bereits
     vollstaendig gescortes Projekt) - dann laeuft die Blockschleife null Mal, und ein geladenes
-    113-MB-Modell waere Arbeit ohne Gegenwert. Dieselbe Begruendung wie beim `_place_infos` im
+    113-MB-Modell waere Arbeit ohne Gegenwert. Dieselbe Begruendung wie beim `place_infos` im
     Orchestrator."""
-    embedder = runs._try_build(models.build_embedder) if has_candidates else None
+    embedder = runs.try_build(models.build_embedder) if has_candidates else None
     if embedder is None:
         # Der Schnappschuss haengt am Einbetter und nicht umgekehrt: Ohne ihn wird er nie gelesen,
         # und die Abfrage waere derselbe Leerlauf.
@@ -224,7 +224,7 @@ async def _canonical_landmark_name(
     Fehlerfall.
 
     `name` und `confidence` gehen dagegen UNGEFILTERT in die Zeile (siehe
-    `_upsert_landmark_detection`): Die Antwort ist bezahlt und bleibt vollstaendig erhalten."""
+    `upsert_landmark_detection`): Die Antwort ist bezahlt und bleibt vollstaendig erhalten."""
     assert detection.name is not None
     if embedder is None or detection.confidence < LANDMARK_CONFIDENCE_THRESHOLD:
         return None
@@ -270,7 +270,7 @@ async def _run_landmark_block(
     run = context.run
     results = await asyncio.gather(
         *[
-            _detect_landmark_for_photo(client, context.cache_dir, photo, hints[photo.id])
+            detect_landmark_for_photo(client, context.cache_dir, photo, hints[photo.id])
             for photo in block_photos
         ],
         return_exceptions=True,
@@ -299,7 +299,7 @@ async def _run_landmark_block(
             totals.failures += 1
             exc_type_name = type(result).__name__
             exc_message = str(result)
-            runs._log_cloud_vision_failure(
+            runs.log_cloud_vision_failure(
                 "landmark",
                 photo.id,
                 photo.relative_path,
@@ -308,7 +308,7 @@ async def _run_landmark_block(
             )
             # Dauerhafte, per API abrufbare Persistenz desselben Fehlschlags (getrennt vom Log
             # oben).
-            await runs._record_cloud_vision_error(
+            await runs.record_cloud_vision_error(
                 session,
                 photo.id,
                 CloudVisionPhase.LANDMARK,
@@ -331,12 +331,12 @@ async def _run_landmark_block(
         context.candidate_values[photo.id]["landmark"] = landmark_value
         # "Aufraeumen bei Erfolg": ein erfolgreicher (Retry-)Versuch loescht eine ggf. vorhandene
         # Fehler-Zeile.
-        await runs._clear_cloud_vision_error(session, photo.id, CloudVisionPhase.LANDMARK)
+        await runs.clear_cloud_vision_error(session, photo.id, CloudVisionPhase.LANDMARK)
         if detection.name is not None:
             canonical_name = await _canonical_landmark_name(
                 context, detection, hints[photo.id], register, embedder
             )
-            await _upsert_landmark_detection(
+            await upsert_landmark_detection(
                 session,
                 photo.id,
                 detection,
@@ -358,13 +358,13 @@ async def _run_landmark_block(
     totals.processed += handled
     run.landmark_photos_processed = totals.processed
     run.landmark_failed_calls = totals.failures
-    run.last_progress_at = runs._now_utc()
+    run.last_progress_at = runs.now_utc()
     await session.commit()
     if cancelled:
         raise RunCancelled
 
 
-async def _run_landmark_phase(
+async def run_landmark_phase(
     context: CriterionRunContext,
     models: ModelSet,
     *,
@@ -385,11 +385,11 @@ async def _run_landmark_phase(
     run = context.run
     landmark_model = landmark_model or settings.resolved_landmark_model()
     landmark_provider = provider_for_task_model(landmark_model)
-    landmark_client = runs._try_build(lambda: models.build_landmark_client(landmark_model or ""))
+    landmark_client = runs.try_build(lambda: models.build_landmark_client(landmark_model or ""))
     if landmark_client is None:
         # Ein nicht konstruierbarer Client laesst die Sehenswuerdigkeits-Erkennung aus - das
         # gehoert VERBINDLICH in die laufweite Cloud-Fehlermeldung, sonst bliebe der Fall stumm.
-        runs._append_cloud_error(
+        runs.append_cloud_error(
             run,
             "Sehenswuerdigkeits-Erkennung nicht verfuegbar (Initialisierung fehlgeschlagen).",
         )
@@ -423,7 +423,7 @@ async def _run_landmark_phase(
         )
         landmark_concurrency = settings.landmark_api_concurrency
         for start in range(0, len(candidate_photos), landmark_concurrency):
-            await runs._raise_if_cancel_requested(session, run)
+            await runs.raise_if_cancel_requested(session, run)
             await _run_landmark_block(
                 context,
                 landmark_client,
@@ -442,7 +442,7 @@ async def _run_landmark_phase(
         # Cloud-Phase in der Kriterien-Phase scheitert, hat das Geld bereits ausgegeben. Ohne das
         # Schreiben hier verloere er den real angefallenen Betrag - und waere wegen `0` statt
         # `NULL` nicht einmal als Luecke erkennbar. Das Commit ist ebenfalls noetig: der Fehlerpfad
-        # laeuft ueber _fail_run, das mit einem rollback() beginnt.
+        # laeuft ueber fail_run, das mit einem rollback() beginnt.
         run.landmark_api_calls = totals.api_calls
         run.landmark_input_tokens = totals.input_tokens
         run.landmark_output_tokens = totals.output_tokens
@@ -458,9 +458,9 @@ async def _run_landmark_phase(
         # `run.landmark_model` - die Preisgrundlage des eben eingefrorenen Betrags - steht bereits
         # vom PHASENANFANG her da und ist derselbe lokale `landmark_model`, aus dem hier der Betrag
         # entsteht. Deshalb KEINE zweite Zuweisung an dieser Stelle.
-        await runs._commit_phase_costs(session)
+        await runs.commit_phase_costs(session)
     # Hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsaechlich gewartet wurde.
-    runs._log_cloud_vision_throttling(
+    runs.log_cloud_vision_throttling(
         "landmark",
         landmark_provider,
         landmark_throttle.stats().since(landmark_throttle_before),
@@ -468,7 +468,7 @@ async def _run_landmark_phase(
     # Zaehl-Zusammenfassung statt N Einzelmeldungen - die Einzelfehler bleiben pro Foto ueber
     # photo_cloud_vision_errors abrufbar, das hier ist die Laufebene.
     if totals.failures > 0:
-        runs._append_cloud_error(
+        runs.append_cloud_error(
             run,
             f"Sehenswuerdigkeits-Erkennung: {totals.failures} von "
             f"{totals.attempts} Fotos fehlgeschlagen.",

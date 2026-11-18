@@ -19,9 +19,10 @@ from tests.import_closure import SRC_DIR, package_files
 
 _PAKET = "photosort.worker"
 
-# Die sieben Lauf-Einstiegspunkte, je einer je Lauf-Datei. Sechs davon sind die Coroutine hinter
-# einem arq-Job, der siebte ist der Cron des Fortschritts-Watchdogs.
+# Die acht Lauf-Einstiegspunkte, je einer je Lauf-Datei. Sieben davon sind die Coroutine hinter
+# einem arq-Job, der achte ist der Cron des Fortschritts-Watchdogs.
 _LAUF_EINSTIEGSPUNKTE = (
+    "run_classification_review",
     "run_project_scan",
     "run_project_scoring",
     "run_classification",
@@ -35,6 +36,7 @@ _LAUF_EINSTIEGSPUNKTE = (
 # hier eingetragen werden muss, statt still unter die erlaubten Kanten zu fallen.
 _LAUF_DATEIEN = (
     "classification",
+    "classification_review",
     "criterion_scoring",
     "export",
     "remote_categories",
@@ -48,7 +50,7 @@ _BASEN = ("_criterion", "_runs")
 _ERLAUBTE_KANTEN = frozenset(
     # Der Einstiegspunkt importiert jedes Untermodul - daran haengt `import photosort.worker`.
     {(_PAKET, f"{_PAKET}.{name}") for name in _LAUF_DATEIEN}
-    | {(_PAKET, f"{_PAKET}._criterion.{phase}") for phase in _PHASEN}
+    | {(_PAKET, f"{_PAKET}._criterion.{phase}") for phase in ("local", "ranking")}
     | {(_PAKET, f"{_PAKET}._runs")}
     # Jede Lauf-Datei und jede Phase darf die gemeinsame Schicht benutzen.
     | {
@@ -65,6 +67,12 @@ _ERLAUBTE_KANTEN = frozenset(
     | {
         (f"{_PAKET}.criterion_scoring", f"{_PAKET}._criterion.{phase}")
         for phase in ("landmark", "local", "persons", "ranking")
+    }
+    # Der Prueflauf ist ein eigener Lauf: er benutzt die gemeinsame Schicht und die lokale
+    # Kriterienphase, keinen anderen Lauf.
+    | {
+        (f"{_PAKET}.classification_review", f"{_PAKET}._runs"),
+        (f"{_PAKET}.classification_review", f"{_PAKET}._criterion.local"),
     }
     # ... und der verkettete Klassifizierungslauf die beiden anderen Laeufe samt Eye-Phase.
     | {
@@ -163,7 +171,7 @@ def test_only_the_chaining_run_imports_another_run() -> None:
 
 
 def test_every_entry_point_is_defined_exactly_once() -> None:
-    """Jeder der sieben Lauf-Einstiegspunkte steht in GENAU EINER Datei: eine zweite Definition
+    """Jeder der acht Lauf-Einstiegspunkte steht in GENAU EINER Datei: eine zweite Definition
     waere ein zweiter Lauf unter demselben Namen, und der arq-Job zeigte auf eine beliebige."""
     gefunden: dict[str, list[str]] = {name: [] for name in _LAUF_EINSTIEGSPUNKTE}
     for modul, pfad in _paketmodule().items():
@@ -180,17 +188,29 @@ def test_every_entry_point_is_defined_exactly_once() -> None:
         "run_criterion_scoring": [f"{_PAKET}.criterion_scoring"],
         "run_remote_category_classification": [f"{_PAKET}.remote_categories"],
         "reap_stalled_runs": [f"{_PAKET}.stall_reaper"],
+        "run_classification_review": [f"{_PAKET}.classification_review"],
     }
 
 
 def test_the_entry_point_reaches_every_submodule() -> None:
-    """`import photosort.worker` zieht jedes Untermodul mit, das einen oeffentlichen Namen
-    beisteuert - das ist die Zusage, an der die Namensflaeche des Einstiegspunkts haengt.
+    """`import photosort.worker` zieht jedes Untermodul mit - das ist die Zusage, an der die
+    Namensflaeche des Einstiegspunkts haengt.
+
+    Nicht jede Datei wird direkt adressiert: die Phasen `eye`, `landmark`, `persons` stehen
+    hinter ihren Laeufen. Erwartet wird deshalb die TRANSITIVE Erreichbarkeit vom Einstiegspunkt,
+    nicht die Kante von der `__init__.py` aus.
 
     `_criterion` selbst ist die INNERE Basis (Run-Kontext, Kriterienzeilen) und bietet keinen
     Namen an, den der Einstiegspunkt fuehrt; sie wird deshalb nicht erwartet."""
     paketmodule = _paketmodule()
-    erreicht = _runtime_importe(paketmodule[_PAKET], paketmodule)
+    kanten = _kanten()
+    erreicht = {_PAKET}
+    offen = [_PAKET]
+    while offen:
+        for ziel in kanten[offen.pop()]:
+            if ziel in paketmodule and ziel not in erreicht:
+                erreicht.add(ziel)
+                offen.append(ziel)
 
     assert {modul for modul in paketmodule if modul not in (_PAKET, f"{_PAKET}._criterion")} <= (
         erreicht

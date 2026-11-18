@@ -13,20 +13,20 @@ from sqlalchemy.orm import aliased
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.persons import photo_person_outs
-from photosort.api.photos._conversion import NO_PLACE, PhotoOut, _suggestion_reason, _to_photo_out
+from photosort.api.photos._conversion import NO_PLACE, PhotoOut, suggestion_reason, to_photo_out
 from photosort.api.photos._reads import (
     MAX_QUERY_POSITION,
-    _album_level_source,
-    _auto_decided_ids,
-    _event_and_location_by_photo_id,
-    _event_ids_from_rankings,
-    _final_selection_decisions,
-    _get_project_or_404,
-    _latest_successful_criterion_scoring_run_id,
-    _partition_sizes,
-    _photos_by_id,
-    _ranking_by_photo_id,
-    _user_count,
+    album_level_source,
+    auto_decided_ids,
+    event_and_location_by_photo_id,
+    event_ids_from_rankings,
+    final_selection_decisions,
+    get_project_or_404,
+    latest_successful_criterion_scoring_run_id,
+    partition_sizes,
+    photos_by_id,
+    ranking_by_photo_id,
+    user_count,
 )
 from photosort.duplicates import (
     DuplicateLink,
@@ -58,7 +58,7 @@ router = APIRouter()
 
 
 def _ausschuss_reason(photo: Photo) -> Literal["duplicate", "low_quality", "earlier_decision"]:
-    """Der Grund der Markierung im Ausschuss - `_suggestion_reason` plus den dritten Fall.
+    """Der Grund der Markierung im Ausschuss - `suggestion_reason` plus den dritten Fall.
 
     `earlier_decision`: Der Lauf hat `suggested_status` UND `duplicate_of` zurueckgesetzt, die
     Entscheidungszeile steht aber noch. Die Praesenzgrenze bleibt in `duplicates.py`
@@ -68,7 +68,7 @@ def _ausschuss_reason(photo: Photo) -> Literal["duplicate", "low_quality", "earl
     assert score is not None
     if decision_without_suggestion_for(photo):
         return "earlier_decision"
-    return _suggestion_reason(score)
+    return suggestion_reason(score)
 
 
 class AusschussPhotoEntryOut(BaseModel):
@@ -82,7 +82,7 @@ class AusschussPhotoEntryOut(BaseModel):
     (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`,
     `earlier_decision`, wenn `suggested_status` UND `duplicate_of` leer sind, aber eine
     Entscheidungszeile existiert, sonst `low_quality` (`_ausschuss_reason`, dieselbe Ableitung wie
-    `_suggestion_reason`). Der Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein
+    `suggestion_reason`). Der Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein
     (AK4); `SuggestionOut.reason` bleibt zweiwertig.
 
     `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdruecklich NICHT
@@ -202,37 +202,35 @@ async def _ausschuss_photo_outs(
     Bestand."""
     if not ids:
         return {}, {}
-    photos_by_id = await _photos_by_id(session, ids)
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project.id)
+    photos = await photos_by_id(session, ids)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project.id)
     rankings_by_id = (
-        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
+        await ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
     )
-    partition_sizes = (
-        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
-    )
-    place_by_id = await _event_and_location_by_photo_id(
-        session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    sizes = await partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    place_by_id = await event_and_location_by_photo_id(
+        session, project.id, latest_run_id, photos, event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
     persons_by_id = await load_effective_persons(session, ids)
-    decisions = await _final_selection_decisions(session, ids)
-    user_count = await _user_count(session)
-    album_level_source = await _album_level_source(session, project)
-    return photos_by_id, {
-        photo_id: _to_photo_out(
-            photos_by_id[photo_id],
+    decisions = await final_selection_decisions(session, ids)
+    users = await user_count(session)
+    album_source = await album_level_source(session, project)
+    return photos, {
+        photo_id: to_photo_out(
+            photos[photo_id],
             current_user_id,
             project,
             rankings_by_id.get(photo_id),
-            partition_sizes,
+            sizes,
             # Keine `curation_position`: Der Ausschuss ist keine numerierte Auswahl.
             None,
             place_by_id.get(photo_id, NO_PLACE),
             motifs_by_id.get(photo_id),
             decisions=decisions,
-            user_count=user_count,
+            user_count=users,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
-            album_level_source=album_level_source,
+            album_level_source=album_source,
         )
         for photo_id in ids
     }
@@ -346,7 +344,7 @@ async def list_ausschuss(
             detail=("auto_decided=true ist nicht mit photo_id kombinierbar."),
         )
 
-    project = await _get_project_or_404(project_id, session)
+    project = await get_project_or_404(project_id, session)
 
     # Eine Anweisung, zwei UND-Glieder: die Projektbindung und der Bestand. `has_ausschuss_entry`
     # zieht dieselbe Praesenzgrenze wie das Ueberlebenden-Praedikat und steht NICHT ausgeschrieben
@@ -372,7 +370,7 @@ async def list_ausschuss(
     # projektbegrenzten Bestand und diesen Kanten - nie aus einem eigenen SQL-Stern.
     links = await load_duplicate_links(session, project.id)
     slots = group_ausschuss_stock(bestand, links)
-    auto_ids = await _auto_decided_ids(session, project.id)
+    auto_ids = await auto_decided_ids(session, project.id)
     auto_representatives = auto_decided_representatives(links, auto_ids)
     auto_links = [link for link in links if link.photo_id in auto_ids]
     auto_decided_group_count = len(auto_representatives)
@@ -394,10 +392,9 @@ async def list_ausschuss(
         # Antwort ist der eine Eintrag, nicht eine Seite. Eine fremde oder unbekannte Id steht nicht
         # im projektbegrenzten Bestand und ergibt die leere Liste.
         ids = [photo_id] if any(row[0] == photo_id for row in bestand) else []
-        photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
+        photos, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
         detail: list[AusschussEntryOut] = [
-            _ausschuss_photo_entry_out(photos_by_id[pid], outs[pid], links, auto_links)
-            for pid in ids
+            _ausschuss_photo_entry_out(photos[pid], outs[pid], links, auto_links) for pid in ids
         ]
         return AusschussOut(
             items=detail,
@@ -414,11 +411,9 @@ async def list_ausschuss(
         ]
     seite = slots[offset : offset + limit]
     ids = [slot.photo_id if isinstance(slot, SingleSlot) else slot.cover_id for slot in seite]
-    photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
+    photos, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
     items: list[AusschussEntryOut] = [
-        _ausschuss_photo_entry_out(
-            photos_by_id[slot.photo_id], outs[slot.photo_id], links, auto_links
-        )
+        _ausschuss_photo_entry_out(photos[slot.photo_id], outs[slot.photo_id], links, auto_links)
         if isinstance(slot, SingleSlot)
         else _ausschuss_group_entry_out(slot, outs[slot.cover_id], auto_representatives)
         for slot in seite

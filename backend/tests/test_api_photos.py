@@ -540,7 +540,7 @@ async def test_list_photos_filters_by_suggested_includes_photo_with_other_users_
 async def test_the_suggestion_survives_a_rating_row_that_carries_only_the_favorite_marker(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Zusicherung 17, erste der drei Lesestellen: `has_own_rating` in `_to_photo_out` liest
+    """Zusicherung 17, erste der drei Lesestellen: `has_own_rating` in `to_photo_out` liest
     kuenftig die eigene ALBUMENTSCHEIDUNG, nicht das Vorhandensein der Zeile. Kodiert als
     Zeilenvorhandensein verschwaende der Ausschuss-Vorschlag, sobald jemand das Foto als
     Favorit markiert - ohne Meldung und ohne Weg zurueck.
@@ -1885,7 +1885,7 @@ class TestTheAlbumDraft:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         # Test-Review-Fund: criterion_scores und ranking wurden bisher nur je einzeln getestet,
-        # nie im selben Entwurfszweig kombiniert - _to_photo_out setzt aber beide in
+        # nie im selben Entwurfszweig kombiniert - to_photo_out setzt aber beide in
         # derselben Funktion.
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
@@ -3896,7 +3896,7 @@ class TestDefaultListingRanking:
     ) -> None:
         # Security-Review-Fund: kein dedizierter Cross-Project-Isolationstest fuer den im
         # Default-Listing-Zweig befuellten partition_size/RankingOut-Pfad - ein etwaiges fehlendes
-        # project_id-Scoping in _partition_sizes/_latest_successful_criterion_scoring_run_id
+        # project_id-Scoping in partition_sizes/latest_successful_criterion_scoring_run_id
         # wuerde hier sichtbar (Partition-Groesse 3 statt 1).
         other_project = await _make_project(db_session, name="Other Trip")
         other_run = await _make_criterion_scoring_run(db_session, other_project)
@@ -4085,7 +4085,7 @@ class TestPhotoLocationAndClusterPlace:
     # Gefuehrt wird der Nachweis am AUFRUFER, nicht an `infer_locations`: die reine Funktion
     # kennt den Versatz nicht: sie bekommt `taken_at` uebergeben. Die Entscheidung, WELCHE
     # Spalte die Inferenzbasis speist, liegt hier (`_event_and_location_by_photo_id`) und in
-    # `worker/_criterion/ranking.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
+    # `worker/_criterion/ranking.py::build_grouping_and_rankings` - genau dort waere ein Umbau auf
     # `taken_at_original` plausibel formuliert und fachlich falsch.
     async def _inheritance_fixture(
         self, db_session: AsyncSession, *, offset_minutes: int
@@ -5082,7 +5082,7 @@ class TestDraftAlternativesKeys:
 
         `ge=1` plus Typpruefung ist enger als jede `max_length`; ohne Obergrenze erzeugte ein Wert
         jenseits von 2^63 unter SQLite einen `OverflowError` und damit eine 500 statt einer leeren
-        Liste. `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit
+        Liste. `limit <= 200` deckelt zugleich die schwere Hydratation ueber `photos_by_id` mit
         ihren `selectinload`s. Der bei 422 von FastAPI zurueckgespiegelte Rohwert wird
         ausschliesslich als React-Textknoten gerendert, nie geloggt."""
         project, _run, event_row, photos = await self._setup(db_session)

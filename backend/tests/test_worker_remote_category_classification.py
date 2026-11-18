@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
 from photosort.album_suitability import AlbumSuitability
-from photosort.api.projects import _count_remote_category_candidates
+from photosort.candidate_counts import count_remote_category_candidates
 from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
     VISION_MODELS_BY_PROVIDER,
@@ -709,8 +709,8 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
 
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::_record_cloud_vision_error/
-# _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
+# fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::record_cloud_vision_error/
+# clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
 # (Teststrategie-Abschnitt der Spec), analog test_worker_criterion_scoring.py.
 
 
@@ -935,10 +935,10 @@ async def test_cancelled_error_propagates_and_fails_the_run(
     assert len(caplog.records) == 0
 
     # Kein Filter auf project.id (nur ein Projekt in diesem Test) - project ist nach der oben von
-    # _fail_run ausgeloesten session.rollback() best-effort abgelaufen; ein direkter Attributzugriff
+    # fail_run ausgeloesten session.rollback() best-effort abgelaufen; ein direkter Attributzugriff
     # ausserhalb eines aktiven Session-await-Kontexts wuerde sonst denselben MissingGreenlet-
-    # Fallstrick ausloesen, den _fail_run fuer `run` bereits per session.refresh(run) vermeidet
-    # (siehe worker/_runs.py::_fail_run-Kommentar) - hier reicht die ungefilterte Abfrage aus.
+    # Fallstrick ausloesen, den fail_run fuer `run` bereits per session.refresh(run) vermeidet
+    # (siehe worker/_runs.py::fail_run-Kommentar) - hier reicht die ungefilterte Abfrage aus.
     run_row = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().first()
     assert run_row is not None
     assert run_row.status == ScanStatus.FAILED
@@ -1274,7 +1274,7 @@ class TestTheWidenedCandidateSelection:
         project, _photos = await self._fixture(db_session)
 
         candidates = await select_remote_category_candidates(db_session, project.id)
-        counted = await _count_remote_category_candidates(db_session, project.id)
+        counted = await count_remote_category_candidates(db_session, project.id)
 
         assert counted == len(candidates)
 

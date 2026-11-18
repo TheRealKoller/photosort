@@ -537,7 +537,7 @@ class TestTheDraftHasNoPhaseOfItsOwn:
         self, db_session: AsyncSession
     ) -> None:
         """`rebuild_run_grouping` loescht Events und Rangzeilen und baut sie ueber
-        `_build_grouping_and_rankings` neu auf; den Vorschlag rechnet es danach ausdruecklich
+        `build_grouping_and_rankings` neu auf; den Vorschlag rechnet es danach ausdruecklich
         selbst. Ohne diesen Aufruf stuende die Spalte danach ueberall auf `NULL`."""
         project = await _project(db_session)
         run = await _successful_run(db_session, project)

@@ -22,25 +22,25 @@ from photosort.api.photos._conversion import (
     AlbumDraftOut,
     PhotoListOut,
     RatingFilter,
-    _to_photo_out,
+    to_photo_out,
 )
 from photosort.api.photos._reads import (
     MAX_QUERY_POSITION,
     PlacedPhotos,
     RunEvents,
-    _album_level_source,
-    _event_and_location_by_photo_id,
-    _event_ids_from_rankings,
-    _filtered_photo_ids,
-    _final_selection_decisions,
-    _get_project_or_404,
-    _latest_successful_criterion_scoring_run_id,
-    _partition_sizes,
-    _photos_by_id,
-    _place_in_events,
-    _ranking_by_photo_id,
-    _run_events,
-    _user_count,
+    album_level_source,
+    event_and_location_by_photo_id,
+    event_ids_from_rankings,
+    filtered_photo_ids,
+    final_selection_decisions,
+    get_project_or_404,
+    latest_successful_criterion_scoring_run_id,
+    partition_sizes,
+    photos_by_id,
+    place_in_events,
+    ranking_by_photo_id,
+    run_events,
+    user_count,
 )
 from photosort.models import (
     Photo,
@@ -91,7 +91,7 @@ async def _draft_photo_ids(
     Ein Foto, dessen Zeit in keiner Eventspanne einzuordnen ist und das keine Rangzeile hat,
     faellt heraus - die Ausfallrichtung ist "nicht zeigen", nie eine erfundene Gruppe.
 
-    REIHENFOLGE `(events.position, photos.taken_at, photos.id)`, siehe `_place_in_events`.
+    REIHENFOLGE `(events.position, photos.taken_at, photos.id)`, siehe `place_in_events`.
 
     AUFLAGE S14 - die Komplexitaetsklasse ist verbindlich, nicht die Eingabegrenze: Die Menge
     waechst mit den eigenen Handlungen, bis hin zu jedem Foto des Projekts. Die Eventliste kommt
@@ -129,7 +129,7 @@ async def _draft_photo_ids(
     # Die Zeilen werden ausgepackt: ein `Row` ist fuer den Typpruefer kein `tuple`, und die reine
     # Funktion soll ausdruecklich keine SQLAlchemy-Form in ihrer Signatur tragen.
     placement_rows = [(photo_id, taken_at, event_id) for photo_id, taken_at, event_id in rows]
-    return _place_in_events(placement_rows, run_events.spans, run_events.position_by_event_id)
+    return place_in_events(placement_rows, run_events.spans, run_events.position_by_event_id)
 
 
 @router.get("/projects/{project_id}/album-draft", response_model=AlbumDraftOut)
@@ -151,50 +151,48 @@ async def album_draft(
 
     Ohne erfolgreichen Lauf sind `events` und `items` leer, auch wenn der Nutzer bereits Fotos
     aufgenommen hat - es gibt dann weder Vorschlag noch Events, in die einzuordnen waere."""
-    project = await _get_project_or_404(project_id, session)
-    album_level_source = await _album_level_source(session, project)
+    project = await get_project_or_404(project_id, session)
+    album_source = await album_level_source(session, project)
 
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return AlbumDraftOut(events=[], items=[], eligible_candidate_count=0)
 
-    run_events = await _run_events(session, latest_run_id)
-    content = await _draft_photo_ids(
-        session, project_id, current_user.id, latest_run_id, run_events
-    )
+    events = await run_events(session, latest_run_id)
+    content = await _draft_photo_ids(session, project_id, current_user.id, latest_run_id, events)
     ids = content.ordered_ids
-    photos_by_id = await _photos_by_id(session, ids)
-    rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
-    partition_sizes = await _partition_sizes(session, latest_run_id)
-    place_by_id = await _event_and_location_by_photo_id(
+    photos = await photos_by_id(session, ids)
+    rankings_by_id = await ranking_by_photo_id(session, latest_run_id, ids)
+    sizes = await partition_sizes(session, latest_run_id)
+    place_by_id = await event_and_location_by_photo_id(
         session,
         project_id,
         latest_run_id,
-        photos_by_id,
+        photos,
         # Die Abbildung kommt aus der Entwurfsherleitung, NICHT aus den Rangzeilen: ein
         # aufgenommenes Foto ohne Rangzeile haette dort keinen Eintrag und verloere sein Event,
         # obwohl es in der Liste steht.
         content.event_id_by_photo_id,
-        run_events.out_by_id,
+        events.out_by_id,
     )
     motifs_by_id = await load_effective_strengths(session, ids)
     persons_by_id = await load_effective_persons(session, ids)
-    decisions = await _final_selection_decisions(session, ids)
-    user_count = await _user_count(session)
+    decisions = await final_selection_decisions(session, ids)
+    users = await user_count(session)
     items = [
-        _to_photo_out(
-            photos_by_id[photo_id],
+        to_photo_out(
+            photos[photo_id],
             current_user.id,
             project,
             rankings_by_id.get(photo_id),
-            partition_sizes,
+            sizes,
             content.curation_positions,
             place_by_id.get(photo_id, NO_PLACE),
             motifs_by_id.get(photo_id),
             decisions=decisions,
-            user_count=user_count,
+            user_count=users,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
-            album_level_source=album_level_source,
+            album_level_source=album_source,
         )
         for photo_id in ids
     ]
@@ -214,7 +212,7 @@ async def album_draft(
         )
     ).scalar_one()
     return AlbumDraftOut(
-        events=run_events.ordered,
+        events=events.ordered,
         items=items,
         eligible_candidate_count=eligible_candidate_count,
     )
@@ -261,10 +259,10 @@ async def list_photos(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
-    project = await _get_project_or_404(project_id, session)
-    album_level_source = await _album_level_source(session, project)
+    project = await get_project_or_404(project_id, session)
+    album_source = await album_level_source(session, project)
 
-    ids, total = await _filtered_photo_ids(
+    ids, total = await filtered_photo_ids(
         session,
         project_id,
         current_user.id,
@@ -274,40 +272,38 @@ async def list_photos(
         camera_id,
         sorted(set(person_id)),
     )
-    photos_by_id = await _photos_by_id(session, ids)
+    photos = await photos_by_id(session, ids)
     # RankingOut wird AUCH hier im Standard-Listing-Zweig befüllt, nicht nur bei
     # top_n_per_event - Grid-/Detailansicht sollen ebenfalls Rang-Score/-Position zeigen
     # koennen, unabhaengig vom top_n_per_event-Kuratierungsmodus.
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     rankings_by_id = (
-        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
+        await ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
     )
-    partition_sizes = (
-        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
-    )
-    place_by_id = await _event_and_location_by_photo_id(
-        session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    sizes = await partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    place_by_id = await event_and_location_by_photo_id(
+        session, project_id, latest_run_id, photos, event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
     persons_by_id = await load_effective_persons(session, ids)
-    decisions = await _final_selection_decisions(session, ids)
-    user_count = await _user_count(session)
+    decisions = await final_selection_decisions(session, ids)
+    users = await user_count(session)
     items = [
-        _to_photo_out(
-            photos_by_id[photo_id],
+        to_photo_out(
+            photos[photo_id],
             current_user.id,
             project,
             rankings_by_id.get(photo_id),
-            partition_sizes,
+            sizes,
             # Ohne angeforderte Auswahl traegt JEDE Zugehoerigkeit `curation_position = null` - es
             # gibt in diesem Modus keine Auswahl, zu der sie eine Position haben koennte.
             None,
             place_by_id.get(photo_id, NO_PLACE),
             motifs_by_id.get(photo_id),
             decisions=decisions,
-            user_count=user_count,
+            user_count=users,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
-            album_level_source=album_level_source,
+            album_level_source=album_source,
         )
         for photo_id in ids
     ]

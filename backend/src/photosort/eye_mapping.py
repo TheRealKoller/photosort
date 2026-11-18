@@ -13,7 +13,7 @@ keine Motive.
 WAS HIER NICHT PASSIERT, und warum:
 
 * Keine Sanierung der Feinlabel-Texte. Der Text ist fremder Modelltext und wird am Parser mit
-  `cloud_vision._sanitize_label_text` saniert und laengenbegrenzt (Spec 0609, S12) - dieses Modul
+  `cloud_vision.sanitize_label_text` saniert und laengenbegrenzt (Spec 0609, S12) - dieses Modul
   importiert aber bewusst nichts aus dem Anwendungscode.
 * Kein Vergleich und kein Urteil. Ob Eye oder Cloud "recht hat", ist Story #610; hier entstehen
   nur Eyes eigene Aussagen.

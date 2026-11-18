@@ -65,7 +65,7 @@ GPS_CLUSTER_SPLIT_DISTANCE_METERS = 500.0
 # Mittlerer Erdradius (IUGG) fuer die Haversine-Approximation. Fuer die hier relevante Praezision
 # (Cluster-Sprung-Erkennung im Bereich von Metern bis Kilometern) ausreichend - keine neue
 # Abhängigkeit für eine einzelne Distanzformel.
-_EARTH_RADIUS_METERS = 6_371_008.8
+EARTH_RADIUS_METERS = 6_371_008.8
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
@@ -442,7 +442,7 @@ def haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> 
     delta_lat = lat_b_rad - lat_a_rad
     delta_lon = radians(lon_b - lon_a)
     a = sin(delta_lat / 2) ** 2 + cos(lat_a_rad) * cos(lat_b_rad) * sin(delta_lon / 2) ** 2
-    return 2 * _EARTH_RADIUS_METERS * atan2(sqrt(a), sqrt(1 - a))
+    return 2 * EARTH_RADIUS_METERS * atan2(sqrt(a), sqrt(1 - a))
 
 
 @dataclass(frozen=True)

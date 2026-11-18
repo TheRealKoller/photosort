@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Final
 
-from photosort.cloud_vision import _sanitize_label_text
+from photosort.cloud_vision import sanitize_label_text
 
 # Die Albumtauglichkeit: eine fuenfstufige Modellaussage mit kurzer Begruendung, erhoben im
 # bestehenden Klassifizierungsaufruf. Dieses Modul ist REIN - Stufenband, Ankertexte,
@@ -137,13 +137,13 @@ def _reason_from_raw(raw: object) -> str | None:
 
     Die Reihenfolge ist die Auflage: vor der Sanitisierung zu kuerzen liesse einen halbierten
     Bidi-/Zero-Width-Kontext stehen, den die Sanitisierung danach nicht mehr sieht. Saniert wird
-    mit `cloud_vision.py::_sanitize_label_text` - DERSELBEN Funktion wie im Feinlabel- und im
+    mit `cloud_vision.py::sanitize_label_text` - DERSELBEN Funktion wie im Feinlabel- und im
     Sehenswuerdigkeit-Pfad, nie einer zweiten Fassung davon.
 
     Kein String, oder leer nach der Sanitisierung: `None`, nie `""`."""
     if not isinstance(raw, str):
         return None
-    sanitized = _sanitize_label_text(raw)
+    sanitized = sanitize_label_text(raw)
     if not sanitized:
         return None
     return sanitized[:MAX_ALBUM_SUITABILITY_REASON_LENGTH]

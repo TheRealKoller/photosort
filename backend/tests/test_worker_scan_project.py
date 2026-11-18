@@ -533,7 +533,7 @@ async def test_scan_run_marked_failed_on_cancelled_error(
         await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
 
     # project_id wurde VOR dem Aufruf gelesen (nicht project.id danach): session.rollback() in
-    # _fail_run expired alle Objekte der Session - ein direkter project.id-Zugriff danach wuerde
+    # fail_run expired alle Objekte der Session - ein direkter project.id-Zugriff danach wuerde
     # einen impliziten Lazy-Load ausserhalb des von SQLAlchemy fuer Async-Sessions vorausgesetzten
     # greenlet-Kontexts ausloesen (sqlalchemy.exc.MissingGreenlet, kein Bug dieser Spec).
     scan_run = (
@@ -670,7 +670,7 @@ async def test_scan_updates_last_progress_at_at_each_checkpoint(
     reap_stalled_runs (Schicht 2) spaeter liest - verifiziert ueber einen kontrollierten "Uhr"-Wert
     statt einer echten Wartezeit."""
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
-    monkeypatch.setattr(worker_runs, "_now_utc", lambda: sentinel)
+    monkeypatch.setattr(worker_runs, "now_utc", lambda: sentinel)
 
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
@@ -1403,7 +1403,7 @@ class TestResumeIdempotency:
         )
         assert first_run.status == ScanStatus.FAILED
 
-        # project.id (NICHT mehr direkt gelesen, siehe project_id oben): _fail_run's
+        # project.id (NICHT mehr direkt gelesen, siehe project_id oben): fail_run's
         # session.rollback() expired alle Objekte der Session, siehe Kommentar bei
         # test_scan_run_marked_failed_on_cancelled_error oben. project wird unten fuer den
         # zweiten Scan-Aufruf trotzdem weiterverwendet - run_project_scan liest project.id selbst
@@ -1418,8 +1418,8 @@ class TestResumeIdempotency:
             "CostaRica/img002.jpg",
         ]
 
-        # Un-expired `project` fuer den zweiten Scan-Aufruf unten (rollback() in _fail_run hat es
-        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (photosort.worker).
+        # Un-expired `project` fuer den zweiten Scan-Aufruf unten (rollback() in fail_run hat es
+        # expired) - analog zum bestehenden refresh()-Muster in fail_run selbst (photosort.worker).
         await db_session.refresh(project)
         recovering_client = FakeOpenCloudClient(entries=entries)
         second_run = await run_project_scan(
@@ -2660,7 +2660,7 @@ class TestCatchUpRoundProgressStamps:
 
         monkeypatch.setattr(db_session, "commit", _recording_commit)
 
-        await worker_scan._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+        await worker_scan.catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
 
         # Drei Bloecke, drei Commits - und der Stempel ist bei jedem VOR dem Commit gesetzt
         # worden, also (schwach) aufsteigend statt ein einziges Mal am Ende.
@@ -2678,7 +2678,7 @@ class TestCatchUpRoundProgressStamps:
         run = await self._run_with_ratios(db_session, project, tmp_path, 1)
 
         with _recorded_photo_selects() as statements:
-            await worker_scan._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+            await worker_scan.catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
 
         assert statements, "Die Runde muss die Arbeitsmenge ueber `photos` bestimmen"
         for statement in statements:

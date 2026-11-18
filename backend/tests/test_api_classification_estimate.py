@@ -256,7 +256,7 @@ class TestEstimateEndpoint:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         # Review-Fund (test-engineer): der "bereits klassifiziert"-Ausschluss
-        # (_count_remote_category_candidates, api/projects.py) war bisher nur indirekt ueber den
+        # (count_remote_category_candidates, candidate_counts.py) war bisher nur indirekt ueber den
         # Worker-Unit-Test (select_remote_category_candidates) abgedeckt, nicht auf API-Ebene.
         project_id = await _create_project(authenticated_api_client)
         candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
@@ -351,7 +351,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Dieselbe Skip-Regel wie im Live-Lauf
-        (worker/_criterion/landmark.py::_select_landmark_candidates): ein bereits gescortes Foto
+        (worker/_criterion/landmark.py::select_landmark_candidates): ein bereits gescortes Foto
         wird kein zweites Mal an die Cloud geschickt und darf die Schaetzung deshalb auch nicht
         erhoehen."""
         project_id = await _create_project(authenticated_api_client)

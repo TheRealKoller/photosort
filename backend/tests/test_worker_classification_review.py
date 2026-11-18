@@ -24,13 +24,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.album_suitability import AlbumSuitability
-from photosort.classification_review import (
-    ERROR_EYE_UNAVAILABLE,
-    ERROR_GENERIC,
-    ERROR_NO_CONSENT,
-    ERROR_NO_RESULTS,
-    execute_classification_review,
-)
 from photosort.cloud_vision import TokenUsage
 from photosort.eye_client import EyeImageUnreadableError
 from photosort.eye_mapping import MAPPING_VERSION, MAPPING_VERSION_V2
@@ -53,6 +46,13 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
 from photosort.thumbnails import display_path
+from photosort.worker.classification_review import (
+    ERROR_EYE_UNAVAILABLE,
+    ERROR_GENERIC,
+    ERROR_NO_CONSENT,
+    ERROR_NO_RESULTS,
+    execute_classification_review,
+)
 
 # ---------------------------------------------------------------------------------------------
 # Fixtures / Test-Doubles

@@ -19,19 +19,19 @@ from sqlalchemy.orm import aliased
 from photosort.album_stage import load_album_levels
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.persons import photo_person_outs
-from photosort.api.photos._conversion import NO_PLACE, PhotoOut, _to_photo_out
+from photosort.api.photos._conversion import NO_PLACE, PhotoOut, to_photo_out
 from photosort.api.photos._reads import (
     MAX_QUERY_POSITION,
-    _album_level_source,
-    _event_and_location_by_photo_id,
-    _event_ids_from_rankings,
-    _final_selection_decisions,
-    _get_project_or_404,
-    _latest_successful_criterion_scoring_run_id,
-    _partition_sizes,
-    _photos_by_id,
-    _ranking_by_photo_id,
-    _user_count,
+    album_level_source,
+    event_and_location_by_photo_id,
+    event_ids_from_rankings,
+    final_selection_decisions,
+    get_project_or_404,
+    latest_successful_criterion_scoring_run_id,
+    partition_sizes,
+    photos_by_id,
+    ranking_by_photo_id,
+    user_count,
 )
 from photosort.api.ratings import RatingWriteOut, write_own_rating
 from photosort.feedback_log import record_exchange
@@ -191,7 +191,7 @@ async def draft_alternatives(
     # Optional (S8): ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Zeitordnung, nie die
     # Bindung an Lauf und Event.
     photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
-    # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
+    # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `photos` mit ihren
     # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
@@ -209,7 +209,7 @@ async def draft_alternatives(
     # `_protected_router_operations()` in `test_auth_guard.py` fuehrt ihn nicht - fuer ihn gibt es
     # KEIN Vollstaendigkeitsnetz. Ein Endpunkt, der diesen Parameter vergisst, waere STILL
     # OEFFENTLICH: kein Fehler, keine 401, nur Daten. `current_user.id` geht unveraendert an
-    # `_to_photo_out` (nie ein Platzhalter wie `0` - der liesse `PhotoOut.suggestion` auch fuer
+    # `to_photo_out` (nie ein Platzhalter wie `0` - der liesse `PhotoOut.suggestion` auch fuer
     # laengst bewertete Fotos wieder aufblitzen).
     current_user: User = Depends(get_current_user),
 ) -> DraftAlternativesOut:
@@ -236,11 +236,11 @@ async def draft_alternatives(
     erkennbar falsche Kollisionsmenge, sondern lieferte KOHAERENTE Fotos eines fremden Projekts:
     die Ausfallrichtung wird unauffaelliger, nicht harmloser. Die einzige Bindung an das Projekt
     des Pfadparameters ist `criterion_scoring_run_id` aus
-    `_latest_successful_criterion_scoring_run_id(session, project_id)`; sie steht AUSGESCHRIEBEN
-    in der Aufloesung des Bezugsfotos, in der Kandidatenabfrage und in `_partition_sizes`. Der
+    `latest_successful_criterion_scoring_run_id(session, project_id)`; sie steht AUSGESCHRIEBEN
+    in der Aufloesung des Bezugsfotos, in der Kandidatenabfrage und in `sizes`. Der
     innere Join auf `Photo` (fuer `taken_at`) fuegt keine Zeile hinzu. Die Motivabfrage
     (`load_effective_strengths`) bekommt ausschliesslich die Ids der ausgelieferten Seite.
-    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
+    `photos` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
 
     SICHERHEIT - das Bezugsbild (S3): `photo_id` wird samt `taken_at` AUSSCHLIESSLICH ueber EINE
     Abfrage auf eine Rangzeile desselben Laufs UND desselben Events aufgeloest, nie ueber
@@ -263,10 +263,10 @@ async def draft_alternatives(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_SERIES_WITHOUT_REFERENCE
         )
-    project = await _get_project_or_404(project_id, session)
-    album_level_source = await _album_level_source(session, project)
+    project = await get_project_or_404(project_id, session)
+    album_source = await album_level_source(session, project)
 
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    latest_run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return _no_alternatives()
 
@@ -306,22 +306,22 @@ async def draft_alternatives(
 
     # (4) Die Hydratation laeuft ausschliesslich ueber die Seite, die Motive eingeschlossen.
     strengths_by_id = await load_effective_strengths(session, ids)
-    photos_by_id = await _photos_by_id(session, ids)
-    rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
-    partition_sizes = await _partition_sizes(session, latest_run_id)
-    place_by_id = await _event_and_location_by_photo_id(
-        session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    photos = await photos_by_id(session, ids)
+    rankings_by_id = await ranking_by_photo_id(session, latest_run_id, ids)
+    sizes = await partition_sizes(session, latest_run_id)
+    place_by_id = await event_and_location_by_photo_id(
+        session, project_id, latest_run_id, photos, event_ids_from_rankings(rankings_by_id)
     )
     persons_by_id = await load_effective_persons(session, ids)
-    decisions = await _final_selection_decisions(session, ids)
-    user_count = await _user_count(session)
+    decisions = await final_selection_decisions(session, ids)
+    users = await user_count(session)
     items = [
-        _to_photo_out(
-            photos_by_id[alternative_id],
+        to_photo_out(
+            photos[alternative_id],
             current_user.id,
             project,
             rankings_by_id.get(alternative_id),
-            partition_sizes,
+            sizes,
             # KEINE `curation_position`: die Alternativen sind keine Auswahl, zu der ein Bild
             # einen Platz haette. Eine Zahl hier waere eine Rangaussage ueber eine Reihenfolge,
             # die allein am gerade betrachteten Bezugsbild haengt.
@@ -329,9 +329,9 @@ async def draft_alternatives(
             place_by_id.get(alternative_id, NO_PLACE),
             strengths_by_id.get(alternative_id),
             decisions=decisions,
-            user_count=user_count,
+            user_count=users,
             persons=photo_person_outs(persons_by_id.get(alternative_id, [])),
-            album_level_source=album_level_source,
+            album_level_source=album_source,
         )
         # Eigener Name, nicht `photo_id`: der Query-Parameter gleichen Namens ist das BEZUGSBILD
         # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.
@@ -400,7 +400,7 @@ _EXCHANGE_REFUSAL = (
 async def _exchange_sides(
     session: AsyncSession,
     criterion_scoring_run_id: int,
-    album_level_source: CategoryMethod,
+    album_source: CategoryMethod,
     photo_ids: tuple[int, int],
 ) -> dict[int, _ExchangeSide]:
     """Loest beide Foto-Ids UEBER EINE RANGZEILE des uebergebenen Laufs auf.
@@ -430,7 +430,7 @@ async def _exchange_sides(
         )
     ).all()
     levels = await load_album_levels(
-        session, album_level_source, [photo_id for photo_id, _event_id, _score in rows]
+        session, album_source, [photo_id for photo_id, _event_id, _score in rows]
     )
     return {
         photo_id: _ExchangeSide(
@@ -477,14 +477,14 @@ async def exchange_draft_photo(
 
     Die Antwort traegt BEIDE geschriebenen Zeilenzustaende, damit die Oberflaeche fortschreibt
     statt neu zu laden."""
-    project = await _get_project_or_404(project_id, session)
+    project = await get_project_or_404(project_id, session)
 
     if payload.photo_id == payload.replaced_photo_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
         )
 
-    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if run_id is None:
         # Ohne erfolgreichen Lauf gibt es keine Rangzeile, ueber die die Projektbindung liefe -
         # und damit keinen Entwurf, in dem etwas auszutauschen waere. Derselbe Text (S14).
@@ -497,7 +497,7 @@ async def exchange_draft_photo(
     sides = await _exchange_sides(
         session,
         run_id,
-        await _album_level_source(session, project),
+        await album_level_source(session, project),
         (payload.photo_id, payload.replaced_photo_id),
     )
     taken = sides.get(payload.photo_id)
@@ -612,13 +612,13 @@ async def undo_draft_exchange(
     unberuehrt, die Zeileninvariante setzt die Schreibstelle durch -, dazu genau EIN
     `record_exchange` in Gegenrichtung (ADR 0100 Punkt 3: die Umkehr ist ein weiterer Tausch) und
     genau EIN Commit."""
-    project = await _get_project_or_404(project_id, session)
+    project = await get_project_or_404(project_id, session)
 
     if payload.photo_id == payload.replaced_photo_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
         )
-    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if run_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
@@ -626,7 +626,7 @@ async def undo_draft_exchange(
     sides = await _exchange_sides(
         session,
         run_id,
-        await _album_level_source(session, project),
+        await album_level_source(session, project),
         (payload.photo_id, payload.replaced_photo_id),
     )
     taken = sides.get(payload.photo_id)
