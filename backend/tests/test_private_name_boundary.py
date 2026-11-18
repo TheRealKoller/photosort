@@ -173,7 +173,6 @@ def _dateien(wurzel: Path) -> list[Path]:
 # Arbeitsliste waehrend der Abarbeitung (Spec 0648): Datei -> Namen. Geprueft wird GLEICHHEIT in
 # beide Richtungen - ein neuer Verstoss wird rot, ein abgearbeiteter Eintrag ebenfalls.
 _BEKANNTE_FUNDE_TEXT = """
-album_suitability.py: _sanitize_label_text
 api/model_choice.py: _reject_while_a_criterion_run_is_active
 api/photos/__init__.py: _suggestion_reason
 api/photos/_reads.py: _event_out _location_out
@@ -199,11 +198,7 @@ api/photos/duplicate_groups.py: _album_level_source _auto_decided_ids _event_and
 classification_review.py: _compute_content_criteria _finish_cancelled _raise_if_cancel_requested
     _take_over_queued_run _try_build
 criterion_probe.py: _count_landmark_candidates
-landmark.py: _sanitize_label_text
-places.py: _sanitize_label_text
-remote_classification.py: _sanitize_label_text
 tests/test_aesthetics.py: _ASSET_PATH
-tests/test_album_suitability.py: _sanitize_label_text
 tests/test_api_classification_reviews.py: _guard_export_shape
 tests/test_api_opencloud_folder_counts.py: _count_images_up_to_limit
 tests/test_api_persons.py: _criterion_scoring_run_summary _name_taken _person_write_lock _phase_progress
@@ -231,8 +226,7 @@ tests/test_opencloud_client.py: _join
 tests/test_persons.py: _correction_row _delete_reference _has_correction_face
     _unlink_references_of_other_models
 tests/test_place_dataset.py: _build_parser _download_archive
-tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _sanitize_label_text
-    _slugify
+tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _slugify
 tests/test_worker_classification.py: _now_utc
 tests/test_worker_criterion_scoring.py: _IMAGE_ANALYSIS_CRITERION_KEYS _IMAGE_ANALYSIS_CRITERION_SOURCES
     _compute_content_criteria _count_landmark_candidates _log_cloud_vision_throttling _now_utc
@@ -257,7 +251,7 @@ worker/__init__.py: _CLOUD_VISION_IMAGE_MIME_TYPE _IMAGE_ANALYSIS_CRITERION_SOUR
     _raise_if_cancel_requested _recognize_persons _record_cloud_vision_error _run_eye_phase
     _select_landmark_candidates _set_phase _start_criterion_scoring_run _take_over_queued_run _try_build
     _upsert_landmark_detection
-worker/_criterion/eye.py: _now_utc _sanitize_label_text _set_phase
+worker/_criterion/eye.py: _now_utc _set_phase
 worker/_criterion/landmark.py: _CLOUD_VISION_IMAGE_MIME_TYPE _append_cloud_error
     _clear_cloud_vision_error _commit_phase_costs _log_cloud_vision_failure _log_cloud_vision_throttling
     _now_utc _raise_if_cancel_requested _record_cloud_vision_error _try_build

@@ -1012,7 +1012,7 @@ class PhotoFineLabel(Base):
     zulässig: der Prompt erzwingt kein Feinlabel, die Pflichtaussage je Foto ist der
     Motivstärkevektor (PhotoMotifAssessment/PhotoMotifStrength), nicht das Label.
 
-    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text) - vom
+    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::sanitize_label_text) - vom
     Vision-LLM gelieferte Text, als Audit-/Debug-Spur, welche Formulierung auf welchen
     canonical_key gemappt wurde.
 
@@ -1265,7 +1265,7 @@ class PhotoEyeFineLabel(Base):
     Getrennt von `photo_fine_labels`/`fine_labels`: die dortige Registry ist geschlossen und
     dient der Cloud-Kategorieableitung; Eyes Vokabular ist ein anderes, und eine erzwungene
     Zuordnung waere eine Aussage, die das Modell nie getroffen hat (ADR 0138 Punkt 4). Der Text
-    ist fremder Modelltext und wird am Parser mit `cloud_vision._sanitize_label_text` saniert,
+    ist fremder Modelltext und wird am Parser mit `cloud_vision.sanitize_label_text` saniert,
     laengenbegrenzt und leer weggelassen - gerendert ausschliesslich als React-Textknoten."""
 
     __tablename__ = "photo_eye_fine_labels"

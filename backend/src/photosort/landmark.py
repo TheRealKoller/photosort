@@ -13,12 +13,12 @@ from photosort.cloud_vision import (
     VISION_REQUEST_TIMEOUT_SECONDS,
     CloudRequestThrottle,
     TokenUsage,
-    _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
     mistral_usage_from_response,
     post_vision_request,
+    sanitize_label_text,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
@@ -79,7 +79,7 @@ _PROMPT = (
 # genau einer Zeile - beides zusammen ist die Abgrenzung (S4a).
 #
 # Getragen wird sie davon, dass der Feldinhalt keinen Zeilenumbruch enthalten KANN:
-# `sanitize_place_name` laeuft ueber `_sanitize_label_text`, das jede Whitespace-Folge zu einem
+# `sanitize_place_name` laeuft ueber `sanitize_label_text`, das jede Whitespace-Folge zu einem
 # einzelnen Leerzeichen zusammenzieht, und das Zahlenpaar ist formatiert. Eine im Ortsnamen
 # eingeschleuste zweite Markierung bleibt damit innerhalb derselben Zeile und ist inert - sie kann
 # das Feld nicht beenden und keine Instruktion beginnen.
@@ -226,7 +226,7 @@ def sanitize_landmark_name(raw: object) -> str | None:
     tests/test_landmark.py::TestLandmarkNameSanitisation, acht Faelle.
 
     Zeichensanitisierung mit DERSELBEN Funktion wie der Feinlabel-Pfad
-    (`cloud_vision.py::_sanitize_label_text`, nicht mit einer zweiten Fassung davon), danach die
+    (`cloud_vision.py::sanitize_label_text`, nicht mit einer zweiten Fassung davon), danach die
     Laengengrenze. `None` heisst "kein verwendbarer Name" - Nicht-String, leer nach der
     Sanitisierung, oder laenger als `MAX_LANDMARK_NAME_LENGTH`.
 
@@ -237,7 +237,7 @@ def sanitize_landmark_name(raw: object) -> str | None:
     kostenlosen Migrationsweg gibt."""
     if not isinstance(raw, str):
         return None
-    sanitized = _sanitize_label_text(raw)
+    sanitized = sanitize_label_text(raw)
     if not sanitized or len(sanitized) > MAX_LANDMARK_NAME_LENGTH:
         return None
     return sanitized

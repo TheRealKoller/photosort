@@ -1119,7 +1119,7 @@ class TestThePromptCarriesTheHintAsDataNeverAsAnInstruction:
 
     def test_the_field_is_the_last_line_and_the_instruction_says_so(self) -> None:
         """Die Abgrenzung traegt DARUEBER, dass das Feld genau EINE Zeile ist: der sanitierte Name
-        kann keinen Zeilenumbruch enthalten (`_sanitize_label_text` zieht jede Whitespace-Folge zu
+        kann keinen Zeilenumbruch enthalten (`sanitize_label_text` zieht jede Whitespace-Folge zu
         einem Leerzeichen zusammen). Eine eingeschleuste Endmarkierung im Namen ist damit inert -
         sie steht innerhalb derselben Zeile."""
         prompt = _build_prompt(PlaceHint(locality="Garmisch-Partenkirchen"))

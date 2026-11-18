@@ -26,12 +26,12 @@ from photosort.cloud_vision import (
     VISION_REQUEST_TIMEOUT_SECONDS,
     CloudRequestThrottle,
     TokenUsage,
-    _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
     mistral_usage_from_response,
     post_vision_request,
+    sanitize_label_text,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
@@ -294,7 +294,7 @@ def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
     for raw in raw_labels:
         if not isinstance(raw, str):
             continue
-        sanitized = _sanitize_label_text(raw)
+        sanitized = sanitize_label_text(raw)
         if not sanitized or len(sanitized) > MAX_FINE_LABEL_LENGTH:
             continue
         if sanitized in accepted:

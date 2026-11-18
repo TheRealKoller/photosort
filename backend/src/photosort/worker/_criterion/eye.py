@@ -10,7 +10,7 @@ from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker._runs as runs
-from photosort.cloud_vision import _sanitize_label_text
+from photosort.cloud_vision import sanitize_label_text
 from photosort.duplicates import survives_ausschuss
 from photosort.eye_client import (
     EyeClientLike,
@@ -61,7 +61,7 @@ def _sanitized_eye_labels(analysis: EyeAnalysis) -> list[tuple[str, float]]:
     labels: list[tuple[str, float]] = []
     seen: set[str] = set()
     for raw, confidence in analysis.fine_labels:
-        sanitized = _sanitize_label_text(raw)
+        sanitized = sanitize_label_text(raw)
         if not sanitized or len(sanitized) > MAX_FINE_LABEL_LENGTH or sanitized in seen:
             continue
         seen.add(sanitized)

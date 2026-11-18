@@ -16,7 +16,7 @@ from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
     CloudRequestThrottle,
     TokenUsage,
-    _sanitize_label_text,
+    sanitize_label_text,
 )
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
@@ -366,22 +366,22 @@ class TestSanitizeLabelText:
         ],
     )
     def test_control_and_format_characters_are_removed(self, raw: str) -> None:
-        assert _sanitize_label_text(raw) == "HundGnud"
+        assert sanitize_label_text(raw) == "HundGnud"
 
     def test_newlines_and_tabs_collapse_to_a_single_space(self) -> None:
-        assert _sanitize_label_text("Hund\n\tam   Strand") == "Hund am Strand"
+        assert sanitize_label_text("Hund\n\tam   Strand") == "Hund am Strand"
 
     def test_leading_and_trailing_whitespace_is_removed(self) -> None:
-        assert _sanitize_label_text("  Hund  ") == "Hund"
+        assert sanitize_label_text("  Hund  ") == "Hund"
 
     def test_a_non_breaking_space_is_normalized_too(self) -> None:
-        assert _sanitize_label_text("Hund\u00a0Strand") == "Hund Strand"
+        assert sanitize_label_text("Hund\u00a0Strand") == "Hund Strand"
 
     def test_regular_german_text_survives_unchanged(self) -> None:
-        assert _sanitize_label_text("Geburtstagsfeier im Grünen") == "Geburtstagsfeier im Grünen"
+        assert sanitize_label_text("Geburtstagsfeier im Grünen") == "Geburtstagsfeier im Grünen"
 
     def test_a_label_consisting_only_of_control_characters_becomes_empty(self) -> None:
-        assert _sanitize_label_text("\u200b\u202e") == ""
+        assert sanitize_label_text("\u200b\u202e") == ""
 
 
 class TestAnthropicCategoryClient:

@@ -30,7 +30,7 @@ from photosort.album_suitability import (
     build_album_suitability_prompt_lines,
     normalize_level,
 )
-from photosort.cloud_vision import _sanitize_label_text
+from photosort.cloud_vision import sanitize_label_text
 
 
 def _parse(raw_literal: str, photo_id: int = 1) -> AlbumSuitability | None:
@@ -210,7 +210,7 @@ class TestTheReasonText:
         result = album_suitability_from_json({"level": 3, "reason": raw}, 1)
 
         assert result is not None
-        assert result.reason == _sanitize_label_text(raw)
+        assert result.reason == sanitize_label_text(raw)
 
     @pytest.mark.parametrize("length", [1, MAX_ALBUM_SUITABILITY_REASON_LENGTH - 1])
     def test_a_reason_below_the_limit_survives_unchanged(self, length: int) -> None:
