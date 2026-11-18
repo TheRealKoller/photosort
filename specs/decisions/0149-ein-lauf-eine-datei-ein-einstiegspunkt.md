@@ -1,6 +1,7 @@
 # 0149 - Ein Lauf, eine Datei; ein Paket, ein Einstiegspunkt
 
 **Status:** Accepted
+**Teilweise abgelöst:** Abschnitte 1 (Namensmenge im `__all__`) und 2 (Unterstrich-Namen der gemeinsamen Schicht) durch ADR [`0150`](./0150-privat-heisst-dateilokal-geteilt-heisst-oeffentlich.md); alles Übrige dieser ADR bleibt unverändert in Kraft, der Entscheidungstext ist unangetastet.
 **Datum:** 2026-11-17
 **Bezug:** Issue [#647](https://github.com/TheRealKoller/photosort/issues/647), Story „Jeder Lauf hat seine eigene Datei"
 
