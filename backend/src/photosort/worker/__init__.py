@@ -11,7 +11,7 @@ Logging-Hook ebenfalls. Die Laeufe selbst liegen in je einer Datei, die gemeinsa
 (`tests/test_worker_package_boundary.py` haelt beides fest). Die gemeinsame Schicht und die
 einzelnen Bausteine der Laeufe werden dabei NICHT durchgereicht: sie stehen in ihrer Datei und
 werden dort nachgeschlagen, denn ein Name aus zweiter Hand macht einen Patch an der falschen
-Stelle gruen (ADR 0149 Punkt 2).
+Stelle gruen.
 """
 
 from __future__ import annotations

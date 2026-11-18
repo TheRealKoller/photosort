@@ -13,10 +13,6 @@ Fehlerbild: Ein einzelnes Foto, das eine Seite nicht beurteilen kann, wird ueber
 gezaehlt. Liefert eine Seite auf KEINEM Foto ein Ergebnis, endet die Pruefung `FAILED` statt mit
 einer leeren Uebersicht. `error_message` traegt ausschliesslich einen festen deutschen Satz aus
 `ERROR_MESSAGES` - nie `str(exc)` eines fremden Systems.
-
-Zyklus: `photosort.worker` registriert diesen Job in `WorkerSettings.functions` und importiert das Modul
-deshalb am Modulanfang. Der umgekehrte Import (zwei reine Helfer aus `photosort.worker`) steht deshalb
-INNERHALB des Laufs, nicht am Modulanfang - sonst waere der Importring geschlossen.
 """
 
 from __future__ import annotations
@@ -46,6 +42,7 @@ from photosort.classification_comparison import (
 )
 from photosort.cloud_vision import TokenUsage
 from photosort.config import settings
+from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.eye_client import (
     EyeClientLike,
@@ -76,7 +73,7 @@ from photosort.remote_classification import (
     RemoteClassification,
     build_category_classification_client,
 )
-from photosort.run_cancel import RunCancelled
+from photosort.run_cancel import RunCancelled, watch_cancel_requests
 from photosort.thumbnails import variant_path
 
 # Der MIME-Typ des `display`-Bildes - dieselbe feste Angabe wie im uebrigen Cloud-Pfad.
@@ -209,8 +206,6 @@ async def _run_eye_sides(
     Rueckfall auf die Lauf-Fassung: die Pruefung endet `FAILED` (`ERROR_GENERIC`), statt eine
     Fassung zu pruefen, die niemand gewaehlt hat.
     """
-    # Zyklus wie in `execute_classification_review` unten: der Pruefpunkt steht genau einmal in
-    # `photosort.worker`.
 
     versions: list[tuple[str, str]] = []
     for side in sides:
@@ -351,7 +346,6 @@ async def _run_cloud_side(
 ) -> set[int]:
     """Die kostenpflichtige Seite. Der Client wird nur gebaut, wenn die Einwilligung des Projekts
     vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall (ADR 0139 Punkt 5)."""
-    # Zyklus wie oben: der Pruefpunkt steht genau einmal in `photosort.worker`.
 
     if not project.cloud_vision_detection_enabled:
         raise ReviewAbort(ERROR_NO_CONSENT)
@@ -670,7 +664,6 @@ async def fail_review(session: AsyncSession, review: ClassificationReview, messa
     Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
     behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
     Ursache sichtbar (derselbe Grundsatz wie `worker/_runs.py::commit_phase_costs`)."""
-    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in photosort.worker.
 
     assert message in ERROR_MESSAGES
     try:
@@ -696,8 +689,6 @@ async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int 
     Die Zeile legt die API als `QUEUED` an; hier wird sie uebernommen. Wurde sie in der
     Warteschlange abgebrochen, endet der Job ohne jede Arbeit. Der Abbruch-Beobachter macht die
     Wartezeiten der Cloud-Drosselung unterbrechbar."""
-    from photosort.db import async_session_factory  # noqa: PLC0415
-    from photosort.run_cancel import watch_cancel_requests  # noqa: PLC0415
 
     async with async_session_factory() as session:
         review = await runs.take_over_queued_run(session, ClassificationReview, review_id)
