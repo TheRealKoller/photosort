@@ -26,12 +26,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.projects import _build_classification_estimate
-from photosort.classification_review import ERROR_MESSAGES, execute_classification_review
 from photosort.db import Base
 from photosort.eye_mapping import MAPPING_VERSION
 from photosort.models import ClassificationReviewSideKind, PhotoScore, Project, ScanStatus
 from photosort.thumbnails import display_path
 from photosort.worker import select_remote_category_candidates
+from photosort.worker.classification_review import ERROR_MESSAGES, execute_classification_review
 from tests.import_closure import module_file
 from tests.project_graph import build_project_graph, get_or_create_user
 from tests.test_worker_classification_review import (
@@ -43,7 +43,7 @@ from tests.test_worker_classification_review import (
 )
 from tests.write_guard import write_statements
 
-JOB_MODULE = "photosort.classification_review"
+JOB_MODULE = "photosort.worker.classification_review"
 
 # Edge Case 1 der Spec: "geltende Ergebnisse, Fotozustand und die Lauftabellen (samt
 # api_calls/failed_calls/cost_usd) bleiben Zeile fuer Zeile unveraendert". Die Liste ist
@@ -191,9 +191,9 @@ def _called_names(tree: ast.AST) -> frozenset[str]:
 
 
 def _stringified_foreign_exceptions(tree: ast.AST) -> list[str]:
-    """`str(...)` auf eine gefangene Ausnahme, die NICHT die eigene `_ReviewAbort` ist.
+    """`str(...)` auf eine gefangene Ausnahme, die NICHT die eigene `ReviewAbort` ist.
 
-    `str(abort)` ist der zugelassene Weg: `_ReviewAbort` traegt bereits einen Satz aus der
+    `str(abort)` ist der zugelassene Weg: `ReviewAbort` traegt bereits einen Satz aus der
     geschlossenen Menge. `str(exc)` eines fremden Systems ist genau das, was S7 verbietet."""
     own: set[str] = set()
     foreign: set[str] = set()
@@ -201,7 +201,7 @@ def _stringified_foreign_exceptions(tree: ast.AST) -> list[str]:
         if not isinstance(node, ast.ExceptHandler) or node.name is None:
             continue
         type_name = _constructor_name(node.type) if node.type is not None else None
-        (own if type_name == "_ReviewAbort" else foreign).add(node.name)
+        (own if type_name == "ReviewAbort" else foreign).add(node.name)
 
     found: list[str] = []
     for node in ast.walk(tree):
@@ -215,9 +215,12 @@ def _stringified_foreign_exceptions(tree: ast.AST) -> list[str]:
     return found
 
 
-def _fail_asserts_the_closed_set(tree: ast.AST) -> bool:
+def fail_review_asserts_the_closed_set(tree: ast.AST) -> bool:
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != "_fail":
+        if (
+            not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            or node.name != "fail_review"
+        ):
             continue
         for inner in ast.walk(node):
             if not isinstance(inner, ast.Assert):
@@ -267,7 +270,7 @@ class TestTheJobWritesNothingElse:
     def test_error_message_only_takes_the_closed_set(self) -> None:
         tree = _module_tree(JOB_MODULE)
 
-        assert _fail_asserts_the_closed_set(tree)
+        assert fail_review_asserts_the_closed_set(tree)
         assert _stringified_foreign_exceptions(tree) == []
         # Und die Menge ist nicht leer - sonst waere jede Zusicherung oben trivial.
         assert ERROR_MESSAGES
@@ -324,8 +327,8 @@ except OSError as exc:
         snippet = """
 try:
     await call()
-except _ReviewAbort as abort:
-    await _fail(session, review, str(abort))
+except ReviewAbort as abort:
+    await fail_review(session, review, str(abort))
 """
 
         assert _stringified_foreign_exceptions(ast.parse(snippet)) == []

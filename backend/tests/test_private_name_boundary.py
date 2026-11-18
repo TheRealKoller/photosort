@@ -208,7 +208,6 @@ tests/test_persons.py: _correction_row _delete_reference _has_correction_face
     _unlink_references_of_other_models
 tests/test_place_dataset.py: _build_parser _download_archive
 tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _slugify
-tests/test_worker_finish_cancelled.py: _fail
 """
 
 

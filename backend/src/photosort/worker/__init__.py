@@ -8,9 +8,10 @@ Logging-Hook ebenfalls. Die Laeufe selbst liegen in je einer Datei, die gemeinsa
 
 `__all__` ist die Zusage an die Aussenwelt: jeder Name, den `src/` und `tests/` ueber
 `photosort.worker.<name>` erreichen, steht hier und ist aufloesbar
-(`tests/test_worker_package_boundary.py` haelt beides fest). Die Namen der gemeinsamen Schicht sind
-bewusst mit dabei - gelesen werden sie ueber das Paket, GEPATCHT wird dagegen immer an der Stelle,
-an der sie nachgeschlagen werden (ADR 0149 Punkt 3).
+(`tests/test_worker_package_boundary.py` haelt beides fest). Die gemeinsame Schicht und die
+einzelnen Bausteine der Laeufe werden dabei NICHT durchgereicht: sie stehen in ihrer Datei und
+werden dort nachgeschlagen, denn ein Name aus zweiter Hand macht einen Patch an der falschen
+Stelle gruen (ADR 0149 Punkt 2).
 """
 
 from __future__ import annotations
@@ -21,23 +22,14 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 
-from photosort.classification_review import run_classification_review
 from photosort.config import settings
 from photosort.eye_client import EyeImageUnreadableError, EyeServiceUnavailableError
 from photosort.logging_config import configure_logging
-from photosort.worker._criterion.local import (
-    CRITERION_SCORING_COMMIT_BATCH_SIZE,
-    compute_content_criteria,
-)
+from photosort.worker._criterion.local import CRITERION_SCORING_COMMIT_BATCH_SIZE
 from photosort.worker._criterion.ranking import LandmarkGazetteerFactory, PlaceResolverFactory
-from photosort.worker._runs import (
-    finish_cancelled,
-    logger,
-    raise_if_cancel_requested,
-    take_over_queued_run,
-    try_build,
-)
+from photosort.worker._runs import logger
 from photosort.worker.classification import classify, run_classification
+from photosort.worker.classification_review import run_classification_review
 from photosort.worker.criterion_scoring import (
     CriterionScoringReferenceError,
     rebuild_run_grouping,
@@ -78,11 +70,6 @@ __all__ = [
     "build_export_folder_name",
     "classify",
     "export_project",
-    "finish_cancelled",
-    "raise_if_cancel_requested",
-    "take_over_queued_run",
-    "try_build",
-    "compute_content_criteria",
     "logger",
     "rebuild_run_grouping",
     "rebuild_run_selection",

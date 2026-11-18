@@ -1331,6 +1331,7 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
         "worker/_criterion/persons.py",
         "worker/_criterion/ranking.py",
         "worker/classification.py",
+        "worker/classification_review.py",
         "worker/criterion_scoring.py",
         "worker/export.py",
         "worker/remote_categories.py",

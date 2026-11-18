@@ -14,10 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.db as db_module
-from photosort.classification_review import (
-    execute_classification_review,
-    run_classification_review,
-)
 from photosort.eye_mapping import MAPPING_VERSION
 from photosort.models import (
     ClassificationReviewCase,
@@ -27,6 +23,10 @@ from photosort.models import (
     ScanStatus,
 )
 from photosort.run_cancel import RunCancelled
+from photosort.worker.classification_review import (
+    execute_classification_review,
+    run_classification_review,
+)
 from tests.test_worker_classification_review import (
     FakeCloudClient,
     FakeEyeClient,

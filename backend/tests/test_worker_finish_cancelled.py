@@ -13,7 +13,6 @@ import pytest
 from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import classification_review
 from photosort.db import make_session_factory
 from photosort.models import (
     ClassificationPhase,
@@ -28,6 +27,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.worker import classification_review
 from photosort.worker._runs import fail_export_run, fail_run, finish_cancelled
 from tests.project_graph import get_or_create_user
 
@@ -263,7 +263,9 @@ async def test_the_review_fail_path_with_a_requested_cancel_ends_cancelled(
     await db_session.commit()
     await _request_cancel_from_another_session(db_session, review)
 
-    await classification_review._fail(db_session, review, classification_review.ERROR_CANCELLED)
+    await classification_review.fail_review(
+        db_session, review, classification_review.ERROR_CANCELLED
+    )
 
     assert review.status == ScanStatus.CANCELLED
     assert review.error_message is None
