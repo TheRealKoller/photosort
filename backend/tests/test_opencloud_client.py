@@ -3,7 +3,12 @@ import base64
 import httpx
 import pytest
 
-from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError, _join
+from photosort.opencloud.client import (
+    IMAGE_EXTENSIONS,
+    OpenCloudClient,
+    OpenCloudError,
+    join_remote_path,
+)
 from photosort.opencloud.webdav_xml import DavEntry
 
 DRIVES_RESPONSE = {
@@ -334,11 +339,11 @@ def test_image_extensions_contains_expected_set() -> None:
 
 
 def test_join_builds_url_from_plain_segments() -> None:
-    assert _join(WEBDAV_URL, "CostaRica/Sub") == f"{WEBDAV_URL}/CostaRica/Sub"
+    assert join_remote_path(WEBDAV_URL, "CostaRica/Sub") == f"{WEBDAV_URL}/CostaRica/Sub"
 
 
 def test_join_returns_base_for_empty_path() -> None:
-    assert _join(WEBDAV_URL, "") == WEBDAV_URL
+    assert join_remote_path(WEBDAV_URL, "") == WEBDAV_URL
 
 
 def test_join_rejects_parent_traversal_segment() -> None:
@@ -346,12 +351,12 @@ def test_join_rejects_parent_traversal_segment() -> None:
     # ohne diesen Fix wuerde ein "../"-Segment aus dem konfigurierten Projekt-Wurzelverzeichnis
     # herauslaufen und andere, ueber WebDAV erreichbare Bereiche ansprechen.
     with pytest.raises(OpenCloudError):
-        _join(WEBDAV_URL, "../secret")
+        join_remote_path(WEBDAV_URL, "../secret")
 
 
 def test_join_rejects_parent_traversal_segment_in_the_middle_of_the_path() -> None:
     with pytest.raises(OpenCloudError):
-        _join(WEBDAV_URL, "CostaRica/../../secret")
+        join_remote_path(WEBDAV_URL, "CostaRica/../../secret")
 
 
 async def test_list_folder_rejects_path_with_parent_traversal_segment() -> None:
@@ -433,7 +438,7 @@ async def test_copy_sends_the_destination_header_and_copies_from_the_joined_sour
 
     client = _client(httpx.MockTransport(handler))
 
-    dest = _join(WEBDAV_URL, "PhotoSort-Export/Costa Rica/img001.jpg")
+    dest = join_remote_path(WEBDAV_URL, "PhotoSort-Export/Costa Rica/img001.jpg")
     await client.copy(WEBDAV_URL, "CostaRica/img001.jpg", dest)
 
     assert seen["destination"] == dest
@@ -447,7 +452,9 @@ async def test_copy_raises_on_error_status() -> None:
 
     with pytest.raises(OpenCloudError):
         await client.copy(
-            WEBDAV_URL, "CostaRica/img001.jpg", _join(WEBDAV_URL, "PhotoSort-Export/x/img.jpg")
+            WEBDAV_URL,
+            "CostaRica/img001.jpg",
+            join_remote_path(WEBDAV_URL, "PhotoSort-Export/x/img.jpg"),
         )
 
 
@@ -458,7 +465,9 @@ async def test_copy_rejects_a_parent_traversal_source_segment() -> None:
     client = _client(httpx.MockTransport(handler))
 
     with pytest.raises(OpenCloudError):
-        await client.copy(WEBDAV_URL, "../secret", _join(WEBDAV_URL, "PhotoSort-Export/x"))
+        await client.copy(
+            WEBDAV_URL, "../secret", join_remote_path(WEBDAV_URL, "PhotoSort-Export/x")
+        )
 
 
 async def test_mkcol_sends_mkcol_to_the_joined_path() -> None:

@@ -222,7 +222,6 @@ tests/test_final_selection.py: _selection_state_of
 tests/test_horizon.py: _score_from_angle_deviation _select_dominant_candidate_angle
 tests/test_label_embedding.py: _mean_pool_and_normalize
 tests/test_landmark.py: _build_prompt _landmark_detection_from_json
-tests/test_opencloud_client.py: _join
 tests/test_persons.py: _correction_row _delete_reference _has_correction_face
     _unlink_references_of_other_models
 tests/test_place_dataset.py: _build_parser _download_archive
@@ -231,7 +230,6 @@ tests/test_worker_classification.py: _now_utc
 tests/test_worker_criterion_scoring.py: _IMAGE_ANALYSIS_CRITERION_KEYS _IMAGE_ANALYSIS_CRITERION_SOURCES
     _compute_content_criteria _count_landmark_candidates _log_cloud_vision_throttling _now_utc
     _recognize_persons _select_landmark_candidates _start_criterion_scoring_run
-tests/test_worker_export.py: _join
 tests/test_worker_eye_phase.py: _set_phase
 tests/test_worker_fail_run.py: _commit_phase_costs _fail_run
 tests/test_worker_finish_cancelled.py: _fail _fail_export_run _fail_run _finish_cancelled
@@ -264,7 +262,7 @@ worker/criterion_scoring.py: _apply_run_selection _build_grouping_and_rankings _
     _finish_cancelled _landmark_place_cells _landmark_place_hints _now_utc _place_infos
     _raise_if_cancel_requested _recognize_persons _run_landmark_phase _run_local_phase
     _select_landmark_candidates _set_phase _write_local_motif_header
-worker/export.py: _fail_export_run _finish_cancelled _join _now_utc _take_over_queued_run
+worker/export.py: _fail_export_run _finish_cancelled _now_utc _take_over_queued_run
 worker/remote_categories.py: _CLOUD_VISION_IMAGE_MIME_TYPE _clear_cloud_vision_error _commit_phase_costs
     _fail_run _finish_cancelled _log_cloud_vision_failure _log_cloud_vision_throttling _now_utc
     _raise_if_cancel_requested _record_cloud_vision_error _try_build
@@ -321,28 +319,33 @@ def _meldung(pfad: Path) -> list[str]:
     ]
 
 
+_MODUL = "photosort.worker._runs"
+# Bewusst ein Name, der dauerhaft dateilokal bleibt: die Beispiele des Selbstschutzes muessen
+# auch nach dem Umbau noch echte Verstoesse sein, sonst pruefen sie nichts mehr.
+_PRIVAT = "_counted"
+
 _KEIN_VERSTOSS = [
-    "from photosort.worker._runs import set_phase, now_utc\n",
+    f"from {_MODUL} import set_phase, now_utc\n",
     "from photosort.opencloud.client import join_remote_path\n",
 ]
 
 _VERSTOSS_BEISPIELE = [
-    ("from photosort.opencloud.client import _join\n", "_join", "from-import", 1),
+    (f"from {_MODUL} import {_PRIVAT}\n", _PRIVAT, "from-import", 1),
     (
-        "import photosort.worker._runs as runs\n\nx = runs._set_phase\n",
-        "_set_phase",
+        f"import {_MODUL} as runs\n\nx = runs.{_PRIVAT}\n",
+        _PRIVAT,
         "attribut",
         3,
     ),
     (
-        "import photosort.worker._runs as runs\n\nsetattr(runs, '_set_phase', None)\n",
-        "_set_phase",
+        f"import {_MODUL} as runs\n\nsetattr(runs, '{_PRIVAT}', None)\n",
+        _PRIVAT,
         "setattr",
         3,
     ),
     (
-        "from unittest import mock\n\nmock.patch('photosort.worker._runs._fail_run')\n",
-        "_fail_run",
+        f"from unittest import mock\n\nmock.patch('{_MODUL}.{_PRIVAT}')\n",
+        _PRIVAT,
         "patch-ziel",
         3,
     ),

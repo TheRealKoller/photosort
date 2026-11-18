@@ -41,13 +41,13 @@ class Drive:
     webdav_url: str
 
 
-def _join(base_url: str, path: str) -> str:
+def join_remote_path(base_url: str, path: str) -> str:
     base = base_url.rstrip("/")
     raw_segments = [segment for segment in path.strip("/").split("/") if segment]
     # Security-Haertung gegen Path Traversal: ohne diese Pruefung wuerde ein "..''-Segment aus
     # dem vorgesehenen Projekt-Wurzelverzeichnis herauslaufen und andere, ueber WebDAV
     # erreichbare Bereiche des Namespace ansprechen, als die Anwendung vorsieht. Betrifft jeden
-    # Aufrufer mit nutzergesteuertem Pfad (list_folder/get_range/walk), da alle ueber _join
+    # Aufrufer mit nutzergesteuertem Pfad (list_folder/get_range/walk), da alle ueber join_remote_path
     # laufen. Bricht in tests/test_opencloud_client.py::test_join_rejects_parent_traversal_segment.
     if any(segment == ".." for segment in raw_segments):
         raise OpenCloudError(f"Ungültiger Pfad: '{path}' enthält nicht erlaubte '..'-Segmente.")
@@ -168,7 +168,7 @@ class OpenCloudClient:
     async def list_folder(
         self, webdav_url: str, path: str = "", depth: str = "1"
     ) -> list[DavEntry]:
-        target_url = _join(webdav_url, path)
+        target_url = join_remote_path(webdav_url, path)
         response = await self._send(
             "PROPFIND",
             target_url,
@@ -219,7 +219,7 @@ class OpenCloudClient:
                     yield child_relative, entry
 
     async def get_range(self, webdav_url: str, relative_path: str, length: int) -> bytes:
-        url = _join(webdav_url, relative_path)
+        url = join_remote_path(webdav_url, relative_path)
         response = await self._send("GET", url, headers={"Range": f"bytes=0-{length - 1}"})
         _raise_for_status(response)
         return response.content
@@ -227,7 +227,7 @@ class OpenCloudClient:
     async def download(self, webdav_url: str, relative_path: str) -> bytes:
         """Full-file download, used by the worker for thumbnail generation - get_range's partial
         content isn't reliably enough for a complete image."""
-        url = _join(webdav_url, relative_path)
+        url = join_remote_path(webdav_url, relative_path)
         response = await self._send("GET", url)
         _raise_for_status(response)
         return response.content
@@ -235,12 +235,12 @@ class OpenCloudClient:
     async def copy(self, webdav_url: str, source_path: str, dest_url: str) -> None:
         """Serverseitiges WebDAV `COPY` (RFC 4918) - kein Byte fliesst durch PhotoSort.
 
-        `source_path` ist der relative Quellpfad und laeuft wie jede Pfadbildung ueber `_join`
+        `source_path` ist der relative Quellpfad und laeuft wie jede Pfadbildung ueber `join_remote_path`
         (`..`-Ablehnung, Segment-Quotierung). `dest_url` ist die VOLLE Ziel-URL und wird vom
-        Aufrufer AUSSCHLIESSLICH ueber `_join(webdav_url, dest_path)` gebaut - nie durch manuelle
+        Aufrufer AUSSCHLIESSLICH ueber `join_remote_path(webdav_url, dest_path)` gebaut - nie durch manuelle
         String-Konkatenation mit rohen Namen, sonst waere eine CRLF-Header-Injection im
         `Destination`-Header oder ein `..`-Ausbruch aus dem Zielordner moeglich."""
-        source_url = _join(webdav_url, source_path)
+        source_url = join_remote_path(webdav_url, source_path)
         response = await self._send("COPY", source_url, headers={"Destination": dest_url})
         _raise_for_status(response)
 
@@ -248,7 +248,7 @@ class OpenCloudClient:
         """Legt einen Ordner per WebDAV `MKCOL` an, tolerant gegenueber `405` (Ordner existiert
         bereits). Gilt fuer Wurzel- und Unterordner des Exports gleichermassen: ein bereits
         vorhandener Ordner ist kein Fehler, sondern das gewollte "weiter im Zielbaum"."""
-        url = _join(webdav_url, path)
+        url = join_remote_path(webdav_url, path)
         response = await self._send("MKCOL", url)
         if response.status_code == 405:
             return

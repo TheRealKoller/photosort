@@ -18,7 +18,7 @@ from photosort.models import (
     ExportRunStatus,
     Project,
 )
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
+from photosort.opencloud.client import OpenCloudClient, OpenCloudError, join_remote_path
 from photosort.run_cancel import cancel_requested
 
 
@@ -64,7 +64,7 @@ def sanitize_project_name(name: str) -> str:
 
     Entfernt werden C0/C1-Steuerzeichen sowie Schraeg- und Rueckwaertsschraegstrich; anschliessend
     wird Leerraum zusammengezogen und die Laenge begrenzt. Reine Punkt-Namen (`.`, `..`) werden
-    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `_join`'s `..`-Ablehnung,
+    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `join_remote_path`'s `..`-Ablehnung,
     nicht der alleinige Schutz."""
     cleaned = "".join(ch for ch in name if ch not in _CONTROL_CHARS)
     cleaned = cleaned.replace("/", " ").replace("\\", " ")
@@ -190,12 +190,12 @@ async def run_export(
             if await cancel_requested(session, run):
                 break
             try:
-                # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
-                # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
+                # Das Ziel laeuft AUSSCHLIESSLICH ueber `join_remote_path` - nie manuelle Konkatenation roher
+                # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `join_remote_path`
                 # steht INNERHALB des je-Foto-try: ein Foto, dessen Name die Regeln verletzt
                 # (`..`-Segment), scheitert als Einzelfehler in `export_photos.error`, nie bricht
                 # es den Lauf ab.
-                dest_url = _join(webdav_url, f"{target_path}/{entry.relative_path}")
+                dest_url = join_remote_path(webdav_url, f"{target_path}/{entry.relative_path}")
                 await client.copy(webdav_url, entry.relative_path, dest_url)
                 exported += 1
             except OpenCloudError as exc:
