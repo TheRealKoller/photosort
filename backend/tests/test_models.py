@@ -1040,7 +1040,7 @@ async def test_photo_cloud_vision_error_duplicate_phase_for_same_photo_conflicts
 ) -> None:
     # Kein Verlauf (ADR 0035 Punkt 2): eine zweite Zeile fuer dasselbe (photo_id, phase) verletzt
     # den Composite-PK - ein erneuter Fehlschlag muss stattdessen ueber ein Upsert
-    # (worker/_runs.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
+    # (worker/_runs.py::record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
     # Zeile einfuegen.
     photo = await _make_photo(db_session)
     now = datetime.now(UTC)
@@ -2334,9 +2334,9 @@ async def test_event_place_name_is_nullable_and_defaults_to_none(
 # specs/features/0481-restdauer-klassifizierungslauf.md, decisions/0116-restdauer-als-
 # servermessung-spanne-im-frontend-keine-gesamtrestzeit.md Punkt 1: `phase` und
 # `phase_started_at` werden AUSSCHLIESSLICH GEMEINSAM gesetzt, ueber genau eine Funktion.
-_ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"_set_phase"})
+_ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"set_phase"})
 # Spec 0641 freigegeben: `demo_state.py` schreibt einen FABRIZIERTEN Endzustand (abgebrochener
-# Lauf) - beide Spalten zusammen im Konstruktor, kein Uebergang und kein `_set_phase`; ein
+# Lauf) - beide Spalten zusammen im Konstruktor, kein Uebergang und kein `set_phase`; ein
 # zweiter Schreiber im laufenden Betrieb bleibt damit weiterhin ausgeschlossen.
 _ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker/_runs.py", "demo_state.py"})
 
@@ -2460,7 +2460,7 @@ def _functions_writing(source: str, field: str) -> set[str]:
     def descend_if(node: ast.If, enclosing: str, review_names: frozenset[str]) -> None:
         """Ein `if` samt `elif`-Kette: der `isinstance`-Nachweis gilt fuer SEINEN Rumpf, nie fuer
         den `else`-Zweig daneben. Im AST ist `elif` ein `If` im `orelse` - ohne diesen eigenen Weg
-        laege sein Rumpf ausserhalb seines Nachweises, und `_fail_run` waere ein Befund."""
+        laege sein Rumpf ausserhalb seines Nachweises, und `fail_run` waere ein Befund."""
         descend(node.test, enclosing, review_names)
         branch_names = review_names | _isinstance_review_names(node.test)
         for statement in node.body:
@@ -2517,7 +2517,7 @@ def test_exactly_one_function_writes_the_phase() -> None:
 
 def test_exactly_one_function_writes_the_phase_start() -> None:
     """Dieselbe Pruefung fuer die zweite Spalte. Sie steht EINZELN da, weil die erste allein auch
-    gegen ein `_set_phase` bestuende, das `phase_started_at` gar nicht mehr anfasst - dann gaebe
+    gegen ein `set_phase` bestuende, das `phase_started_at` gar nicht mehr anfasst - dann gaebe
     es schlicht keine zweite Schreibstelle, und die erste Zusicherung bliebe gruen."""
     writers = _worker_writers(_PHASE_STARTED_AT)
 
@@ -2602,7 +2602,7 @@ def test_the_phase_guard_does_not_confuse_the_two_columns() -> None:
 
 def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
     """Gegenprobe: `PhotoCloudVisionError` und `CloudVisionStatusOut` fuehren eine gleichnamige
-    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::_record_cloud_vision_error` und `api/photos/`
+    Spalte. Zaehlten sie mit, waeren `worker/_runs.py::record_cloud_vision_error` und `api/photos/`
     Befunde - und der Waechter waere nur noch abzuschalten."""
     assert (
         _functions_writing(
@@ -2633,7 +2633,7 @@ def test_the_phase_guard_ignores_the_review_phase_of_an_annotated_parameter() ->
 
 
 def test_the_phase_guard_ignores_the_review_branch_of_the_fail_path() -> None:
-    """Dieselbe Ausnahme fuer `_fail_run`: der Empfaenger ist NUR im `isinstance`-Zweig eine
+    """Dieselbe Ausnahme fuer `fail_run`: der Empfaenger ist NUR im `isinstance`-Zweig eine
     Pruefung. Der Kriterienzweig daneben bleibt sichtbar."""
     snippet = (
         "def f(run) -> None:\n"

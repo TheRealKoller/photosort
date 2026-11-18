@@ -1129,7 +1129,7 @@ async def trigger_classify(
     `FAILED` enden.
 
     Legt die wartende `CriterionScoringRun`-Zeile VOR dem Einreihen an (Felder wie
-    `worker/criterion_scoring.py::_start_criterion_scoring_run`); der Job uebernimmt sie. Den
+    `worker/criterion_scoring.py::start_criterion_scoring_run`); der Job uebernimmt sie. Den
     `RemoteCategoryClassificationRun` legt weiterhin erst der Worker an."""
     if not settings.category_selection_enabled:
         raise HTTPException(

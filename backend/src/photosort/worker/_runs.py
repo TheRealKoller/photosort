@@ -14,7 +14,7 @@ from sqlalchemy import CursorResult, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.clock import now_utc
+from photosort import clock
 from photosort.cloud_vision import ThrottleStats
 from photosort.models import (
     ClassificationPhase,
@@ -45,14 +45,15 @@ logger = logging.getLogger("photosort.worker")
 # Der Cloud-Aufruf nutzt ausschliesslich die bestehende display-Cache-Variante, die
 # thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
 # Format-Erkennung. Das Bildquellen-Muss-Kriterium gilt für BEIDE Cloud-Vision-Pfade.
-_CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
+CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
 
 
-def _now_utc() -> datetime:
-    return now_utc()
+def now_utc() -> datetime:
+    """Die eine Zeitquelle aller Laeufe: gepatcht wird hier, nicht in `photosort.clock`."""
+    return clock.now_utc()
 
 
-def _set_phase(run: CriterionScoringRun, phase: ClassificationPhase | None) -> None:
+def set_phase(run: CriterionScoringRun, phase: ClassificationPhase | None) -> None:
     """Die EINZIGE Stelle im Projekt, an der `phase` und `phase_started_at` gesetzt werden.
 
     Beide gemeinsam, nie einzeln (ADR 0116 Punkt 1): `phase = NULL` nimmt den Beginn mit, jeder
@@ -61,13 +62,13 @@ def _set_phase(run: CriterionScoringRun, phase: ClassificationPhase | None) -> N
     ohne Fehler und ohne roten Verhaltenstest.
 
     Kein `commit()` hier: Der Phasenwechsel wird an jeder Aufrufstelle zusammen mit dem uebrigen
-    Zustand dieses Schritts committet, und ein zweiter Commit mitten in `_fail_run` verschoebe
+    Zustand dieses Schritts committet, und ein zweiter Commit mitten in `fail_run` verschoebe
     dort die Reihenfolge aus Rollback, Zustand und Commit."""
     run.phase = phase
-    run.phase_started_at = None if phase is None else _now_utc()
+    run.phase_started_at = None if phase is None else now_utc()
 
 
-async def _fail_run(
+async def fail_run(
     session: AsyncSession,
     run: (
         ScanRun
@@ -87,20 +88,20 @@ async def _fail_run(
     await session.rollback()
     await session.refresh(run)
     if run.cancel_requested_at is not None:
-        await _finish_cancelled(session, run)
+        await finish_cancelled(session, run)
         return
     run.status = ScanStatus.FAILED
     run.error_message = error_message
-    run.finished_at = _now_utc()
+    run.finished_at = now_utc()
     if isinstance(run, CriterionScoringRun):
         # `phase = NULL` heisst "laeuft nicht mehr" - das gilt fuer einen fehlgeschlagenen Lauf
         # genauso wie fuer einen erfolgreichen. HIER statt in run_classification/
-        # run_criterion_scoring, weil _fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad ist:
+        # run_criterion_scoring, weil fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad ist:
         # er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled) benutzt,
         # der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt. `phase`
         # existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt eines
         # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine).
-        _set_phase(run, None)
+        set_phase(run, None)
     elif isinstance(run, ClassificationReview):
         # Spec 0616: der Teilschritt einer Pruefung ist `NULL`, sobald der Lauf beendet ist -
         # das gilt fuer den Fehlschlag genauso wie fuer den Erfolg. Die Pruefung hat kein
@@ -109,14 +110,14 @@ async def _fail_run(
     await session.commit()
     # das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
-    # _fail_run (z.B. `run.id` in scan_project/score_project/classify, die den
+    # fail_run (z.B. `run.id` in scan_project/score_project/classify, die den
     # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
     # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
     # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
     await session.refresh(run)
 
 
-async def _finish_cancelled(
+async def finish_cancelled(
     session: AsyncSession,
     run: (
         ScanRun
@@ -134,7 +135,7 @@ async def _finish_cancelled(
     await session.rollback()
     await session.refresh(run)
     # Spec 0641 S7: EIN bedingtes UPDATE statt "lesen, pruefen, zuweisen". Der Watchdog
-    # (reap_stalled_runs -> _fail_if_stalled) schliesst dieselbe Zeile ueber _fail_run ab; mit
+    # (reap_stalled_runs -> _fail_if_stalled) schliesst dieselbe Zeile ueber fail_run ab; mit
     # einem ORM-Schreibvorgang entschied die Commit-Reihenfolge, und ein abgebrochener Lauf
     # konnte nachtraeglich als `failed` erscheinen. Hier gewinnt, wer den Endzustand zuerst
     # schreibt: `cancelled` und `failed` sind beide keine aktiven Zustaende, die Bedingung trifft
@@ -161,13 +162,13 @@ async def _finish_cancelled(
     await session.execute(
         update(model)
         .where(model.id == run.id, model.status.in_(active))
-        .values(status=cancelled, error_message=None, finished_at=_now_utc())
+        .values(status=cancelled, error_message=None, finished_at=now_utc())
     )
     await session.commit()
     await session.refresh(run)
 
 
-async def _take_over_queued_run[
+async def take_over_queued_run[
     RunT: (
         ScanRun,
         ScoringRun,
@@ -188,7 +189,7 @@ async def _take_over_queued_run[
     result = await session.execute(
         update(model)
         .where(model.id == run_id, model.status == queued, model.cancel_requested_at.is_(None))
-        .values(status=running, last_progress_at=_now_utc())
+        .values(status=running, last_progress_at=now_utc())
         .execution_options(synchronize_session=False)
     )
     await session.commit()
@@ -197,7 +198,7 @@ async def _take_over_queued_run[
     return await session.get(model, run_id, populate_existing=True)
 
 
-async def _raise_if_cancel_requested(
+async def raise_if_cancel_requested(
     session: AsyncSession,
     run: (
         ScanRun
@@ -213,44 +214,44 @@ async def _raise_if_cancel_requested(
         raise RunCancelled
 
 
-async def _finish_if_cancel_requested(session: AsyncSession, run: Any) -> bool:
+async def finish_if_cancel_requested(session: AsyncSession, run: Any) -> bool:
     """Pruefpunkt an einer Phasengrenze: fordert der Lauf den Abbruch an, wird er hier beendet und
     die Phasenfolge endet. `True` heisst "der Lauf ist zu Ende"."""
     if not await cancel_requested(session, run):
         return False
-    await _finish_cancelled(session, run)
+    await finish_cancelled(session, run)
     return True
 
 
-async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
-    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum,
+async def fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
+    """ "ExportRun auf FAILED setzen" - das Pendant zu `fail_run` fuer den eigenen Status-Enum,
     mit demselben Vorrang eines angeforderten Abbruchs."""
     await session.rollback()
     await session.refresh(run)
     if run.cancel_requested_at is not None:
-        await _finish_cancelled(session, run)
+        await finish_cancelled(session, run)
         return
     run.status = ExportRunStatus.FAILED
     run.error_message = error_message
-    run.finished_at = _now_utc()
+    run.finished_at = now_utc()
     await session.commit()
     await session.refresh(run)
 
 
-def _try_build[T](build: Callable[[], T]) -> T | None:
+def try_build[T](build: Callable[[], T]) -> T | None:
     """Best-effort Modell-/Detektor-Konstruktion: ein Fehlschlag
     GENAU EINES Builders (fehlendes/defektes Asset, mediapipe-/tensorflow-Laufzeitproblem) darf
     weder den gesamten CriterionScoringRun noch die von den UEBRIGEN, erfolgreich gebauten
     Modellen abhaengigen Kriterien mit sich reissen - konsistent mit dem Best-effort-Grundsatz,
     der bereits fuer die einzelnen Kriterien-Berechnungen selbst gilt (siehe
-    _compute_content_criteria)."""
+    compute_content_criteria)."""
     try:
         return build()
     except Exception:
         return None
 
 
-def _log_cloud_vision_failure(
+def log_cloud_vision_failure(
     phase: str, photo_id: int, relative_path: str, exc_type_name: str, exc_message: str
 ) -> None:
     """Strukturiertes WARNING-Logging für einen best-effort übersprungenen
@@ -263,7 +264,7 @@ def _log_cloud_vision_failure(
 
     Nimmt `exc_type_name`/`exc_message` statt der rohen Exception: der Aufrufer berechnet
     `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen Call-Site und reicht beide
-    Werte sowohl hierher als auch an `_record_cloud_vision_error` durch - keine zweite,
+    Werte sowohl hierher als auch an `record_cloud_vision_error` durch - keine zweite,
     potenziell abweichende Auswertung an zwei Stellen.
 
     SICHERHEIT: `exc_message` stammt ausschließlich aus der bereits an der
@@ -285,9 +286,9 @@ def _counted(count: int, singular: str, plural: str) -> str:
     return f"{count} {singular if count == 1 else plural}"
 
 
-def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats) -> None:
+def log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats) -> None:
     """Strukturiertes WARNING-Logging der VERTEILUNG eines Cloud-Teilschritts, der Gegenpart zu
-    _log_cloud_vision_failure daneben.
+    log_cloud_vision_failure daneben.
 
     Hoechstens EINE Zeile je Teilschritt, und nur wenn tatsaechlich gewartet wurde: der Helfer
     kehrt wirkungslos zurueck, wenn weder eine Anfrage eingereiht noch eine Wiederholung noetig
@@ -335,7 +336,7 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
 _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
 
 
-async def _commit_phase_costs(session: AsyncSession) -> None:
+async def commit_phase_costs(session: AsyncSession) -> None:
     """Committet die im `finally`-Block der Cloud-Phase gesetzten Ist-Kostenspalten - und
     wirft dabei NIE.
 
@@ -349,20 +350,20 @@ async def _commit_phase_costs(session: AsyncSession) -> None:
     Im Fehlerfall gehen die Kostenwerte dieses Laufs verloren (das Rollback verwirft sie) - das
     ist der bewusst gewaehlte kleinere Schaden: eine fehlende Kostenangabe faellt ueber den
     Unvollstaendigkeits-Hinweis der Statistikseite auf, eine verschluckte Fehlerursache nicht.
-    Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `_fail_run` den
+    Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `fail_run` den
     Lauf noch auf FAILED setzen kann.
 
     Auch dieses `rollback()` ist abgesichert. Es laeuft in genau
     der Lage, in der schon das Commit gescheitert ist (Verbindungsabbruch, DBAPI-Problem) - eine
     Exception von dort verliesse den Helfer und ersetzte die urspruengliche eine Ebene tiefer,
     also genau die Maskierung, gegen die er gebaut ist. Scheitert auch das Aufraeumen, bleibt der
-    Session nichts mehr zu retten; _fail_run scheitert dann ebenfalls, aber mit SEINEM eigenen
+    Session nichts mehr zu retten; fail_run scheitert dann ebenfalls, aber mit SEINEM eigenen
     Fehler statt mit einem hier ausgeloesten. Sichtbar bleibt beides ueber die zwei Logzeilen.
 
     Bewusst OHNE `run.id` in der Logzeile: nach einem gescheiterten Commit sind die
     ORM-Attribute expired, ein lesender Zugriff loeste ausserhalb des greenlet-Kontexts einen
-    Lazy-Load aus (MissingGreenlet) - dieselbe Falle, die _fail_run mit seinem refresh() abraeumt.
-    Der Lauf ist ueber die von _fail_run geschriebene `error_message` identifizierbar."""
+    Lazy-Load aus (MissingGreenlet) - dieselbe Falle, die fail_run mit seinem refresh() abraeumt.
+    Der Lauf ist ueber die von fail_run geschriebene `error_message` identifizierbar."""
     try:
         await session.commit()
     except SQLAlchemyError as exc:
@@ -378,7 +379,7 @@ async def _commit_phase_costs(session: AsyncSession) -> None:
             )
 
 
-async def _record_cloud_vision_error(
+async def record_cloud_vision_error(
     session: AsyncSession,
     photo_id: int,
     phase: CloudVisionPhase,
@@ -387,14 +388,14 @@ async def _record_cloud_vision_error(
     now: datetime,
 ) -> None:
     """Upsert der letzten bekannten Fehler-Zeile für dieses Foto x CloudVisionPhase - bewusst
-    getrennt von _log_cloud_vision_failure (ephemeres Log gegen dauerhafte, per API abrufbare
+    getrennt von log_cloud_vision_failure (ephemeres Log gegen dauerhafte, per API abrufbare
     Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring). Nimmt
     `exc_type_name`/`exc_message` bereits fertig berechnet entgegen - der Aufrufer berechnet
     `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen
-    Call-Site und reicht beide Werte sowohl hierher als auch an _log_cloud_vision_failure durch,
+    Call-Site und reicht beide Werte sowohl hierher als auch an log_cloud_vision_failure durch,
     keine zweite Auswertung derselben Exception an zwei Stellen. Reines `session.add`/Attribut-
     Update, kein eigener Commit (Persistierung laeuft ueber die bereits bestehenden periodischen
-    Commit-Punkte der jeweiligen Schleife, analog _upsert_landmark_detection)."""
+    Commit-Punkte der jeweiligen Schleife, analog upsert_landmark_detection)."""
     existing = await session.get(PhotoCloudVisionError, (photo_id, phase))
     if existing is None:
         existing = PhotoCloudVisionError(photo_id=photo_id, phase=phase)
@@ -404,7 +405,7 @@ async def _record_cloud_vision_error(
     existing.attempted_at = now
 
 
-async def _clear_cloud_vision_error(
+async def clear_cloud_vision_error(
     session: AsyncSession, photo_id: int, phase: CloudVisionPhase
 ) -> None:
     """Loescht eine ggf. vorhandene Fehler-Zeile nach einem erfolgreichen (Retry-)Versuch
@@ -425,7 +426,7 @@ async def _clear_cloud_vision_error(
 _MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH = 1000
 
 
-def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
+def append_cloud_error(run: CriterionScoringRun, message: str) -> None:
     """Hängt einen Baustein an die laufweite Cloud-Fehlermeldung an, statt sie zu überschreiben:
     ein Lauf kann mehrere unabhängige Cloud-Probleme haben (Phase 1 fehlgeschlagen UND
     Landmark-Client nicht konstruierbar UND einzelne Landmark-Aufrufe fehlgeschlagen), und keines

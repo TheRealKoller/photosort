@@ -351,7 +351,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Dieselbe Skip-Regel wie im Live-Lauf
-        (worker/_criterion/landmark.py::_select_landmark_candidates): ein bereits gescortes Foto
+        (worker/_criterion/landmark.py::select_landmark_candidates): ein bereits gescortes Foto
         wird kein zweites Mal an die Cloud geschickt und darf die Schaetzung deshalb auch nicht
         erhoehen."""
         project_id = await _create_project(authenticated_api_client)

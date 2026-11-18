@@ -69,7 +69,7 @@ def _persons_on_photo(
     }
 
 
-async def _recognize_persons(
+async def recognize_persons(
     session: AsyncSession,
     run: CriterionScoringRun,
     project_id: int,
@@ -92,7 +92,7 @@ async def _recognize_persons(
     if not centroids:
         runs.logger.info("Personen-Erkennung entfaellt: keine gezeigten Gesichter des Modells.")
         return
-    analyzer = runs._try_build(build_analyzer)
+    analyzer = runs.try_build(build_analyzer)
     if analyzer is None:
         runs.logger.warning("Personen-Erkennung entfaellt: Modell nicht ladbar.")
         return
@@ -102,7 +102,7 @@ async def _recognize_persons(
             select(Photo.id, Photo.etag).where(Photo.project_id == project_id).order_by(Photo.id)
         )
     ).all()
-    runs._set_phase(run, ClassificationPhase.PERSONS)
+    runs.set_phase(run, ClassificationPhase.PERSONS)
     run.persons_photos_total = len(photos)
     run.persons_photos_processed = 0
     await session.commit()
@@ -117,7 +117,7 @@ async def _recognize_persons(
             if (persons := _persons_on_photo(analyzer, cache_dir, photo_id, etag, centroids))
             is not None
         }
-        now = runs._now_utc()
+        now = runs.now_utc()
         if recognised:
             await session.execute(
                 delete(PhotoPersonDetection).where(
@@ -149,7 +149,7 @@ async def _recognize_persons(
             await session.refresh(run)
             discarded_blocks += 1
             run.persons_photos_processed = processed
-            run.last_progress_at = runs._now_utc()
+            run.last_progress_at = runs.now_utc()
             await session.commit()
     runs.logger.info(
         "Personen-Erkennung: %d von %d Fotos durchlaufen, %d Bloecke verworfen.",

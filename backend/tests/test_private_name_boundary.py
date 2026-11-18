@@ -182,8 +182,6 @@ def _dateien(wurzel: Path) -> list[Path]:
 # Arbeitsliste waehrend der Abarbeitung (Spec 0648): Datei -> Namen. Geprueft wird GLEICHHEIT in
 # beide Richtungen - ein neuer Verstoss wird rot, ein abgearbeiteter Eintrag ebenfalls.
 _BEKANNTE_FUNDE_TEXT = """
-classification_review.py: _compute_content_criteria _finish_cancelled _raise_if_cancel_requested
-    _take_over_queued_run _try_build
 tests/test_aesthetics.py: _ASSET_PATH
 tests/test_api_classification_reviews.py: _guard_export_shape
 tests/test_api_opencloud_folder_counts.py: _count_images_up_to_limit
@@ -210,48 +208,7 @@ tests/test_persons.py: _correction_row _delete_reference _has_correction_face
     _unlink_references_of_other_models
 tests/test_place_dataset.py: _build_parser _download_archive
 tests/test_remote_classification.py: _MAX_RESPONSE_TOKENS _classification_from_json _slugify
-tests/test_worker_classification.py: _now_utc
-tests/test_worker_criterion_scoring.py: _IMAGE_ANALYSIS_CRITERION_KEYS _IMAGE_ANALYSIS_CRITERION_SOURCES
-    _compute_content_criteria _log_cloud_vision_throttling _now_utc _recognize_persons
-    _select_landmark_candidates _start_criterion_scoring_run
-tests/test_worker_eye_phase.py: _set_phase
-tests/test_worker_fail_run.py: _commit_phase_costs _fail_run
-tests/test_worker_finish_cancelled.py: _fail _fail_export_run _fail_run _finish_cancelled
-tests/test_worker_persons.py: _build_grouping_and_rankings
-tests/test_worker_place_names.py: _build_grouping_and_rankings _landmark_points_by_name _place_infos
-tests/test_worker_reap_stalled_runs.py: _fail_run _now_utc
-tests/test_worker_scan_classification.py: _classify_scan_entries
-tests/test_worker_scan_project.py: _catch_up_aspect_ratios _now_utc
-tests/test_worker_score_cancel.py: _raise_if_cancel_requested
-tests/test_worker_score_project.py: _now_utc
-worker/__init__.py: _CLOUD_VISION_IMAGE_MIME_TYPE _IMAGE_ANALYSIS_CRITERION_SOURCES _append_cloud_error
-    _apply_run_selection _build_grouping_and_rankings _classify_scan_entries _clear_cloud_vision_error
-    _commit_phase_costs _compute_content_criteria _detect_landmark_for_photo _fail_export_run _fail_run
-    _finish_cancelled _finish_if_cancel_requested _landmark_place_cells _landmark_place_hints
-    _landmark_points_by_name _log_cloud_vision_failure _log_cloud_vision_throttling _now_utc _place_infos
-    _raise_if_cancel_requested _recognize_persons _record_cloud_vision_error _run_eye_phase
-    _select_landmark_candidates _set_phase _start_criterion_scoring_run _take_over_queued_run _try_build
-    _upsert_landmark_detection
-worker/_criterion/eye.py: _now_utc _set_phase
-worker/_criterion/landmark.py: _CLOUD_VISION_IMAGE_MIME_TYPE _append_cloud_error
-    _clear_cloud_vision_error _commit_phase_costs _log_cloud_vision_failure _log_cloud_vision_throttling
-    _now_utc _raise_if_cancel_requested _record_cloud_vision_error _try_build
-worker/_criterion/local.py: _now_utc _raise_if_cancel_requested _try_build
-worker/_criterion/persons.py: _now_utc _set_phase _try_build
-worker/_criterion/ranking.py: _now_utc
-worker/classification.py: _append_cloud_error _fail_run _finish_cancelled _finish_if_cancel_requested
-    _run_eye_phase _set_phase _start_criterion_scoring_run _take_over_queued_run
-worker/criterion_scoring.py: _apply_run_selection _build_grouping_and_rankings _fail_run
-    _finish_cancelled _landmark_place_cells _landmark_place_hints _now_utc _place_infos
-    _raise_if_cancel_requested _recognize_persons _run_landmark_phase _run_local_phase
-    _select_landmark_candidates _set_phase _write_local_motif_header
-worker/export.py: _fail_export_run _finish_cancelled _now_utc _take_over_queued_run
-worker/remote_categories.py: _CLOUD_VISION_IMAGE_MIME_TYPE _clear_cloud_vision_error _commit_phase_costs
-    _fail_run _finish_cancelled _log_cloud_vision_failure _log_cloud_vision_throttling _now_utc
-    _raise_if_cancel_requested _record_cloud_vision_error _try_build
-worker/scan.py: _fail_run _finish_cancelled _now_utc _raise_if_cancel_requested _take_over_queued_run
-worker/scoring.py: _fail_run _finish_cancelled _now_utc _raise_if_cancel_requested _take_over_queued_run
-worker/stall_reaper.py: _fail_export_run _fail_run _now_utc
+tests/test_worker_finish_cancelled.py: _fail
 """
 
 

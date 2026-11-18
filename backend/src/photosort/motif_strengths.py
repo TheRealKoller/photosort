@@ -228,7 +228,7 @@ async def upsert_assessment(
     unangetastet - sie haengen am Foto und nicht an der Kopfzeile.
 
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
-    `project_deletion`/`_build_grouping_and_rankings`)."""
+    `project_deletion`/`build_grouping_and_rankings`)."""
     existing = await session.get(PhotoMotifAssessment, photo_id)
     if existing is not None:
         if source == MotifAssessmentSource.LOCAL and (existing.source == MotifAssessmentSource.EYE):

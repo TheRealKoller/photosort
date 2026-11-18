@@ -25,51 +25,21 @@ from photosort.classification_review import run_classification_review
 from photosort.config import settings
 from photosort.eye_client import EyeImageUnreadableError, EyeServiceUnavailableError
 from photosort.logging_config import configure_logging
-from photosort.worker._criterion.eye import _run_eye_phase
-from photosort.worker._criterion.landmark import (
-    _detect_landmark_for_photo,
-    _landmark_place_cells,
-    _landmark_place_hints,
-    _select_landmark_candidates,
-    _upsert_landmark_detection,
-)
 from photosort.worker._criterion.local import (
-    _IMAGE_ANALYSIS_CRITERION_SOURCES,
     CRITERION_SCORING_COMMIT_BATCH_SIZE,
-    _compute_content_criteria,
+    compute_content_criteria,
 )
-from photosort.worker._criterion.persons import _recognize_persons
-from photosort.worker._criterion.ranking import (
-    LandmarkGazetteerFactory,
-    PlaceResolverFactory,
-    _apply_run_selection,
-    _build_grouping_and_rankings,
-    _landmark_points_by_name,
-    _place_infos,
-)
+from photosort.worker._criterion.ranking import LandmarkGazetteerFactory, PlaceResolverFactory
 from photosort.worker._runs import (
-    _CLOUD_VISION_IMAGE_MIME_TYPE,
-    _append_cloud_error,
-    _clear_cloud_vision_error,
-    _commit_phase_costs,
-    _fail_export_run,
-    _fail_run,
-    _finish_cancelled,
-    _finish_if_cancel_requested,
-    _log_cloud_vision_failure,
-    _log_cloud_vision_throttling,
-    _now_utc,
-    _raise_if_cancel_requested,
-    _record_cloud_vision_error,
-    _set_phase,
-    _take_over_queued_run,
-    _try_build,
+    finish_cancelled,
     logger,
+    raise_if_cancel_requested,
+    take_over_queued_run,
+    try_build,
 )
 from photosort.worker.classification import classify, run_classification
 from photosort.worker.criterion_scoring import (
     CriterionScoringReferenceError,
-    _start_criterion_scoring_run,
     rebuild_run_grouping,
     rebuild_run_selection,
     run_criterion_scoring,
@@ -84,7 +54,7 @@ from photosort.worker.remote_categories import (
     run_remote_category_classification,
     select_remote_category_candidates,
 )
-from photosort.worker.scan import SkipReason, _classify_scan_entries, run_project_scan, scan_project
+from photosort.worker.scan import SkipReason, run_project_scan, scan_project
 from photosort.worker.scoring import run_project_scoring, score_project
 from photosort.worker.stall_reaper import (
     JOB_TIMEOUT_SECONDS,
@@ -105,40 +75,14 @@ __all__ = [
     "STALL_THRESHOLD",
     "SkipReason",
     "WorkerSettings",
-    "_CLOUD_VISION_IMAGE_MIME_TYPE",
-    "_IMAGE_ANALYSIS_CRITERION_SOURCES",
-    "_append_cloud_error",
-    "_apply_run_selection",
-    "_build_grouping_and_rankings",
-    "_classify_scan_entries",
-    "_clear_cloud_vision_error",
-    "_commit_phase_costs",
-    "_compute_content_criteria",
-    "_detect_landmark_for_photo",
-    "_fail_export_run",
-    "_fail_run",
-    "_finish_cancelled",
-    "_finish_if_cancel_requested",
-    "_landmark_place_cells",
-    "_landmark_place_hints",
-    "_landmark_points_by_name",
-    "_log_cloud_vision_failure",
-    "_log_cloud_vision_throttling",
-    "_now_utc",
-    "_place_infos",
-    "_raise_if_cancel_requested",
-    "_recognize_persons",
-    "_record_cloud_vision_error",
-    "_run_eye_phase",
-    "_select_landmark_candidates",
-    "_set_phase",
-    "_start_criterion_scoring_run",
-    "_take_over_queued_run",
-    "_try_build",
-    "_upsert_landmark_detection",
     "build_export_folder_name",
     "classify",
     "export_project",
+    "finish_cancelled",
+    "raise_if_cancel_requested",
+    "take_over_queued_run",
+    "try_build",
+    "compute_content_criteria",
     "logger",
     "rebuild_run_grouping",
     "rebuild_run_selection",

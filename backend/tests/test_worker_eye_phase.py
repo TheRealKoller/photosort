@@ -703,13 +703,13 @@ async def test_the_eye_phase_runs_before_the_criteria_phase(
     scoring_run = await _add_run(db_session, project)
     photo = await _add_photo(db_session, project, "a.jpg", tmp_path)
     seen: list[ClassificationPhase | None] = []
-    original = worker_runs._set_phase
+    original = worker_runs.set_phase
 
     def recording(run: CriterionScoringRun, phase: ClassificationPhase | None) -> None:
         seen.append(phase)
         original(run, phase)
 
-    monkeypatch.setattr(worker_runs, "_set_phase", recording)
+    monkeypatch.setattr(worker_runs, "set_phase", recording)
 
     run = await _run(
         db_session,

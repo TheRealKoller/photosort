@@ -401,7 +401,7 @@ class ScanRun(Base):
     # (worker/scan.py::_maybe_commit_progress_checkpoint), gelesen von worker/stall_reaper.py.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Abbruchwunsch des Nutzers (`NULL` = keiner). Der Worker liest ihn an seinen Pruefpunkten
-    # frisch und beendet den Lauf dort als `CANCELLED` (worker/_runs.py::_finish_cancelled).
+    # frisch und beendet den Lauf dort als `CANCELLED` (worker/_runs.py::finish_cancelled).
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # default=None (nicht 0) - unterscheidet "Enumerationsphase noch nicht abgeschlossen,
     # Gesamtzahl unbekannt" von "Projekt enthält 0 Dateien". Überall mit `is not None` statt
@@ -656,7 +656,7 @@ class CriterionScoringRun(Base):
     # `started_at` ist der Beginn des GESAMTEN Laufs, und `last_progress_at` wird in der
     # Folgephase weitergeschrieben.
     #
-    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker/_runs.py::_set_phase.
+    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker/_runs.py::set_phase.
     # `NULL` heißt hier "kein laufender Teilschritt" (beendet, abgebrochen, oder Altzeile), nie
     # "gerade begonnen"; mit `phase = NULL` fällt auch dieser Wert auf `NULL` zurück. Bricht die
     # Bindung, rechnet die Restdauer den Beginn des VORIGEN Teilschritts gegen den Fortschritt des
@@ -676,7 +676,7 @@ class CriterionScoringRun(Base):
     # beim Laufstart aus `Project.category_method`; Rangwerte, Neuberechnung, Entwurfsanzeige und
     # Feedback-Ereignisse lesen sie von HIER, nie von der heutigen Projekteinstellung - sonst
     # wechselte ein Umschalten ohne neuen Lauf still die Grundlage des bestehenden Entwurfs.
-    # Altzeilen tragen `cloud`. Einzige Schreibstelle: `worker._start_criterion_scoring_run`.
+    # Altzeilen tragen `cloud`. Einzige Schreibstelle: `worker.start_criterion_scoring_run`.
     album_level_source: Mapped[CategoryMethod] = mapped_column(
         SQLEnum(
             CategoryMethod,
@@ -1092,9 +1092,9 @@ class CloudVisionPhase(enum.StrEnum):
 
 class PhotoCloudVisionError(Base):
     """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs für ein Foto - bewusst KEIN
-    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker/_runs.py::_record_cloud_vision_error)
+    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker/_runs.py::record_cloud_vision_error)
     die bestehende Zeile, ein erfolgreicher Retry LÖSCHT sie
-    (worker/_runs.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
+    (worker/_runs.py::clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
     id+UniqueConstraint-Paars: es gibt strukturell höchstens eine sinnvolle "letzter
     Fehlschlag"-Zeile je Foto x CloudVisionPhase.
 

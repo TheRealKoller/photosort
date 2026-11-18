@@ -133,7 +133,7 @@ class ScanWorkItem:
 @dataclass
 class ScanEntryDecision:
     """Ergebnis der Klassifikation eines einzelnen Phase-1-Eintrags: entweder ein Skip-Grund ODER
-    ein Arbeitsposten, nie beides - siehe _classify_scan_entries."""
+    ein Arbeitsposten, nie beides - siehe classify_scan_entries."""
 
     relative_path: str
     skip_reason: SkipReason | None
@@ -142,7 +142,7 @@ class ScanEntryDecision:
 
 @dataclass
 class ScanClassification:
-    """Ergebnis von _classify_scan_entries fuer die vollstaendige Phase-1-Liste.
+    """Ergebnis von classify_scan_entries fuer die vollstaendige Phase-1-Liste.
 
     `decisions` behaelt bewusst die Eingabereihenfolge bei (run_project_scan iteriert sie fuer die
     Checkpoint-Kadenz von files_found/files_skipped in Phase 2a) - `work_items` ist
@@ -153,7 +153,7 @@ class ScanClassification:
     seen_paths: set[str] = field(default_factory=set)
 
 
-def _classify_scan_entries(
+def classify_scan_entries(
     entries: list[tuple[str, DavEntry]],
     existing_photos: dict[str, Photo],
 ) -> ScanClassification:
@@ -432,7 +432,7 @@ async def _process_scan_block(
     updated = 0
     for item in block:
         last_modified = (
-            _naive_utc(item.entry.last_modified) if item.entry.last_modified else runs._now_utc()
+            _naive_utc(item.entry.last_modified) if item.entry.last_modified else runs.now_utc()
         )
         if item.existing_photo is not None:
             photo = item.existing_photo
@@ -587,7 +587,7 @@ async def _maybe_commit_progress_checkpoint(
     Phase 2a denselben Aufruf durchlaeuft."""
     if count % SCAN_COMMIT_BATCH_SIZE == 0:
         run.files_found = count
-        run.last_progress_at = runs._now_utc()
+        run.last_progress_at = runs.now_utc()
         await session.commit()
 
 
@@ -655,7 +655,7 @@ def _read_cached_aspect_ratios(
     return ratios
 
 
-async def _catch_up_aspect_ratios(
+async def catch_up_aspect_ratios(
     session: AsyncSession, project_id: int, cache_dir: Path, run: ScanRun
 ) -> int:
     """Fuellt `Photo.aspect_ratio` fuer die Bestandsfotos des Projekts aus deren lokal
@@ -692,7 +692,7 @@ async def _catch_up_aspect_ratios(
     )
     filled = 0
     for start in range(0, len(rows), ASPECT_RATIO_CATCH_UP_BATCH_SIZE):
-        await runs._raise_if_cancel_requested(session, run)
+        await runs.raise_if_cancel_requested(session, run)
         block = list(rows[start : start + ASPECT_RATIO_CATCH_UP_BATCH_SIZE])
         ratios = await asyncio.to_thread(_read_cached_aspect_ratios, cache_dir, block)
         for photo_id, ratio in ratios:
@@ -700,7 +700,7 @@ async def _catch_up_aspect_ratios(
                 update(Photo).where(Photo.id == photo_id).values(aspect_ratio=ratio)
             )
         filled += len(ratios)
-        run.last_progress_at = runs._now_utc()
+        run.last_progress_at = runs.now_utc()
         await session.commit()
     return filled
 
@@ -722,7 +722,7 @@ async def run_project_scan(
     Vorschaubilder, Zaehler -, bleibt; verschwundene Fotos werden dann NICHT entfernt und der
     Bild-Cache nicht aufgeraeumt, weil der Lauf den Ordnerbaum nicht vollstaendig gesehen hat."""
     if run_id is not None:
-        scan_run = await runs._take_over_queued_run(session, ScanRun, run_id)
+        scan_run = await runs.take_over_queued_run(session, ScanRun, run_id)
         if scan_run is None:
             return None
     else:
@@ -736,7 +736,7 @@ async def run_project_scan(
         # (ADR 0110 Punkt 3). Sie steht bewusst vor dem Laden von `existing_photos`: So schreibt
         # sie ausschliesslich per UPDATE-Anweisung und kann keine ORM-Objekte hinter dem Ruecken
         # der Sitzung veraltern lassen.
-        await _catch_up_aspect_ratios(session, project.id, cache_dir, scan_run)
+        await catch_up_aspect_ratios(session, project.id, cache_dir, scan_run)
 
         drive = await client.resolve_drive(drive_name)
 
@@ -759,12 +759,12 @@ async def run_project_scan(
         # (total_files gesetzt, files_found == 0).
         scan_run.total_files = len(entries)
         scan_run.files_found = 0
-        scan_run.last_progress_at = runs._now_utc()
+        scan_run.last_progress_at = runs.now_utc()
         await session.commit()
 
-        # Phase 2a (Klassifikation, reine Funktion) - siehe _classify_scan_entries.
-        await runs._raise_if_cancel_requested(session, scan_run)
-        classification = _classify_scan_entries(entries, existing_photos)
+        # Phase 2a (Klassifikation, reine Funktion) - siehe classify_scan_entries.
+        await runs.raise_if_cancel_requested(session, scan_run)
+        classification = classify_scan_entries(entries, existing_photos)
 
         files_found = 0
         files_skipped = 0
@@ -791,7 +791,7 @@ async def run_project_scan(
         # benutzt.
         camera_cache: dict[tuple[str, str], ProjectCamera] = {}
         for start in range(0, len(work_items), concurrency):
-            await runs._raise_if_cancel_requested(session, scan_run)
+            await runs.raise_if_cancel_requested(session, scan_run)
             block = work_items[start : start + concurrency]
             added, updated = await _process_scan_block(
                 session, client, drive.webdav_url, cache_dir, project.id, block, camera_cache
@@ -800,18 +800,18 @@ async def run_project_scan(
             photos_updated += updated
             files_found += len(block)
             scan_run.files_found = files_found
-            scan_run.last_progress_at = runs._now_utc()
+            scan_run.last_progress_at = runs.now_utc()
             await session.commit()
 
         # Letzter Pruefpunkt VOR dem Entfernen: ein Abbruch nach dem letzten Block endet
         # ebenfalls `cancelled`, und ein abgebrochener Lauf entfernt nichts.
-        await runs._raise_if_cancel_requested(session, scan_run)
+        await runs.raise_if_cancel_requested(session, scan_run)
         removed_paths = set(existing_photos) - classification.seen_paths
         for path in removed_paths:
             await session.delete(existing_photos[path])
 
         scan_run.status = ScanStatus.SUCCESS
-        scan_run.finished_at = runs._now_utc()
+        scan_run.finished_at = runs.now_utc()
         scan_run.files_found = files_found
         scan_run.photos_added = photos_added
         scan_run.photos_updated = photos_updated
@@ -819,7 +819,7 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
     except RunCancelled:
-        await runs._finish_cancelled(session, scan_run)
+        await runs.finish_cancelled(session, scan_run)
         return scan_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs: ein arq job_timeout-Ablauf, ein geplanter
@@ -828,7 +828,7 @@ async def run_project_scan(
         # Lauf wird sofort auf FAILED gesetzt, danach re-raised - kein Verschlucken einer
         # BaseException, arqs eigene Task-/Retry-Buchhaltung funktioniert dadurch unverändert
         # weiter.
-        await runs._fail_run(
+        await runs.fail_run(
             session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
@@ -838,7 +838,7 @@ async def run_project_scan(
         # und liesse den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
         # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
         # deshalb aus - dasselbe Muster wie in run_project_scoring unten.
-        await runs._fail_run(session, scan_run, str(exc))
+        await runs.fail_run(session, scan_run, str(exc))
         return scan_run
 
     # Ab hier ist der Lauf SUCCESS: der Erfolgspfad faellt aus dem `try` HERAUS, beide

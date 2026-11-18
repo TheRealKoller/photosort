@@ -335,15 +335,13 @@ async def test_the_phase_runs_after_ranking_and_before_success(
     order: list[str] = []
     observed: list[tuple[ClassificationPhase | None, ScanStatus]] = []
 
-    original_rankings = worker_criterion_scoring._build_grouping_and_rankings
+    original_rankings = worker_criterion_scoring.build_grouping_and_rankings
 
     async def recording_rankings(*args: Any, **kwargs: Any) -> Any:
         order.append("ranking")
         return await original_rankings(*args, **kwargs)
 
-    monkeypatch.setattr(
-        worker_criterion_scoring, "_build_grouping_and_rankings", recording_rankings
-    )
+    monkeypatch.setattr(worker_criterion_scoring, "build_grouping_and_rankings", recording_rankings)
 
     def on_detect(color: Color) -> None:
         order.append("persons")

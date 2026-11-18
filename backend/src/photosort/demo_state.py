@@ -2235,7 +2235,7 @@ async def _seed_operations_project(
     reiht keinen Job ein - der Lauf bleibt also wartend, bis jemand ihn abbricht.
 
     Die abgebrochene Klassifizierung steht hinter einem erfolgreichen, bestaetigten Ausschuss -
-    nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker/_runs.py::_finish_cancelled`
+    nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker/_runs.py::finish_cancelled`
     hinterliesse: Merker, Endzeit, die letzte `phase` samt ihrem Beginn (ADR 0116 Punkt 1), einen
     eingefrorenen Teilstand und KEINE Fehlermeldung."""
     project = await _create_project(session, spec)

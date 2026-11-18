@@ -92,7 +92,7 @@ async def _take_over_or_start_scoring_run(
     """Uebernimmt den von der API angelegten, wartenden Lauf oder legt einen neuen an - `None`,
     wenn der wartende in der Warteschlange abgebrochen wurde."""
     if run_id is not None:
-        taken_over = await runs._take_over_queued_run(session, ScoringRun, run_id)
+        taken_over = await runs.take_over_queued_run(session, ScoringRun, run_id)
         if taken_over is None:
             return None
         scoring_run = taken_over
@@ -132,7 +132,7 @@ async def _compute_scores(
     processed = 0
     for photo in photos:
         if processed % SCORE_COMMIT_BATCH_SIZE == 0:
-            await runs._raise_if_cancel_requested(session, scoring_run)
+            await runs.raise_if_cancel_requested(session, scoring_run)
         path = variant_path(cache_dir, photo.id, photo.etag, "display")
         metrics = _compute_photo_metrics(path) if path.is_file() else None
         if metrics is not None:
@@ -157,7 +157,7 @@ async def _compute_scores(
         if processed % SCORE_COMMIT_BATCH_SIZE == 0:
             scoring_run.photos_processed = processed
             # Fortschritts-Watchdog (Schicht 2) - analog run_project_scan.
-            scoring_run.last_progress_at = runs._now_utc()
+            scoring_run.last_progress_at = runs.now_utc()
             await session.commit()
 
     scoring_run.photos_processed = processed
@@ -347,7 +347,7 @@ async def run_project_scoring(
         computed = await _compute_scores(session, scoring_run, photos, existing_scores, cache_dir)
 
         # Letzter Pruefpunkt vor dem Clustering: danach ist der Lauf in einem Zug fertig.
-        await runs._raise_if_cancel_requested(session, scoring_run)
+        await runs.raise_if_cancel_requested(session, scoring_run)
         rejected_ids, auto_candidate_losers = await _assign_duplicates_and_clusters(
             session, photos, computed, existing_scores
         )
@@ -362,15 +362,15 @@ async def run_project_scoring(
         # Gate. Ein nachfolgender expliziter confirm-ausschuss-gate-Aufruf bleibt trotzdem
         # fehlerfrei moeglich (Idempotenz, siehe api/projects.py).
         if len(rejected_ids - auto_decided_ids) == 0:
-            scoring_run.gate_confirmed_at = runs._now_utc()
+            scoring_run.gate_confirmed_at = runs.now_utc()
         await session.commit()
         return scoring_run
     except RunCancelled:
-        await runs._finish_cancelled(session, scoring_run)
+        await runs.finish_cancelled(session, scoring_run)
         return scoring_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan.
-        await runs._fail_run(
+        await runs.fail_run(
             session, scoring_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
@@ -379,7 +379,7 @@ async def run_project_scoring(
         # photos_processed-Stands - session.rollback() verwirft nur die seit dem letzten commit()
         # offene, noch nicht persistierte Transaktion, exakt wie im OpenCloudError-Pfad von
         # run_project_scan.
-        await runs._fail_run(session, scoring_run, str(exc))
+        await runs.fail_run(session, scoring_run, str(exc))
         return scoring_run
 
 

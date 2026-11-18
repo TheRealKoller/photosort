@@ -74,7 +74,7 @@ async def count_landmark_candidates(session: AsyncSession, project_id: int) -> i
     Zaehlt Ausschuss-Ueberlebende, deren BEREITS GESPEICHERTE Kriterien-Werte
     `criteria.py::is_landmark_candidate` erfuellen und die noch keine `landmark`-Zeile haben -
     dieselbe reine Schwellenwert-Funktion, die auch der Live-Lauf ueber
-    worker/_criterion/landmark.py::_select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender
+    worker/_criterion/landmark.py::select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender
 
     STRUKTURELL EINE SCHAETZUNG, keine Vorausberechnung: die Landmark-Kandidaten des kommenden
     Laufs ergeben sich aus Kriterien-Werten, die genau dieser Lauf erst neu berechnet. Vor dem
@@ -121,7 +121,7 @@ async def count_eye_candidates(session: AsyncSession, project_id: int) -> int:
     """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile, die noch
     KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand (Spec 0621).
 
-    Dieselbe Bedingung wie `worker/_criterion/eye.py::_run_eye_phase`, als eigenstaendige kleine
+    Dieselbe Bedingung wie `worker/_criterion/eye.py::run_eye_phase`, als eigenstaendige kleine
     Query dupliziert - dieselbe Begruendung wie bei `count_remote_category_candidates`: dieses
     Modul importiert das Worker-Paket nicht. Eine Schaetzung, die eine andere Menge zaehlt als
     der Lauf, waere eine falsche Grundlage: Sie verspraeche Kosten fuer Fotos, die der Lauf gar

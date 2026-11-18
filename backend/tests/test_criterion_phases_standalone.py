@@ -23,46 +23,46 @@ from tests.import_closure import SRC_DIR
 
 _PAKET = "photosort.worker"
 _PHASEN = (
-    "_run_local_phase",
-    "_run_landmark_phase",
-    "_run_eye_phase",
-    "_recognize_persons",
-    "_build_grouping_and_rankings",
+    "run_local_phase",
+    "run_landmark_phase",
+    "run_eye_phase",
+    "recognize_persons",
+    "build_grouping_and_rankings",
 )
 
 # Je Phase: die Datei, in der sie steht.
 _PHASENDATEI = {
-    "_run_local_phase": f"{_PAKET}._criterion.local",
-    "_run_landmark_phase": f"{_PAKET}._criterion.landmark",
-    "_run_eye_phase": f"{_PAKET}._criterion.eye",
-    "_recognize_persons": f"{_PAKET}._criterion.persons",
-    "_build_grouping_and_rankings": f"{_PAKET}._criterion.ranking",
+    "run_local_phase": f"{_PAKET}._criterion.local",
+    "run_landmark_phase": f"{_PAKET}._criterion.landmark",
+    "run_eye_phase": f"{_PAKET}._criterion.eye",
+    "recognize_persons": f"{_PAKET}._criterion.persons",
+    "build_grouping_and_rankings": f"{_PAKET}._criterion.ranking",
 }
 
 # Je Phase: die Modell-Builder, die sie aus dem Modellsatz LIEST. Eine Phase, die einen fremden
 # Builder zieht, waere keine Einheit mehr - und ein Patch an ihrem Modulnamen traefe sie nicht.
 _GELESENE_BUILDER = {
-    "_run_local_phase": {
+    "run_local_phase": {
         "build_detector",
         "build_animal_detector",
         "build_classifier",
         "build_aesthetics",
         "build_landmarker",
     },
-    "_run_landmark_phase": {"build_landmark_client", "build_embedder"},
-    "_run_eye_phase": set(),
-    "_recognize_persons": set(),
-    "_build_grouping_and_rankings": set(),
+    "run_landmark_phase": {"build_landmark_client", "build_embedder"},
+    "run_eye_phase": set(),
+    "recognize_persons": set(),
+    "build_grouping_and_rankings": set(),
 }
 
 # Je Phase: die Parameter, ueber die sie ihre Modelle bekommt. Eye, Personen und Rangfolge tragen
 # ihren Builder als eigenen Parameter; die beiden Kriterien-Phasen bekommen den Modellsatz.
 _MODELLPARAMETER = {
-    "_run_local_phase": {"models"},
-    "_run_landmark_phase": {"models"},
-    "_run_eye_phase": {"build_client"},
-    "_recognize_persons": {"build_analyzer"},
-    "_build_grouping_and_rankings": {"build_place_resolver", "build_landmark_gazetteer"},
+    "run_local_phase": {"models"},
+    "run_landmark_phase": {"models"},
+    "run_eye_phase": {"build_client"},
+    "recognize_persons": {"build_analyzer"},
+    "build_grouping_and_rankings": {"build_place_resolver", "build_landmark_gazetteer"},
 }
 
 # Die zehn Builder des Modellsatzes, ausgeschrieben: ein elfter ist eine neue Modellart im Lauf.
@@ -167,11 +167,11 @@ def test_the_orchestrator_calls_every_phase_exactly_once() -> None:
     }
 
     assert gerufen == {
-        "_run_local_phase": 1,
-        "_run_landmark_phase": 1,
-        "_recognize_persons": 1,
-        "_build_grouping_and_rankings": 1,
-        "_run_eye_phase": 1,
+        "run_local_phase": 1,
+        "run_landmark_phase": 1,
+        "recognize_persons": 1,
+        "build_grouping_and_rankings": 1,
+        "run_eye_phase": 1,
     }
 
 

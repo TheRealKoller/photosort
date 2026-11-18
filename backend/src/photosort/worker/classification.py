@@ -42,8 +42,8 @@ from photosort.remote_classification import (
     build_category_classification_client,
 )
 from photosort.run_cancel import RunCancelled, watch_cancel_requests
-from photosort.worker._criterion.eye import _run_eye_phase
-from photosort.worker.criterion_scoring import _start_criterion_scoring_run, run_criterion_scoring
+from photosort.worker._criterion.eye import run_eye_phase
+from photosort.worker.criterion_scoring import run_criterion_scoring, start_criterion_scoring_run
 from photosort.worker.remote_categories import run_remote_category_classification
 
 
@@ -79,8 +79,8 @@ async def _take_over_or_start_classification_run(
     durchgereicht: sonst zeigte `last_criterion_scoring_run` waehrend der Remote-Phase noch auf den
     Lauf davor und die Oberflaeche haette keinen Anker fuer den laufenden Vorgang."""
     if run_id is not None:
-        return await runs._take_over_queued_run(session, CriterionScoringRun, run_id)
-    return await _start_criterion_scoring_run(
+        return await runs.take_over_queued_run(session, CriterionScoringRun, run_id)
+    return await start_criterion_scoring_run(
         session,
         project,
         scoring_run_id,
@@ -145,15 +145,15 @@ async def _run_remote_category_phase(
         # EIGENE Zeile bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
         # CriterionScoringRun, den run_classification vor Phase 1 anlegt, bis zum naechsten
         # Cron-Tick auf RUNNING stehen.
-        await runs._fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+        await runs.fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     if remote_run.status == ScanStatus.CANCELLED:
         # Die Remote-Phase hat den Abbruchwunsch bemerkt und ihren Teilstand committet; dieser
         # Lauf endet mit, statt in die Kriterien-Phase zu starten.
-        await runs._finish_cancelled(session, run)
+        await runs.finish_cancelled(session, run)
         return False
     if remote_run.status == ScanStatus.FAILED:
-        # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired - anders als
+        # fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired - anders als
         # ein commit() (die Session laeuft mit expire_on_commit=False, siehe db.py). Ohne diese
         # beiden refresh()-Aufrufe loeste der naechste Attributzugriff einen impliziten Lazy-Load
         # ausserhalb eines aktiven greenlet-Kontexts aus (MissingGreenlet): `run.cloud_error_message`
@@ -161,7 +161,7 @@ async def _run_remote_category_phase(
         # run_criterion_scoring, das auf derselben Session weiterlaeuft.
         await session.refresh(run)
         await session.refresh(project)
-        runs._append_cloud_error(
+        runs.append_cloud_error(
             run, f"Remote-Kategorisierung fehlgeschlagen: {remote_run.error_message}"
         )
         await session.commit()
@@ -199,7 +199,7 @@ async def run_classification(
         Phase "remote_categories" (nur bei mode=cloud und aktiver Cloud-Nutzung)
             -> run_remote_category_classification
         Phase "eye" (nur bei mode=eye)
-            -> _run_eye_phase
+            -> run_eye_phase
         Phase "criteria" (immer)
             -> run_criterion_scoring (inkl. Landmark-Teilphase: bei mode=cloud mit Einwilligung
                oder bei mode=eye MIT Einwilligung)
@@ -270,11 +270,11 @@ async def run_classification(
     )
     if run is None:
         return None
-    runs._set_phase(run, _initial_phase(cloud_active, mode))
+    runs.set_phase(run, _initial_phase(cloud_active, mode))
     await session.commit()
     # Phasengrenzen sind Pruefpunkte: ein Abbruch zwischen zwei Phasen beginnt die naechste nicht
     # mehr. Innerhalb einer Phase pruefen deren Bloecke selbst.
-    if await runs._finish_if_cancel_requested(session, run):
+    if await runs.finish_if_cancel_requested(session, run):
         return run
 
     if cloud_active and not await _run_remote_category_phase(
@@ -289,7 +289,7 @@ async def run_classification(
     ):
         return run
 
-    if await runs._finish_if_cancel_requested(session, run):
+    if await runs.finish_if_cancel_requested(session, run):
         return run
 
     # Phase "eye": sie liegt VOR der Kriterien-Phase, damit Rangfolge, Events und
@@ -298,24 +298,24 @@ async def run_classification(
     # Phase committet ihre Ergebnisse erst am Ende).
     if mode is ClassificationMode.EYE:
         try:
-            await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
+            await run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
         except RunCancelled:
-            await runs._finish_cancelled(session, run)
+            await runs.finish_cancelled(session, run)
             return run
         except asyncio.CancelledError:
-            await runs._fail_run(
+            await runs.fail_run(
                 session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
             )
             raise
         except Exception:
-            await runs._fail_run(
+            await runs.fail_run(
                 session,
                 run,
                 "Eye-Auswertung fehlgeschlagen; es wurde nichts uebernommen.",
             )
             return run
 
-    if await runs._finish_if_cancel_requested(session, run):
+    if await runs.finish_if_cancel_requested(session, run):
         return run
     async with watch_cancel_requests(session_factory, CriterionScoringRun, run.id):
         return await run_criterion_scoring(

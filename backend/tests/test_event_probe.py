@@ -3109,7 +3109,7 @@ class TestBothPathsSeeTheSameCandidates:
         monkeypatch.setattr(worker_ranking, "read_event_inputs", recording)
 
         # Der Neuaufbau ist der Lauf-Pfad: er ermittelt die Kandidatenmenge selbst und ruft
-        # `_build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
+        # `build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
         await worker.rebuild_run_grouping(db_session, project_id)
         probe = await read_event_probe_input(db_session, project_id)
 

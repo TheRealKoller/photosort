@@ -523,7 +523,7 @@ class AlbumDraftOut(BaseModel):
     events: list[EventOut]
     items: list[PhotoOut]
     # Die Zahl AUSWAHLFAEHIGER Kandidaten des Laufs - dieselbe Menge, aus der
-    # `worker/_criterion/ranking.py::_apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
+    # `worker/_criterion/ranking.py::apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
     # `excluded_document`). Lauf-global, ohne Nutzerbezug. Speist allein den Hinweis
     # "kleinerer Vorschlag": Er erscheint nur, wenn der Vorschlag diese Menge ausschoepft.
     eligible_candidate_count: int

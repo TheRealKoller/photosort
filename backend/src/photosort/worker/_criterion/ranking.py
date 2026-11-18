@@ -50,7 +50,7 @@ PLACE_LOOKUP_SOURCE = "geonames"
 PlaceResolverFactory = Callable[[Collection[tuple[float, float]]], PlaceResolver | None]
 
 
-async def _place_infos(
+async def place_infos(
     session: AsyncSession,
     project_id: int,
     cells: Collection[tuple[float, float]],
@@ -108,7 +108,7 @@ async def _place_infos(
     if resolver is None:
         return by_cell
 
-    now = runs._now_utc()
+    now = runs.now_utc()
     for cell in missing:
         answer = await resolver.resolve(cell)
         if answer is None:
@@ -144,7 +144,7 @@ async def _place_infos(
 LandmarkGazetteerFactory = Callable[[Collection[str]], LandmarkGazetteer | None]
 
 
-async def _landmark_points_by_name(
+async def landmark_points_by_name(
     session: AsyncSession,
     project_id: int,
     names: Collection[str],
@@ -193,7 +193,7 @@ async def _landmark_points_by_name(
     if missing and build_gazetteer is not None:
         gazetteer = build_gazetteer(missing)
         if gazetteer is not None:
-            now = runs._now_utc()
+            now = runs.now_utc()
             for folded in missing:
                 points = gazetteer.points(folded)
                 session.add(
@@ -213,7 +213,7 @@ async def _landmark_points_by_name(
     }
 
 
-async def _build_grouping_and_rankings(
+async def build_grouping_and_rankings(
     session: AsyncSession,
     run: CriterionScoringRun,
     project_id: int,
@@ -270,13 +270,11 @@ async def _build_grouping_and_rankings(
         for candidate in event_inputs.candidates
         if candidate.landmark_name is not None
     }
-    landmark_points_by_name = await _landmark_points_by_name(
+    points_by_name = await landmark_points_by_name(
         session, project_id, landmark_names, build_landmark_gazetteer
     )
 
-    built_events = build_events(
-        event_inputs.candidates, landmark_points_by_name=landmark_points_by_name
-    )
+    built_events = build_events(event_inputs.candidates, landmark_points_by_name=points_by_name)
 
     # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird fuer JEDES
     # Event mit einer gemessenen Zelle - auch fuer ein benanntes (Spec 0514, ADR 0120): der
@@ -284,7 +282,7 @@ async def _build_grouping_and_rankings(
     # braucht auch ein benanntes Event seine Ortsaufloesung. Seine `place_kind` bleibt trotzdem
     # `landmark` - verdraengt bleibt allein die KOORDINATENSTUFE (`_place_of`).
     cells = {cell for built in built_events for cell in built.place_cells}
-    info_by_cell = await _place_infos(session, project_id, cells, build_place_resolver)
+    info_by_cell = await place_infos(session, project_id, cells, build_place_resolver)
     place_names = assign_place_names(built_events, info_by_cell)
 
     event_rows = [
@@ -359,12 +357,12 @@ async def _build_grouping_and_rankings(
             )
 
     # Das `flush` am Ende: Beide Aufrufer rechnen danach den Auswahlvorschlag
-    # (`_apply_run_selection`), und der liest die Rangzeilen aus der Datenbank - die eben
+    # (`apply_run_selection`), und der liest die Rangzeilen aus der Datenbank - die eben
     # hinzugefuegten stehen dort erst danach.
     await session.flush()
 
 
-async def _apply_run_selection(
+async def apply_run_selection(
     session: AsyncSession, run: CriterionScoringRun, project_id: int
 ) -> None:
     """Der Auswahlvorschlag DIESES Laufs: auswahlfaehige Kandidaten laden, die reine Funktion

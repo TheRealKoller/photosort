@@ -76,13 +76,13 @@ async def _classify_photo_for_remote_category(
     client: CategoryDetectionClientLike, cache_dir: Path, photo: Photo
 ) -> RemoteClassification:
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten (analog
-    _detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
+    detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
     parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene,
     auf 2048 px begrenzte display-Cache-Variante - nie das OpenCloud-Original,
     kein EXIF/GPS, kein Dateiname und kein Pfad im Request - SICHERHEIT, Muss-Kriterium."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
-    return await client.classify(image_bytes, runs._CLOUD_VISION_IMAGE_MIME_TYPE, photo.id)
+    return await client.classify(image_bytes, runs.CLOUD_VISION_IMAGE_MIME_TYPE, photo.id)
 
 
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
@@ -177,8 +177,8 @@ def _open_remote_models(
     `provider`-Spalten je Foto lesen denselben Wert."""
     model = model or settings.resolved_landmark_model()
     provider = provider_for_task_model(model)
-    client = runs._try_build(lambda: build_client(model))
-    embedder = runs._try_build(build_embedder)
+    client = runs.try_build(lambda: build_client(model))
+    embedder = runs.try_build(build_embedder)
     return model, provider, client, embedder
 
 
@@ -280,7 +280,7 @@ async def _store_remote_classification(
         )
     # "Aufräumen bei Erfolg": ein erfolgreicher (Retry-)Versuch loescht eine ggf. vorhandene
     # Fehler-Zeile - einmal pro Foto, nicht pro Label.
-    await runs._clear_cloud_vision_error(session, photo.id, CloudVisionPhase.REMOTE_CATEGORY)
+    await runs.clear_cloud_vision_error(session, photo.id, CloudVisionPhase.REMOTE_CATEGORY)
 
 
 async def _classify_remote_block(
@@ -327,7 +327,7 @@ async def _classify_remote_block(
             totals.failed_calls += 1
             exc_type_name = type(result).__name__
             exc_message = str(result)
-            runs._log_cloud_vision_failure(
+            runs.log_cloud_vision_failure(
                 "remote_category",
                 photo.id,
                 photo.relative_path,
@@ -336,7 +336,7 @@ async def _classify_remote_block(
             )
             # Dauerhafte, per API abrufbare Persistenz desselben Fehlschlags (getrennt vom Log
             # oben).
-            await runs._record_cloud_vision_error(
+            await runs.record_cloud_vision_error(
                 session,
                 photo.id,
                 CloudVisionPhase.REMOTE_CATEGORY,
@@ -409,7 +409,7 @@ async def run_remote_category_classification(
 
         if not project.cloud_vision_detection_enabled or not candidates:
             run.status = ScanStatus.SUCCESS
-            run.finished_at = runs._now_utc()
+            run.finished_at = runs.now_utc()
             await session.commit()
             return run
 
@@ -417,12 +417,12 @@ async def run_remote_category_classification(
         # die `provider`-Spalten je Foto lesen denselben Wert.
         model, provider, client, embedder = _open_remote_models(build_client, build_embedder, model)
         if client is None or embedder is None:
-            # Best-effort auf Job-Ebene (analog _try_build-Philosophie der uebrigen Modell-
+            # Best-effort auf Job-Ebene (analog try_build-Philosophie der uebrigen Modell-
             # Builder): ein Ladefehler eines der beiden noetigen Bausteine laesst den Lauf
             # erfolgreich, aber wirkungslos enden - kein Crash, kein FAILED-Zustand fuer ein
             # Infrastrukturproblem, das der naechste Lauf ggf. von selbst behebt.
             run.status = ScanStatus.SUCCESS
-            run.finished_at = runs._now_utc()
+            run.finished_at = runs.now_utc()
             await session.commit()
             return run
 
@@ -448,11 +448,11 @@ async def run_remote_category_classification(
 
         try:
             snapshot = await _load_fine_label_snapshot(session)
-            now = runs._now_utc()
+            now = runs.now_utc()
             concurrency = settings.remote_category_classification_concurrency
             processed = 0
             for start in range(0, len(candidates), concurrency):
-                await runs._raise_if_cancel_requested(session, run)
+                await runs.raise_if_cancel_requested(session, run)
                 cancelled, handled = await _classify_remote_block(
                     session,
                     client,
@@ -474,7 +474,7 @@ async def run_remote_category_classification(
                 # selben Commit - reap_stalled_runs liest nur `last_progress_at` der eigenen Zeile
                 # und setzte den Elternlauf sonst nach STALL_THRESHOLD auf FAILED, waehrend diese
                 # Coroutine kostenpflichtig weiter Cloud-Aufrufe absetzt.
-                progress_at = runs._now_utc()
+                progress_at = runs.now_utc()
                 run.last_progress_at = progress_at
                 if parent_run is not None:
                     parent_run.last_progress_at = progress_at
@@ -487,7 +487,7 @@ async def run_remote_category_classification(
                 await aclose()
             # Wie in der Landmark-Phase VERBINDLICH im finally und mit eigenem Commit: ein nach
             # begonnener Cloud-Nutzung scheiternder Lauf hat das Geld bereits ausgegeben, und der
-            # Fehlerpfad laeuft ueber _fail_run, das mit einem rollback() beginnt. Der Betrag wird
+            # Fehlerpfad laeuft ueber fail_run, das mit einem rollback() beginnt. Der Betrag wird
             # einmal berechnet und eingefroren.
             run.api_calls = totals.api_calls
             run.input_tokens = totals.input_tokens
@@ -498,25 +498,25 @@ async def run_remote_category_classification(
             )
             # Wie in der Landmark-Phase: `run.model` steht bereits vom Phasenanfang her da
             # (derselbe lokale `model`, aus dem hier der Betrag entsteht) - KEINE zweite Zuweisung.
-            await runs._commit_phase_costs(session)
+            await runs.commit_phase_costs(session)
 
         # Höchstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsächlich gewartet wurde.
-        runs._log_cloud_vision_throttling(
+        runs.log_cloud_vision_throttling(
             "remote_category",
             provider,
             throttle.stats().since(throttle_before),
         )
 
         run.status = ScanStatus.SUCCESS
-        run.finished_at = runs._now_utc()
+        run.finished_at = runs.now_utc()
         await session.commit()
         return run
     except RunCancelled:
-        await runs._finish_cancelled(session, run)
+        await runs.finish_cancelled(session, run)
         return run
     except asyncio.CancelledError:
-        await runs._fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+        await runs.fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
-        await runs._fail_run(session, run, str(exc))
+        await runs.fail_run(session, run, str(exc))
         return run

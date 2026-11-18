@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import worker
 from photosort.models import Photo, Project, ScanRun, ScanStatus
+from photosort.worker import _runs as worker_runs
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -23,7 +23,7 @@ async def _make_project(session: AsyncSession) -> Project:
 async def test_fail_run_result_is_immediately_readable_without_a_fresh_query(
     db_session: AsyncSession,
 ) -> None:
-    """Copilot-Review-Fund (PR #67): _fail_run rief bisher nur session.rollback() gefolgt von
+    """Copilot-Review-Fund (PR #67): fail_run rief bisher nur session.rollback() gefolgt von
     session.commit() auf, ohne den Run danach zu refreshen. session.rollback() expired alle
     Objekte der Session (siehe Kommentare in den *_marked_failed_on_cancelled_error-Tests in
     test_worker_scan_project.py/test_worker_score_project.py/test_worker_top_selection.py) - ein
@@ -31,16 +31,16 @@ async def test_fail_run_result_is_immediately_readable_without_a_fresh_query(
     die den Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
     weiterverwenden) wuerde dadurch einen impliziten Lazy-Load ausserhalb eines aktiven
     greenlet-Kontexts ausloesen und mit sqlalchemy.exc.MissingGreenlet fehlschlagen -
-    session.refresh(run) am Ende von _fail_run behebt das zuverlaessig."""
+    session.refresh(run) am Ende von fail_run behebt das zuverlaessig."""
     project = await _make_project(db_session)
     scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
     db_session.add(scan_run)
     await db_session.commit()
     await db_session.refresh(scan_run)
 
-    await worker._fail_run(db_session, scan_run, "boom")
+    await worker_runs.fail_run(db_session, scan_run, "boom")
 
-    # Bewusst OHNE weiteren await/DB-Roundtrip zwischen dem _fail_run-Aufruf und dem
+    # Bewusst OHNE weiteren await/DB-Roundtrip zwischen dem fail_run-Aufruf und dem
     # Attributzugriff - genau das Muster, das scan_project/score_project/select_top_photos nach
     # run_project_scan/run_project_scoring/run_top_selection anwenden (sofortiges `run.id`).
     assert scan_run.id is not None
@@ -48,7 +48,7 @@ async def test_fail_run_result_is_immediately_readable_without_a_fresh_query(
     assert scan_run.error_message == "boom"
 
 
-# Review-Fund (ship-feature-Runde zu Spec 0207): derselbe Gedanke wie bei _fail_run oben, eine
+# Review-Fund (ship-feature-Runde zu Spec 0207): derselbe Gedanke wie bei fail_run oben, eine
 # Ebene frueher. Die Ist-Kosten beider Cloud-Phasen werden in einem `finally`-Block committet,
 # also auch waehrend eine Exception nach oben laeuft. Scheitert genau dieses Commit, wuerde seine
 # eigene Exception die urspruengliche ERSETZEN - und der eigentliche Fehlergrund waere weder im
@@ -84,18 +84,18 @@ async def test_commit_phase_costs_never_replaces_the_original_exception(
     await _put_session_into_failed_transaction_state(db_session)
 
     with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-        await worker._commit_phase_costs(db_session)
+        await worker_runs.commit_phase_costs(db_session)
 
     assert len(caplog.records) == 1
     assert "PendingRollbackError" in caplog.records[0].getMessage()
 
 
 async def test_commit_phase_costs_leaves_the_session_usable(db_session: AsyncSession) -> None:
-    """Nach dem gescheiterten Commit muss `_fail_run` noch arbeiten koennen - es setzt den Lauf
+    """Nach dem gescheiterten Commit muss `fail_run` noch arbeiten koennen - es setzt den Lauf
     auf FAILED und committet erneut."""
     await _put_session_into_failed_transaction_state(db_session)
 
-    await worker._commit_phase_costs(db_session)
+    await worker_runs.commit_phase_costs(db_session)
 
     # Frisch gelesen statt ueber das (durch das Rollback expirte) Objekt von oben - ein lesender
     # Attributzugriff darauf loeste sonst einen Lazy-Load ausserhalb des greenlet-Kontexts aus.
@@ -103,10 +103,10 @@ async def test_commit_phase_costs_leaves_the_session_usable(db_session: AsyncSes
     run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
     db_session.add(run)
     # Wie im Produktivpfad: die Lauf-Zeile ist laengst committet, bevor die Cloud-Phase startet -
-    # _fail_run beginnt mit einem rollback() und braucht eine persistente Zeile.
+    # fail_run beginnt mit einem rollback() und braucht eine persistente Zeile.
     await db_session.commit()
 
-    await worker._fail_run(db_session, run, "urspruenglicher Fehler")
+    await worker_runs.fail_run(db_session, run, "urspruenglicher Fehler")
 
     assert run.status == ScanStatus.FAILED
     assert run.error_message == "urspruenglicher Fehler"
@@ -120,7 +120,7 @@ async def test_commit_phase_costs_commits_normally_when_nothing_is_wrong(
     db_session.add(run)
 
     with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-        await worker._commit_phase_costs(db_session)
+        await worker_runs.commit_phase_costs(db_session)
 
     assert caplog.records == []
     stored = (
@@ -162,7 +162,7 @@ async def test_commit_phase_costs_swallows_a_failing_rollback_too(
     session = _SessionWithBrokenConnection()
 
     with caplog.at_level(logging.WARNING, logger="photosort.worker"):
-        await worker._commit_phase_costs(session)  # type: ignore[arg-type]
+        await worker_runs.commit_phase_costs(session)  # type: ignore[arg-type]
 
     assert session.commit_calls == 1
     assert session.rollback_calls == 1
@@ -184,4 +184,4 @@ async def test_an_original_exception_survives_a_completely_broken_session() -> N
         try:
             raise RuntimeError("urspruenglicher Fehler")
         finally:
-            await worker._commit_phase_costs(session)  # type: ignore[arg-type]
+            await worker_runs.commit_phase_costs(session)  # type: ignore[arg-type]

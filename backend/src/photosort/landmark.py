@@ -292,7 +292,7 @@ def _landmark_detection_from_json(
     name = sanitize_landmark_name(name)
     # Das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt - geklemmt bereits HIER (an der
     # Quelle), nicht erst in criteria.py::compute_landmark_score.
-    # worker/_criterion/landmark.py::_upsert_landmark_detection schreibt detection.confidence UNVERAENDERT
+    # worker/_criterion/landmark.py::upsert_landmark_detection schreibt detection.confidence UNVERAENDERT
     # nach photo_landmark_detections - ohne dieses Klemmen koennte dieser Wert von dem separat
     # geklemmten PhotoCriterionScore.value abweichen, obwohl beide atomar aus derselben API-Antwort
     # stammen sollen. compute_landmark_score klemmt zusaetzlich defensiv (bewusste Redundanz).

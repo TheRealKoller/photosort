@@ -115,7 +115,7 @@ async def _write_eye_shadow_rows(
             session.add(PhotoEyeFineLabel(photo_id=photo_id, label=label, confidence=confidence))
 
 
-async def _run_eye_phase(
+async def run_eye_phase(
     session: AsyncSession,
     run: CriterionScoringRun,
     project: Project,
@@ -168,7 +168,7 @@ async def _run_eye_phase(
         .all()
     )
 
-    runs._set_phase(run, ClassificationPhase.EYE)
+    runs.set_phase(run, ClassificationPhase.EYE)
     run.eye_photos_total = len(photos)
     run.eye_photos_processed = 0
     await session.commit()
@@ -191,10 +191,10 @@ async def _run_eye_phase(
             analyses[photo.id] = map_eye_analysis(payload, EYE_MAPPING_VERSION)
             run.eye_photos_processed = len(analyses)
             if len(analyses) % EYE_PROGRESS_COMMIT_BATCH_SIZE == 0:
-                run.last_progress_at = runs._now_utc()
+                run.last_progress_at = runs.now_utc()
                 await session.commit()
 
-        computed_at = runs._now_utc()
+        computed_at = runs.now_utc()
         await _write_eye_shadow_rows(session, analyses, computed_at=computed_at)
         for photo_id, analysis in analyses.items():
             await upsert_assessment(

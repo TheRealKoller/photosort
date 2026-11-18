@@ -69,7 +69,7 @@ if TYPE_CHECKING:
 CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 
 
-# Die von _compute_content_criteria best-effort berechneten Kriterien-Keys - eine Liste statt
+# Die von compute_content_criteria best-effort berechneten Kriterien-Keys - eine Liste statt
 # einzelner if-Blöcke im Aufrufer, damit ein weiteres bildbasiertes Kriterium keine Kopie des
 # Upsert-Codes braucht. Die zugehoerige CriterionSource wird bewusst NICHT hier dupliziert, sondern
 # direkt aus criteria.py::CRITERIA_REGISTRY abgeleitet - eine Aenderung an der Registry (z.B. ein
@@ -80,17 +80,17 @@ CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 # fachlich ANDERE als "traegt ein `presence_threshold`" (welche Kriterien eine Inhaltsaussage
 # treffen): hier stehen auch goldener_schnitt/aesthetics, die keine treffen. Die beiden Mengen nie
 # gleichsetzen.
-_IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
+IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "content_people",
     "content_landscape",
     "tier",
     "goldener_schnitt",
     "gebaeude",
-    # Zweites Kriterium aus derselben Szenen-Klassifikation, siehe _compute_content_criteria.
+    # Zweites Kriterium aus derselben Szenen-Klassifikation, siehe compute_content_criteria.
     "landschaft",
     "aesthetics",
     # Zwei weitere Kriterien aus DERSELBEN COCO-Detektorausgabe wie `tier` (siehe
-    # _compute_content_criteria).
+    # compute_content_criteria).
     "fahrzeug",
     "essen_trinken",
     # Kompositions-Ranking-Signale ab hier.
@@ -100,8 +100,8 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
 )
 
 
-_IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
-    key: CRITERIA_REGISTRY[key].source for key in _IMAGE_ANALYSIS_CRITERION_KEYS
+IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
+    key: CRITERIA_REGISTRY[key].source for key in IMAGE_ANALYSIS_CRITERION_KEYS
 }
 
 
@@ -111,7 +111,7 @@ class ContentCriteria:
     Flaechenanteile je Allow-Liste.
 
     Die Flaechenanteile sind KEIN Kriterium: sie bekommen keine Registry-Zeile, keine
-    Datenbankspalte und keinen Eintrag in `_IMAGE_ANALYSIS_CRITERION_KEYS`. Sie sind eine
+    Datenbankspalte und keinen Eintrag in `IMAGE_ANALYSIS_CRITERION_KEYS`. Sie sind eine
     Zwischengroesse auf dem Weg zur Motivstaerke (motifs.py::local_motif_strengths) und leben nur
     fuer die Dauer des Laufs - die Bounding-Boxen selbst werden nirgends persistiert.
 
@@ -131,7 +131,7 @@ class ContentCriteria:
     not_measurable: frozenset[str] = frozenset()
 
 
-def _compute_content_criteria(
+def compute_content_criteria(
     cache_dir: Path,
     photo: Photo,
     face_detector: FaceDetectorLike | None,
@@ -148,7 +148,7 @@ def _compute_content_criteria(
     betroffene Kriterium bleibt für dieses Foto einfach ungeschrieben (kein Platzhalterwert
     wie 0). Die fünf Detektoren/Modelle sind bewusst `| None` typisiert: schlug der
     zugehörige
-    `_try_build`-Aufruf im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon
+    `try_build`-Aufruf im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon
     abhaengigen) hier einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu
     provozieren, die erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
 
@@ -312,31 +312,31 @@ def _compute_content_criteria(
     )
 
 
-async def _run_local_phase(context: CriterionRunContext, models: ModelSet) -> None:
+async def run_local_phase(context: CriterionRunContext, models: ModelSet) -> None:
     """DIE lokale Kriterienphase: sharpness/exposure immer, die bildbasierten Inhalts-Kriterien
     best-effort, periodisch zwischen-committet.
 
-    Jeder Modell-Builder bekommt ueber `runs._try_build` sein eigenes try/except, KEINER laeuft
+    Jeder Modell-Builder bekommt ueber `runs.try_build` sein eigenes try/except, KEINER laeuft
     ungeschuetzt: ein Fehlschlag eines einzelnen Builders (fehlendes/defektes
     .tflite-/.hdf5-Asset, mediapipe-/tensorflow-Laufzeitproblem) markierte sonst den GESAMTEN Lauf
     als FAILED, obwohl die Kriterien pro Foto bewusst best-effort behandelt werden. Schlaegt einer
-    fehl, bleibt der zugehoerige Detektor/Klassifikator/das Modell None, `_compute_content_criteria`
+    fehl, bleibt der zugehoerige Detektor/Klassifikator/das Modell None, `compute_content_criteria`
     ueberspringt dann NUR die davon abhaengigen Kriterien (siehe dortige `if ... is not None`-
     Waechter) - sharpness/exposure und alle anderen, unabhaengig berechenbaren Kriterien werden
     trotzdem geschrieben."""
     session = context.session
     run = context.run
     has_rows = bool(context.rows)
-    detector = runs._try_build(models.build_detector) if has_rows else None
-    animal_detector = runs._try_build(models.build_animal_detector) if has_rows else None
-    scene_classifier = runs._try_build(models.build_classifier) if has_rows else None
-    aesthetics_model = runs._try_build(models.build_aesthetics) if has_rows else None
-    face_landmarker = runs._try_build(models.build_landmarker) if has_rows else None
+    detector = runs.try_build(models.build_detector) if has_rows else None
+    animal_detector = runs.try_build(models.build_animal_detector) if has_rows else None
+    scene_classifier = runs.try_build(models.build_classifier) if has_rows else None
+    aesthetics_model = runs.try_build(models.build_aesthetics) if has_rows else None
+    face_landmarker = runs.try_build(models.build_landmarker) if has_rows else None
     processed = 0
     for photo, score in context.rows:
         if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
             # Pruefpunkt je Batch: was bis hier committet ist, bleibt; der Rest entfaellt.
-            await runs._raise_if_cancel_requested(session, run)
+            await runs.raise_if_cancel_requested(session, run)
         values: dict[str, float] = {}
 
         sharpness_value = normalize_sharpness(score.sharpness)
@@ -351,11 +351,11 @@ async def _run_local_phase(context: CriterionRunContext, models: ModelSet) -> No
         )
         values["exposure"] = exposure_value
 
-        # KEIN assert-is-not-None hier: jeder der fuenf Builder ist ueber _try_build best-effort
-        # abgesichert und kann legitim None sein - _compute_content_criteria ueberspringt die davon
+        # KEIN assert-is-not-None hier: jeder der fuenf Builder ist ueber try_build best-effort
+        # abgesichert und kann legitim None sein - compute_content_criteria ueberspringt die davon
         # abhaengigen Kriterien dann selbst, statt dass ein fehlgeschlagener Builder den gesamten
         # Lauf abbricht.
-        content = _compute_content_criteria(
+        content = compute_content_criteria(
             context.cache_dir,
             photo,
             detector,
@@ -364,7 +364,7 @@ async def _run_local_phase(context: CriterionRunContext, models: ModelSet) -> No
             aesthetics_model,
             face_landmarker,
         )
-        for criterion_key, source in _IMAGE_ANALYSIS_CRITERION_SOURCES.items():
+        for criterion_key, source in IMAGE_ANALYSIS_CRITERION_SOURCES.items():
             if criterion_key in content.values:
                 upsert_criterion(
                     context, photo.id, criterion_key, content.values[criterion_key], source
@@ -383,14 +383,14 @@ async def _run_local_phase(context: CriterionRunContext, models: ModelSet) -> No
         if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
             run.photos_processed = processed
             # Fortschritts-Watchdog (Schicht 2) - analog run_project_scan.
-            run.last_progress_at = runs._now_utc()
+            run.last_progress_at = runs.now_utc()
             await session.commit()
 
     run.photos_processed = processed
     await session.commit()
 
 
-async def _write_local_motif_header(context: CriterionRunContext) -> None:
+async def write_local_motif_header(context: CriterionRunContext) -> None:
     """DIE LOKALE MOTIV-KOPFZEILE. Ihre Stelle ist NACH der Landmark-Phase, und das ist keine
     Kosmetik: `bauwerk_sehenswuerdigkeit` ist lokal `max(Szenen-Konfidenz,
     Sehenswuerdigkeits-Konfidenz)`, und der zweite Wert entsteht erst dort. Vor der Phase

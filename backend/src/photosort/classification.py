@@ -331,7 +331,7 @@ def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[Obj
     Konfidenzschwelle, die inhaltliche Filterung liegt bei den Konsumenten
     (criteria.py::compute_tier_score/compute_fahrzeug_score/compute_essen_trinken_score/
     animal_detections), die sie jeweils SELBST durchsetzen. Der Detektorlauf selbst bleibt
-    genau EINER pro Foto (worker/_criterion/local.py::_compute_content_criteria)."""
+    genau EINER pro Foto (worker/_criterion/local.py::compute_content_criteria)."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
     detections: list[ObjectDetection] = []

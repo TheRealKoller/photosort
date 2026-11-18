@@ -822,7 +822,7 @@ class _PhaseRecorder:
 
     Aufgezeichnet wird zu jedem Teilschritt auch sein `phase_started_at`: Die Bindung der beiden
     Spalten (ADR 0116 Punkt 1) ist nur an der ABFOLGE zu sehen, nicht an einem Zustand - ein
-    `_set_phase`, das den alten Zeitstempel stehen laesst, bestuende jede Einzelpruefung."""
+    `set_phase`, das den alten Zeitstempel stehen laesst, bestuende jede Einzelpruefung."""
 
     def __init__(self) -> None:
         self.sequence: list[str | None] = []
@@ -846,7 +846,7 @@ def _phase_observing_scene_classifier(session: AsyncSession, recorder: _PhaseRec
 
     class _Observing(_LandscapeSceneLabels):
         def classify(self, image: object) -> object:
-            # `_compute_content_criteria` laeuft synchron; der Phasenwert steht am selben
+            # `compute_content_criteria` laeuft synchron; der Phasenwert steht am selben
             # In-Memory-Objekt, das die Schleife fortschreibt - kein DB-Roundtrip noetig.
             run = next(
                 obj for obj in session.identity_map.values() if isinstance(obj, CriterionScoringRun)
@@ -908,7 +908,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
 
     assert recorder.sequence == ["remote_categories", "criteria", "landmark", "ranking", None]
     # Der Verhaltens-Nachsatz zur vollstaendigen Abfolge (ADR 0116 Punkt 1): Jeder Wechsel schreibt
-    # den Phasenbeginn fort. Ohne ihn bestuende die Bindung auch gegen ein `_set_phase`, das den
+    # den Phasenbeginn fort. Ohne ihn bestuende die Bindung auch gegen ein `set_phase`, das den
     # alten Zeitstempel stehen laesst - die Restdauer des neuen Teilschritts rechnete dann mit dem
     # Beginn des vorigen und waere zu gross, ohne dass irgendetwas fehlschluege.
     assert_phase_starts_strictly_increase(recorder.observed)
@@ -993,7 +993,7 @@ async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
 async def test_a_failed_run_leaves_no_phase_behind(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_fail_run` nullt `phase` - haelt fest, dass auch der neue Ranking-Zweig darueber laeuft und
+    """`fail_run` nullt `phase` - haelt fest, dass auch der neue Ranking-Zweig darueber laeuft und
     ein gescheiterter Lauf nicht dauerhaft als "laeuft gerade" dasteht."""
     project = await _make_project(db_session, cloud_consent=True)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -1221,7 +1221,7 @@ def test_the_classify_job_argument_has_a_default() -> None:
 
 
 class _TickingClock:
-    """Jeder Aufruf von `_now_utc` rueckt die simulierte Zeit um zehn Minuten vor - die Remote-
+    """Jeder Aufruf von `now_utc` rueckt die simulierte Zeit um zehn Minuten vor - die Remote-
     Phase liegt damit in simulierter Zeit deutlich ueber STALL_THRESHOLD. `frozen` haelt die Uhr
     fuer den Reaper-Aufruf an einem bestimmten Wert fest."""
 
@@ -1284,7 +1284,7 @@ async def _three_photo_cloud_project(
     for name in ("a.jpg", "b.jpg", "c.jpg"):
         await _add_candidate_photo(session, project, name, tmp_path)
     clock = _TickingClock()
-    monkeypatch.setattr(worker_runs, "_now_utc", clock)
+    monkeypatch.setattr(worker_runs, "now_utc", clock)
     return project, scoring_run, clock
 
 

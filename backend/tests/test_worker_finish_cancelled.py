@@ -28,7 +28,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.worker import _fail_export_run, _fail_run, _finish_cancelled
+from photosort.worker._runs import fail_export_run, fail_run, finish_cancelled
 from tests.project_graph import get_or_create_user
 
 
@@ -72,7 +72,7 @@ async def test_finish_cancelled_writes_the_end_state_and_keeps_the_phase(
     run.photos_processed = 3
     await db_session.commit()
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
 
     assert run.status == ScanStatus.CANCELLED
     assert run.finished_at is not None
@@ -88,7 +88,7 @@ async def test_finish_cancelled_discards_uncommitted_changes(db_session: AsyncSe
     await db_session.commit()
     run.files_found = 99
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
 
     assert run.status == ScanStatus.CANCELLED
     assert run.files_found == 2
@@ -100,7 +100,7 @@ async def test_finish_cancelled_never_overwrites_an_end_state(db_session: AsyncS
     db_session.add(run)
     await db_session.commit()
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
 
     assert run.status == ScanStatus.SUCCESS
     assert run.finished_at is None
@@ -114,7 +114,7 @@ async def test_finish_cancelled_handles_the_export_enum(db_session: AsyncSession
     db_session.add(run)
     await db_session.commit()
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
 
     assert run.status == ExportRunStatus.CANCELLED
     assert run.target_path == "X"
@@ -148,7 +148,7 @@ async def test_finish_cancelled_writes_the_end_state_in_one_conditional_statemen
     engine = db_session.bind.sync_engine  # type: ignore[union-attr]
     event.listen(engine, "before_cursor_execute", record)
     try:
-        await _finish_cancelled(db_session, run)
+        await finish_cancelled(db_session, run)
     finally:
         event.remove(engine, "before_cursor_execute", record)
 
@@ -174,10 +174,10 @@ async def test_a_second_completion_never_turns_cancelled_into_failed(
     db_session.add(run)
     await db_session.commit()
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
     finished_at = run.finished_at
 
-    await _finish_cancelled(db_session, run)
+    await finish_cancelled(db_session, run)
     await db_session.execute(
         update(ScanRun)
         .where(ScanRun.id == run.id, ScanRun.status.in_((ScanStatus.QUEUED, ScanStatus.RUNNING)))
@@ -201,7 +201,7 @@ async def test_fail_run_with_a_requested_cancel_ends_cancelled(
     await db_session.commit()
     await _request_cancel_from_another_session(db_session, run)
 
-    await _fail_run(db_session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+    await fail_run(db_session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
 
     assert run.status == ScanStatus.CANCELLED
     assert run.error_message is None
@@ -211,7 +211,7 @@ async def test_fail_run_without_a_cancel_still_fails(db_session: AsyncSession) -
     project = await _project(db_session)
     run = await _criterion_run(db_session, project)
 
-    await _fail_run(db_session, run, "boom")
+    await fail_run(db_session, run, "boom")
 
     assert run.status == ScanStatus.FAILED
     assert run.error_message == "boom"
@@ -225,7 +225,7 @@ async def test_fail_run_keeps_the_phase_of_a_cancelled_classification(
     run = await _criterion_run(db_session, project)
     await _request_cancel_from_another_session(db_session, run)
 
-    await _fail_run(db_session, run, "boom")
+    await fail_run(db_session, run, "boom")
 
     assert run.status == ScanStatus.CANCELLED
     assert run.phase == ClassificationPhase.CRITERIA
@@ -240,7 +240,7 @@ async def test_fail_export_run_with_a_requested_cancel_ends_cancelled(
     await db_session.commit()
     await _request_cancel_from_another_session(db_session, run)
 
-    await _fail_export_run(db_session, run, "boom")
+    await fail_export_run(db_session, run, "boom")
 
     assert run.status == ExportRunStatus.CANCELLED
     assert run.error_message is None
