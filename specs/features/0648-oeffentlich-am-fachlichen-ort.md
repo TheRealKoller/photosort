@@ -35,29 +35,29 @@ Ausgangsstand auf `main` nach Spec 0647: 225 Bezüge auf 61 Symbole im Produktio
 in 35 Testdateien (`local://0648-messung.md`); die 17 des Issue-Bodys stammen von vor der
 Modulaufteilung. Zielstand ist in allen drei Fällen 0.
 
-- [ ] **Kein privater Name überschreitet im Produktionscode eine Dateigrenze** — weder per
+- [x] **Kein privater Name überschreitet im Produktionscode eine Dateigrenze** — weder per
   Import noch per Attributzugriff auf ein importiertes Modul, noch als Zeichenkette an einer
   Patch-Stelle. Zielstand 0.
-- [ ] **Die Funktionen liegen dort, wo ihr Fachgebiet liegt.** Ein Modul außerhalb der
+- [x] **Die Funktionen liegen dort, wo ihr Fachgebiet liegt.** Ein Modul außerhalb der
   HTTP-Schicht importiert nicht aus der HTTP-Schicht; ein von mehreren Endpunkten genutzter
   **privater** Baustein liegt nicht in einem der beteiligten Endpunkt-Module (bereits öffentliche
   Bausteine sind nicht Gegenstand dieser Story, siehe Out of Scope); und ein Import innerhalb
   einer Funktion, der ausschließlich einen Zyklus vermeidet, bleibt nicht zurück — beide Seiten
   beziehen den Baustein auf Modulebene aus seinem neuen Ort. Eine Funktion, die HTTP-Verhalten
   trägt (Statuscode und Nutzertext), bleibt in der HTTP-Schicht.
-- [ ] **Tests beziehen die geprüfte Funktion über ihre öffentliche Schnittstelle.** Keine
+- [x] **Tests beziehen die geprüfte Funktion über ihre öffentliche Schnittstelle.** Keine
   Testdatei importiert einen privaten Namen aus dem Produktionscode, auch nicht als Zeichenkette
   an einer Stelle, die eine Funktion durch ein Test-Double ersetzt. Je Symbol ist bewusst einer
   von zwei Wegen gewählt: Es wird öffentlich, oder der Test prüft das von außen beobachtbare
   Verhalten und braucht den Namen nicht mehr.
-- [ ] **Die öffentliche Fläche wächst nur so weit wie nötig.** Öffentlich wird ausschließlich, was
+- [x] **Die öffentliche Fläche wächst nur so weit wie nötig.** Öffentlich wird ausschließlich, was
   tatsächlich von einer anderen Datei benutzt wird; jeder andere Name bleibt privat. Der alte Name
   verschwindet vollständig — kein Alias, kein Re-Export, kein öffentlicher Zwilling am bisherigen
   Ort. Es entstehen keine Sammel-Exporte über die betroffenen Module, und neu öffentliche Namen
   tragen eine Beschreibung ihres fachlichen Zwecks und ihrer geltenden Zusicherung (Docstring,
   bei Konstanten ein Kommentar).
 
-- [ ] **Verhalten und Zusicherungen unverändert.** Die Testfälle bleiben in Anzahl und Aussage
+- [x] **Verhalten und Zusicherungen unverändert.** Die Testfälle bleiben in Anzahl und Aussage
   erhalten; geändert werden nur Namens- und Importzeilen, keine Erwartung. Alle Prüfungen
   inklusive Abdeckungs-Gate sind grün. Die Zusicherungen, die an den betroffenen Funktionen
   hängen, gelten wortgleich weiter und bleiben durch dieselben Tests belegt: genau eine Stelle
@@ -65,11 +65,11 @@ Modulaufteilung. Zielstand ist in allen drei Fällen 0.
   (`join_remote_path`); genau eine Zeichensanitisierung bedient beide Cloud-Pfade
   (`sanitize_label_text`); genau eine Stelle schreibt den Abbruch-Endzustand eines Laufs
   (`finish_cancelled`), und genau eine übernimmt einen wartenden Lauf (`take_over_queued_run`).
-- [ ] **Ein Wächter hält die Regel fest.** Ein automatisierter Test scheitert, sobald im
+- [x] **Ein Wächter hält die Regel fest.** Ein automatisierter Test scheitert, sobald im
   Produktionscode oder in einer Testdatei wieder ein privater Name aus einer anderen
   Produktionsdatei benutzt wird — per Import, Attributzugriff, `setattr`/`getattr`/`patch.object`
   oder Patch-Zeichenkette. Seine Meldung nennt Fundstelle und Namen.
-- [ ] **Die lebenden Dokumente nennen die Namen, die es gibt.** Architektur-, Sicherheitskonzept-
+- [x] **Die lebenden Dokumente nennen die Namen, die es gibt.** Architektur-, Sicherheitskonzept-
   und Setup-Dokumentation führen die betroffenen Funktionen unter ihrem neuen Namen und ihrer
   neuen Heimat; abgeschlossene Feature-Specs und Entscheidungen bleiben unverändert.
 
