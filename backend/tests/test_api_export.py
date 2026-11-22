@@ -28,16 +28,7 @@ from photosort.models import (
     User,
 )
 from photosort.security import create_access_token, hash_password
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[object, ...]]] = []
-        self.keywords: list[dict[str, object]] = []
-
-    async def enqueue_job(self, function: str, *args: object, **kwargs: object) -> None:
-        self.calls.append((function, args))
-        self.keywords.append(kwargs)
+from tests.support import FakeEnqueuer
 
 
 async def _project_with_one_included_photo(session: AsyncSession) -> tuple[Project, Photo]:

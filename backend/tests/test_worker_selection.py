@@ -43,6 +43,7 @@ from photosort.motif_strengths import upsert_assessment
 from photosort.persons import delete_person
 from photosort.selection import DEFAULT_TARGET, MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
 from photosort.worker import rebuild_run_grouping, rebuild_run_selection
+from tests.support import add_photo, make_project
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 _FULL = 1.0
@@ -55,15 +56,7 @@ async def _project(
     """`target` steht in jedem Fall ausgeschrieben, der eine bestimmte Platzzahl braucht: die
     Vorbelegung ist fest 150 (ADR 0131), und ein Testaufbau mit drei Fotos bekaeme sonst
     jedes Foto."""
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        selection_target=target,
-    )
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, selection_target=target, flush=True)
 
 
 async def _successful_run(
@@ -102,19 +95,16 @@ async def _event_row(session: AsyncSession, run: CriterionScoringRun, position: 
 async def _photo(
     session: AsyncSession, project: Project, index: int, *, offset: timedelta = timedelta()
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"{project.name}/{index}.jpg",
+    return await add_photo(
+        session,
+        project,
+        f"{project.name}/{index}.jpg",
         etag=f"etag-{project.name}-{index}",
-        content_length=100,
         taken_at=_BASE + offset,
-        taken_at_original=_BASE + offset,
-        camera_probed=True,
         last_modified=_BASE,
+        camera_probed=True,
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _motifs(

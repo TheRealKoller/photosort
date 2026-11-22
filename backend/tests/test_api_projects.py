@@ -39,8 +39,7 @@ from photosort.models import (
     User,
 )
 from photosort.motif_strengths import upsert_assessment
-from photosort.opencloud.client import Drive, OpenCloudError
-from photosort.opencloud.webdav_xml import DavEntry
+from photosort.opencloud.client import OpenCloudError
 from photosort.photo_aggregates import (
     EMPTY_PHOTO_AGGREGATE,
     PhotoAggregate,
@@ -56,46 +55,8 @@ from tests.project_graph import (
     get_or_create_user,
     tables_reachable_from_projects,
 )
-
-
-class FakeOpenCloudClient:
-    def __init__(self, fail: OpenCloudError | None = None) -> None:
-        self._fail = fail
-
-    async def resolve_drive(self, name: str | None) -> Drive:
-        if self._fail:
-            raise self._fail
-        return Drive(
-            id="drive-1",
-            name="Family",
-            drive_type="project",
-            webdav_url="https://x/dav/spaces/drive-1",
-        )
-
-    async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
-        if self._fail:
-            raise self._fail
-        return []
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-        # Die Schluesselwort-Argumente getrennt: `mode` faehrt seit Spec 0609 als solches mit,
-        # und die bestehenden Zusagen ueber die Positionsargumente sollen dabei nicht umgeschrieben
-        # werden muessen.
-        self.keywords: list[dict[str, Any]] = []
-
-    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
-        self.calls.append((function, args))
-        self.keywords.append(kwargs)
-
-
-async def _create_project(client: httpx.AsyncClient, name: str = "Costa Rica") -> int:
-    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await client.post("/projects", json={"name": name, "opencloud_path": name})
-    project_id: int = created.json()["id"]
-    return project_id
+from tests.support import FakeEnqueuer, FakeOpenCloudClient
+from tests.support import create_project_via_api as _create_project
 
 
 async def test_create_project(authenticated_api_client: httpx.AsyncClient) -> None:

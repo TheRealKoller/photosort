@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
-from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +28,6 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoEyeResult,
     PhotoRanking,
-    PhotoScore,
     PlaceLookup,
     Project,
     ProjectCamera,
@@ -37,11 +35,12 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.thumbnails import display_path
 from photosort.worker import criterion_scoring as worker_criterion_scoring
 from photosort.worker import rebuild_run_grouping, run_criterion_scoring
 from photosort.worker._criterion import eye as worker_eye
 from tests.import_closure import module_file
+from tests.support import add_photo, write_display_variant
+from tests.support import make_project as _make_project
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 
@@ -77,14 +76,6 @@ def _section_gap() -> timedelta:
 _EIFFEL = (48.858093, 2.294694)
 
 
-async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=name)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def _add_photo(
     session: AsyncSession,
     project: Project,
@@ -102,33 +93,18 @@ async def _add_photo(
 
     `album_suitability_level` legt die Modellbewertung gleich mit an: ohne sie traegt das Foto
     seit Spec 0428 keinen Qualitaetswert, und die Rangzeile steht mit `NULL` da."""
-    offset = 0 if camera is None else camera.offset_minutes
-    corrected = shifted(taken_at, offset)
-    assert corrected is not None
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=corrected,
-        taken_at_original=taken_at,
-        camera_id=None if camera is None else camera.id,
+    photo = await add_photo(
+        session,
+        project,
+        path,
+        taken_at=taken_at,
+        camera=camera,
         camera_probed=True,
-        last_modified=taken_at,
-        gps_lat=None if gps is None else gps[0],
-        gps_lon=None if gps is None else gps[1],
-    )
-    session.add(photo)
-    await session.flush()
-    session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=100.0,
-            exposure=0.0,
-            cluster_key="cluster-0",
-            suggested_status=suggested_status,
-            computed_at=datetime.now(UTC).replace(tzinfo=None),
-        )
+        gps=gps,
+        with_score=True,
+        cluster_key="cluster-0",
+        suggested_status=suggested_status,
+        score_computed_at=datetime.now(UTC).replace(tzinfo=None),
     )
     if album_suitability_level is not None:
         session.add(
@@ -143,9 +119,7 @@ async def _add_photo(
     await session.commit()
     await session.refresh(photo)
     if cache_dir is not None:
-        path_on_disk = display_path(cache_dir, photo.id, photo.etag)
-        path_on_disk.parent.mkdir(parents=True, exist_ok=True)
-        Image.new("RGB", (160, 160), color=(100, 100, 100)).save(path_on_disk, format="JPEG")
+        write_display_variant(cache_dir, photo)
     return photo
 
 

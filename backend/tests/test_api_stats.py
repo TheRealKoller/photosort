@@ -53,6 +53,8 @@ from photosort.motifs import (
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 from tests.event_rows import event_id_of_run
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 # specs/features/0207-projekt-statistikseite.md: ein einziger, aggregierender Nur-Lese-Endpunkt
 # ueber Bestandsdaten. Schwerpunkt der Teststrategie ist die Integrationsebene (echte In-Memory-
@@ -144,14 +146,6 @@ class TestLocalDatabaseBytesEstimate:
 # --- Integrations-Ebene (Schwerpunkt) ------------------------------------------------------
 
 
-async def _make_project(session: AsyncSession, name: str) -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def _add_photo(
     session: AsyncSession,
     project: Project,
@@ -160,20 +154,14 @@ async def _add_photo(
     content_length: int = 1_000,
     taken_at: datetime | None = None,
 ) -> Photo:
-    moment = taken_at or datetime(2023, 6, 1, 12, 0)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag=f"etag-{project.id}-{path}",
         content_length=content_length,
-        taken_at=moment,
-        taken_at_original=moment,
-        last_modified=moment,
+        taken_at=taken_at or datetime(2023, 6, 1, 12, 0),
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _add_score(

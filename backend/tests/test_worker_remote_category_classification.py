@@ -53,6 +53,8 @@ from photosort.thumbnails import display_path
 from photosort.worker import remote_categories as worker_remote_categories
 from photosort.worker import run_remote_category_classification, select_remote_category_candidates
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
 # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 5: eigenstaendiger
@@ -60,29 +62,14 @@ from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 # Vorfilter (kompletter Ausschuss-Ueberlebender-Bestand statt eines Vorfilter-Ergebnisses).
 
 
-async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=name)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def _add_photo(session: AsyncSession, project: Project, path: str, etag: str) -> Photo:
-    now = datetime(2023, 1, 1, tzinfo=UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag=etag,
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+        taken_at=datetime(2023, 1, 1, tzinfo=UTC),
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _add_score(

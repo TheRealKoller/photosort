@@ -28,14 +28,8 @@ from photosort.thumbnails import display_path
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scoring
 from photosort.worker import scoring as worker_scoring
-
-
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 
 async def _add_photo(
@@ -49,20 +43,15 @@ async def _add_photo(
 ) -> Photo:
     # Der Versatz haelt `taken_at_original != last_modified`: die Zeit gilt als aus dem Bild
     # gelesen. Ein Negativfall setzt `last_modified=taken_at` - dann ist sie abgeleitet.
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag=etag,
-        content_length=100,
         taken_at=taken_at,
-        taken_at_original=taken_at,
         last_modified=taken_at + timedelta(hours=1) if last_modified is None else last_modified,
         pixel_count=pixel_count,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 def _write_display_variant(cache_dir: Path, photo: Photo, image: Image.Image) -> None:

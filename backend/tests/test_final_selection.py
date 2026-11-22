@@ -25,6 +25,7 @@ from photosort.models import (
     User,
 )
 from tests.event_rows import event_id_of_run
+from tests.support import add_photo, make_project
 
 
 async def _user(session: AsyncSession, username: str) -> User:
@@ -35,10 +36,7 @@ async def _user(session: AsyncSession, username: str) -> User:
 
 
 async def _project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="/a")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, drive_id="drive-1", path="/a", flush=True)
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:
@@ -54,19 +52,13 @@ async def _successful_run(session: AsyncSession, project: Project) -> CriterionS
 
 
 async def _photo(session: AsyncSession, project: Project, path: str) -> Photo:
-    now = datetime.now(UTC).replace(tzinfo=None)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    return await add_photo(
+        session,
+        project,
+        path,
+        taken_at=datetime.now(UTC).replace(tzinfo=None),
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _propose(session: AsyncSession, run: CriterionScoringRun, photo: Photo) -> None:

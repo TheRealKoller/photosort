@@ -32,7 +32,6 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
-    Project,
     User,
 )
 from photosort.motif_strengths import (
@@ -42,7 +41,10 @@ from photosort.motif_strengths import (
 )
 from photosort.motifs import MOTIF_REGISTRY
 
+from tests.support import add_photo, make_project
+
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"
+
 
 _NOW = datetime(2026, 9, 12, 10, 0, 0)
 _LATER = datetime(2026, 9, 12, 12, 0, 0)
@@ -56,23 +58,18 @@ def _vector(**overrides: float) -> dict[str, float]:
 
 
 async def _photo(session: AsyncSession, *, name: str = "Costa Rica") -> Photo:
-    project = Project(
-        name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name.replace(' ', '')}"
+    project = await make_project(
+        session, name, drive_id="drive-1", path=f"/{name.replace(' ', '')}", flush=True
     )
-    session.add(project)
-    await session.flush()
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"{name}/img001.jpg",
+    return await add_photo(
+        session,
+        project,
+        f"{name}/img001.jpg",
         etag=f"etag-{name}",
         content_length=1234,
         taken_at=_NOW,
-        taken_at_original=_NOW,
-        last_modified=_NOW,
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _user(session: AsyncSession, username: str = "daniel") -> User:

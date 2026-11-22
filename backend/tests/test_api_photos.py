@@ -48,32 +48,17 @@ from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, decode_access_token, hash_password
 from photosort.selection import BAND_MAX_SERIES, MOTIF_PRESENCE_THRESHOLD, SERIES_GAP
+from tests.support import add_photo, make_project
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="d", opencloud_path="/a")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, name, drive_id="d", path="/a")
 
 
 async def _make_photo(
     session: AsyncSession, project: Project, path: str, taken_at: datetime
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag="etag-1",
-        content_length=100,
-        taken_at=taken_at,
-        taken_at_original=taken_at,
-        last_modified=taken_at,
-    )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
+    return await add_photo(session, project, path, etag="etag-1", taken_at=taken_at)
 
 
 async def _make_second_user(session: AsyncSession) -> User:

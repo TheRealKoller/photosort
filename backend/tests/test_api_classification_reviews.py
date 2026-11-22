@@ -39,8 +39,6 @@ from photosort.models import (
     ClassificationVerdict,
     DuplicateDecision,
     Photo,
-    PhotoDuplicateDecision,
-    PhotoScore,
     Project,
     RatingStatus,
     ScanStatus,
@@ -50,41 +48,16 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import estimate_usd_per_image
 from photosort.security import create_access_token
+from tests.support import FakeEnqueuer, add_photo, make_project
+from tests.support import make_user as _make_user
 
 _MOMENT = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-
-    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
-        self.calls.append((function, args))
-
-
-async def _make_user(session: AsyncSession, username: str = "anleger") -> User:
-    user = User(username=username, password_hash="x")
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
 
 
 async def _make_project(
     session: AsyncSession, *, consent: bool = False, name: str = "Costa Rica"
 ) -> Project:
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        cloud_vision_detection_enabled=consent,
-    )
-    if consent:
-        project.cloud_vision_consent_at = _MOMENT
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, name, cloud_vision_consent=consent)
 
 
 async def _add_photo(
@@ -96,32 +69,16 @@ async def _add_photo(
     decision: DuplicateDecision | None = None,
     with_score: bool = True,
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
+    return await add_photo(
+        session,
+        project,
+        path,
         content_length=1,
         taken_at=_MOMENT,
-        taken_at_original=_MOMENT,
-        last_modified=_MOMENT,
+        with_score=with_score,
+        suggested_status=suggested_status,
+        decision=decision,
     )
-    session.add(photo)
-    await session.flush()
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=100.0,
-                exposure=0.0,
-                suggested_status=suggested_status,
-                computed_at=_MOMENT,
-            )
-        )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _add_successful_run(

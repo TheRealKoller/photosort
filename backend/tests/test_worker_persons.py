@@ -40,7 +40,6 @@ from photosort.models import (
     PhotoPersonCorrection,
     PhotoPersonDetection,
     PhotoRanking,
-    PhotoScore,
     Project,
     RatingStatus,
     ScanStatus,
@@ -72,6 +71,7 @@ from tests.face_fakes import (
 )
 from tests.import_closure import package_files
 from tests.phase_binding import assert_phase_binding
+from tests.support import add_photo, make_project
 
 ANNA = "Annabell-Merkname"
 BERTA = "Bertrude-Merkname"
@@ -173,17 +173,7 @@ async def _user(session: AsyncSession) -> User:
 
 
 async def _project(session: AsyncSession, name: str, *, cloud_consent: bool = False) -> Project:
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        cloud_vision_detection_enabled=cloud_consent,
-        cloud_vision_consent_at=datetime(2026, 1, 1) if cloud_consent else None,
-    )
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, name, cloud_vision_consent=cloud_consent)
 
 
 async def _scoring_run(session: AsyncSession, project: Project) -> ScoringRun:
@@ -203,29 +193,17 @@ async def _photo(
     *,
     rejected: bool = False,
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"{project.name}/{name}.jpg",
+    photo = await add_photo(
+        session,
+        project,
+        f"{project.name}/{name}.jpg",
         etag=f"etag-{project.name}-{name}",
-        content_length=100,
         taken_at=TAKEN,
-        taken_at_original=TAKEN,
-        last_modified=TAKEN,
+        with_score=True,
+        cluster_key="cluster-0",
+        suggested_status=RatingStatus.REJECTED if rejected else None,
+        score_computed_at=TAKEN,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=100.0,
-            exposure=0.0,
-            cluster_key="cluster-0",
-            suggested_status=RatingStatus.REJECTED if rejected else None,
-            computed_at=TAKEN,
-        )
-    )
-    await session.commit()
     if color is not None:
         write_display_variant(cache_dir, photo.id, photo.etag, color)
     return photo

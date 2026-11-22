@@ -52,22 +52,12 @@ from photosort.models import (
 from photosort.quality import QUALITY_CRITERION_WEIGHTS
 from photosort.quality_weights import effective_weights, store_weights
 from photosort.worker import rebuild_run_grouping
+from tests.support import FakeEnqueuer
 
 _ADOPT = "/feedback/weights"
 _REVERT = "/feedback/weights/revert"
 _DIAGNOSIS = "/feedback/diagnosis"
 _NOW = datetime(2026, 6, 1, tzinfo=UTC).replace(tzinfo=None)
-
-
-class FakeEnqueuer:
-    """Zaehlt Einreihungen, statt sie auszufuehren. Die Zusage ist hier eine ABWESENHEIT: Die
-    Uebernahme reiht nichts ein (G9)."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-
-    async def enqueue_job(self, function: str, *args: Any) -> None:
-        self.calls.append((function, args))
 
 
 async def _user_id(session: AsyncSession, username: str = "daniel") -> int:

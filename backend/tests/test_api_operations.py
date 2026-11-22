@@ -37,26 +37,10 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from tests.support import FakeEnqueuer, add_photo
+from tests.support import make_project as _project
 
 _NOW = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-        self.keywords: list[dict[str, Any]] = []
-
-    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
-        self.calls.append((function, args))
-        self.keywords.append(kwargs)
-
-
-async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _user(session: AsyncSession) -> User:
@@ -79,19 +63,7 @@ async def _add_run(session: AsyncSession, model: type[Any], **fields: Any) -> An
 async def _add_photo(
     session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=etag,
-        content_length=100,
-        taken_at=taken_at,
-        taken_at_original=taken_at,
-        last_modified=taken_at,
-    )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
+    return await add_photo(session, project, path, etag=etag, taken_at=taken_at)
 
 
 def _url(project_id: int) -> str:

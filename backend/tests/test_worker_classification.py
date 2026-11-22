@@ -43,6 +43,7 @@ from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs, run_classification
 from photosort.worker._criterion import ranking as worker_ranking
 from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
+from tests.support import make_project
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
 # klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md: EIN verketteter Lauf statt zweier
@@ -61,18 +62,7 @@ from tests.phase_binding import assert_phase_binding, assert_phase_starts_strict
 async def _make_project(
     session: AsyncSession, *, name: str = "Costa Rica", cloud_consent: bool = False
 ) -> Project:
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        cloud_vision_detection_enabled=cloud_consent,
-    )
-    if cloud_consent:
-        project.cloud_vision_consent_at = datetime.now(UTC).replace(tzinfo=None)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, name, cloud_vision_consent=cloud_consent)
 
 
 async def _add_successful_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:

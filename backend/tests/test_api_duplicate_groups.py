@@ -27,16 +27,10 @@ from photosort.models import (
     Project,
     RatingStatus,
 )
+from tests.support import add_photo
+from tests.support import make_project as _project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
-
-
-async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _photo(
@@ -52,33 +46,17 @@ async def _photo(
     decision: DuplicateDecision | None = None,
 ) -> Photo:
     moment = taken_at if taken_at is not None else _BASE + timedelta(seconds=seconds)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
+    return await add_photo(
+        session,
+        project,
+        path,
         content_length=1,
         taken_at=moment,
-        taken_at_original=moment,
-        last_modified=moment,
+        with_score=with_score,
+        suggested_status=suggested_status,
+        duplicate_of=duplicate_of,
+        decision=decision,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=100.0,
-                exposure=0.0,
-                suggested_status=suggested_status,
-                duplicate_of=duplicate_of,
-                computed_at=moment,
-            )
-        )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.commit()
-    return photo
 
 
 async def _star(

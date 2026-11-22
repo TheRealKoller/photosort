@@ -86,14 +86,8 @@ from photosort.worker._criterion import ranking as worker_ranking
 from photosort.worker._criterion.landmark import select_landmark_candidates
 from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
-
-
-async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=name)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 
 async def _add_photo(
@@ -106,21 +100,15 @@ async def _add_photo(
     gps_lat: float | None = None,
     gps_lon: float | None = None,
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag=etag,
-        content_length=100,
         taken_at=taken_at,
-        taken_at_original=taken_at,
-        last_modified=taken_at,
         gps_lat=gps_lat,
         gps_lon=gps_lon,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _add_score(

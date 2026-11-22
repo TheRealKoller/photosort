@@ -15,20 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
 from photosort.db import make_session_factory
-from photosort.models import Photo, Project, ScanRun, ScanStatus
+from photosort.models import Photo, ScanRun, ScanStatus
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.worker import run_project_scan
 from photosort.worker import scan as worker_scan
+from tests.support import make_project as _project
 from tests.test_worker_scan_project import FakeOpenCloudClient, _entry
 
 MODIFIED = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
-
-
-async def _project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    return project
 
 
 def _entries(count: int) -> list[tuple[str, DavEntry]]:

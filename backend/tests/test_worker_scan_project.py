@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,7 +18,7 @@ from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS
 from photosort.cameras import MAX_TIME_OFFSET_MINUTES
 from photosort.db import make_session_factory
 from photosort.models import Photo, Project, ProjectCamera, ScanRun, ScanStatus
-from photosort.opencloud.client import Drive, OpenCloudError
+from photosort.opencloud.client import OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.thumbnails import (
     display_path,
@@ -29,22 +29,16 @@ from photosort.thumbnails import (
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scan
 from photosort.worker import scan as worker_scan
+from tests.support import FakeOpenCloudClient, opencloud_entry
+from tests.support import make_project as _make_project
 from tests.time_offset_invariant import assert_time_offset_invariant
-
-DRIVE = Drive(
-    id="drive-1",
-    name="Family",
-    drive_type="project",
-    webdav_url="https://cloud.example.com/dav/spaces/drive-1",
-)
 
 
 def _entry(name: str, etag: str, last_modified: datetime, content_length: int = 100) -> DavEntry:
-    return DavEntry(
-        href=f"/dav/spaces/drive-1/CostaRica/{name}",
-        name=name,
-        is_collection=False,
+    return opencloud_entry(
+        name,
         etag=etag,
+        href=f"/dav/spaces/drive-1/CostaRica/{name}",
         last_modified=last_modified,
         content_length=content_length,
     )
@@ -72,55 +66,6 @@ def _rotated_jpeg_bytes() -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", exif=exif)
     return buffer.getvalue()
-
-
-class FakeOpenCloudClient:
-    def __init__(
-        self,
-        entries: list[tuple[str, DavEntry]],
-        file_contents: dict[str, bytes] | None = None,
-        fail_with: OpenCloudError | None = None,
-        download_delay: float = 0.0,
-        on_download: Callable[[str], Awaitable[None]] | None = None,
-    ) -> None:
-        self._entries = entries
-        self._file_contents = file_contents or {}
-        self._fail_with = fail_with
-        self._download_delay = download_delay
-        self._on_download = on_download
-        self.range_requests: list[str] = []
-        self.download_requests: list[str] = []
-        # specs/features/0036-scan-performance-zweiphasig-parallel.md: Nachweis echter
-        # Nebenlaeufigkeit ohne Wall-Clock-Timing-Assertions (Teststrategie-Abschnitt der Spec) -
-        # zaehlt, wie viele download()-Aufrufe gleichzeitig "in Flight" waren.
-        self._active_downloads = 0
-        self.max_concurrent_downloads = 0
-
-    async def resolve_drive(self, name: str | None) -> Drive:
-        if self._fail_with:
-            raise self._fail_with
-        return DRIVE
-
-    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
-        for item in self._entries:
-            yield item
-
-    async def get_range(self, webdav_url: str, relative_path: str, length: int) -> bytes:
-        self.range_requests.append(relative_path)
-        return self._file_contents.get(relative_path, b"")
-
-    async def download(self, webdav_url: str, relative_path: str) -> bytes:
-        self.download_requests.append(relative_path)
-        self._active_downloads += 1
-        self.max_concurrent_downloads = max(self.max_concurrent_downloads, self._active_downloads)
-        try:
-            if self._download_delay:
-                await asyncio.sleep(self._download_delay)
-            if self._on_download is not None:
-                await self._on_download(relative_path)
-            return self._file_contents.get(relative_path, b"")
-        finally:
-            self._active_downloads -= 1
 
 
 class WalkFailsMidwayClient(FakeOpenCloudClient):
@@ -197,14 +142,6 @@ class DownloadRaisesCancelledErrorClient(FakeOpenCloudClient):
         if relative_path == self._cancel_path:
             raise asyncio.CancelledError("simulierter Abbruch waehrend eines parallelen Downloads")
         return await super().download(webdav_url, relative_path)
-
-
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def test_scan_adds_new_photos(db_session: AsyncSession, tmp_path: Path) -> None:
@@ -477,7 +414,7 @@ async def test_scan_run_marked_failed_on_opencloud_error(
     je stattgefunden, also verwirft session.rollback() die gesamte (leere) Transaktion -
     photos == [] bleibt korrekt."""
     project = await _make_project(db_session)
-    client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Ordner nicht erreichbar"))
+    client = FakeOpenCloudClient(entries=[], fail=OpenCloudError("Ordner nicht erreichbar"))
 
     scan_run = await run_project_scan(
         db_session, client, project, drive_name=None, cache_dir=tmp_path
@@ -1864,7 +1801,7 @@ async def test_a_failed_scan_does_not_clean_up(db_session: AsyncSession, tmp_pat
     """Akzeptanzkriterium 8: der Aufruf sitzt HINTER dem Fehler-Handler, nicht darin."""
     project = await _make_project(db_session)
     orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
-    client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Verbindung verweigert"))
+    client = FakeOpenCloudClient(entries=[], fail=OpenCloudError("Verbindung verweigert"))
 
     scan_run = await run_project_scan(
         db_session, client, project, drive_name=None, cache_dir=tmp_path

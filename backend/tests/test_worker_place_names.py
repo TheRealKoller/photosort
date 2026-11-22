@@ -44,6 +44,7 @@ from photosort.worker._criterion.ranking import (
     place_infos,
 )
 from tests.import_closure import module_file
+from tests.support import make_project
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 
@@ -138,10 +139,7 @@ def _landmark_factory(gazetteer: object | None = None) -> object:
 
 
 async def _project(session: AsyncSession, name: str) -> Project:
-    project = Project(name=name, opencloud_drive_id="drive", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, drive_id="drive", flush=True)
 
 
 async def _lookup_rows(session: AsyncSession, project_id: int) -> list[PlaceLookup]:

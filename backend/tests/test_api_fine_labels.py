@@ -6,35 +6,18 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import FineLabel, Photo, PhotoFineLabel, Project
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 # specs/features/0289-feste-kategorien.md, Teststrategie Abschnitt 8 / Security-Abschnitt Punkt 1:
 # GET /projects/{id}/fine-labels - haeufigste Feinlabels DIESES Projekts. Die `fine_labels`-
 # Registry ist bewusst projektuebergreifend, die ZAEHLUNG darf es nicht sein.
 
 
-async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="d", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def _make_photo(session: AsyncSession, project: Project, path: str) -> Photo:
-    now = datetime(2023, 1, 1, tzinfo=UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=1,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    return await add_photo(
+        session, project, path, content_length=1, taken_at=datetime(2023, 1, 1, tzinfo=UTC)
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _make_label(session: AsyncSession, canonical_key: str, display_name: str) -> FineLabel:

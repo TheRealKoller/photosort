@@ -30,13 +30,7 @@ from photosort.models import (
 from photosort.worker import classification_review
 from photosort.worker._runs import fail_export_run, fail_run, finish_cancelled
 from tests.project_graph import get_or_create_user
-
-
-async def _project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="/a")
-    session.add(project)
-    await session.commit()
-    return project
+from tests.support import make_project as _project
 
 
 async def _request_cancel_from_another_session(session: AsyncSession, run: object) -> None:

@@ -49,6 +49,7 @@ from photosort.persons import (
     set_correction,
 )
 from tests.import_closure import SRC_DIR
+from tests.support import make_user
 
 MODEL = "aktuelles-modell"
 OLD_MODEL = "altes-modell"
@@ -67,10 +68,7 @@ def _box(index: int) -> FaceBox:
 
 
 async def _user(session: AsyncSession, name: str = "daniel") -> User:
-    user = User(username=name, password_hash="hashed-value")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, name, password_hash="hashed-value", flush=True)
 
 
 async def _photos(session: AsyncSession, count: int, *, name: str = "Reise") -> list[Photo]:

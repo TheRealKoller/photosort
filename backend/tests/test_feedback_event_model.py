@@ -24,7 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort
-from photosort.models import FeedbackEvent, FeedbackEventKind, Photo, Project, User
+from photosort.models import FeedbackEvent, FeedbackEventKind, Photo, User
+from tests.support import add_photo, make_project
 
 # Genau die Module, die eine `FeedbackEvent`-Zeile aendern oder loeschen duerfen. Die
 # Projektloeschung ist die einzige Ausnahme der Append-only-Zusage (ADR 0100 Punkt 1, S13).
@@ -32,22 +33,15 @@ _ALLOWED_MUTATING_MODULES = ("project_deletion.py",)
 
 
 async def _make_photo(session: AsyncSession) -> Photo:
-    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
-    session.add(project)
-    await session.flush()
-    now = datetime(2023, 1, 1, tzinfo=UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path="a.jpg",
+    project = await make_project(session, drive_id="d", path="/a", flush=True)
+    return await add_photo(
+        session,
+        project,
+        "a.jpg",
         etag="etag-1",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+        taken_at=datetime(2023, 1, 1, tzinfo=UTC),
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 # --- Der Vorrat und die Reihenfolge ------------------------------------------------------------

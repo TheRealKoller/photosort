@@ -28,6 +28,7 @@ from photosort.models import (
     Project,
 )
 from tests.import_closure import SRC_DIR, imported_root_packages, module_file
+from tests.support import add_photo
 
 _NOW = datetime(2026, 11, 8, tzinfo=UTC)
 
@@ -56,18 +57,7 @@ def _recorded_select_statements() -> Iterator[list[str]]:
 
 
 async def _photo(session: AsyncSession, project: Project, path: str) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=_NOW,
-        taken_at_original=_NOW,
-        last_modified=_NOW,
-    )
-    session.add(photo)
-    await session.flush()
-    return photo
+    return await add_photo(session, project, path, taken_at=_NOW, flush=True)
 
 
 def _cloud(photo: Photo, level: int) -> PhotoAlbumSuitability:
