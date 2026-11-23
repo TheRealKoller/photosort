@@ -219,7 +219,7 @@ Frontend: `useDuplicateGroupIndexQuery(projectId)` unter dem Schlüssel
   Wahlschaltflächen — weder „behalten" (AK3) noch „Ausschuss" (der wäre ebenso wirkungslos) —,
   sondern den Zustand samt Grund. Die Dämpfung (`data-dimmed`) folgt unverändert
   `effective_decision === 'discard' && !enlarged`; der Eintrag in
-  `designSystem.contract.test.ts::OPACITY_ALLOWLIST` bleibt derselbe.
+  `designSystem.*.contract.test.ts::OPACITY_ALLOWLIST` bleibt derselbe.
 
 ### Demo-Bestand
 

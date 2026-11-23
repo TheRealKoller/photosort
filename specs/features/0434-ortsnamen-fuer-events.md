@@ -596,7 +596,7 @@ Neu: `backend/tests/test_migration_ortsauskunft.py`, `backend/tests/test_worker_
 Geändert: `test_models.py`, `tests/project_graph.py`, `test_project_deletion.py`,
 `test_postgres_ddl_compatibility.py`, `test_events_*.py`, `test_worker_rebuild_run_grouping.py`,
 `test_api_photos_*.py`, `test_demo_state_*.py`, `frontend/src/utils/timeOfDay.test.ts`,
-`frontend/src/pages/AlbumDraftPage.test.tsx`.
+`frontend/src/pages/AlbumDraftPage.*.test.tsx`.
 
 **Migration und Modell.** Muster `test_migration_events.py`: Schema-Nachbau vor der Revision,
 `upgrade()`/`downgrade()`, Tabelle und Spalte da beziehungsweise weg, bestehende `events`-Zeilen
@@ -694,7 +694,7 @@ zusammengesetzte Form unverändert; die Zeitspanne in jedem Fall.
 **Der XSS-Nachweis gehört an die Rendering-Stelle**, nicht in `timeOfDay.test.ts`: Der bestehende
 Fall für `landmark_name` dort belegt nur, dass die Funktion nichts interpretiert — das Escaping
 leistet React, und der zugehörige DOM-Fall lag in `CurateCategoriesPage.test.tsx` und ist mit dem
-Umbau auf die Albumauswahl ersatzlos entfallen. Neu in `AlbumDraftPage.test.tsx`, Form von
+Umbau auf die Albumauswahl ersatzlos entfallen. Neu in `AlbumDraftPage.*.test.tsx`, Form von
 `PhotoCard.test.tsx`: feindlicher `place_name`, der Text erscheint wörtlich,
 `document.querySelector('img[src="x"]')` ist leer, `window.__pwned` bleibt `undefined`. Der
 Docstring-Verweis in `api/photos.py` zeigt auf die verschwundene Datei und wird umgestellt.

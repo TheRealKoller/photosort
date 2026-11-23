@@ -269,7 +269,7 @@ Ein Testfall hält das fest (siehe Teststrategie).
 ### Test-Kennzeichnung
 
 Der bestehende `data-testid="criterion-details-section"` bleibt am **Informationsteil** (bestehende
-Tests in `PhotoDetailPage.test.tsx` behalten ihre Bedeutung: Blocküberschriften, "kein leerer
+Tests in `PhotoDetailPage.*.test.tsx` behalten ihre Bedeutung: Blocküberschriften, "kein leerer
 Bereich"). Der Bedienteil bekommt einen eigenen `data-testid="category-controls-section"`. Die
 Reihenfolge aus Akzeptanzkriterium 1/2 wird über die tatsächliche DOM-Reihenfolge geprüft (siehe
 Teststrategie), nicht über Klassennamen.
@@ -281,7 +281,7 @@ Teststrategie), nicht über Klassennamen.
 | `frontend/src/components/CriterionDetailsList.tsx` | neues Prop `part`, teilbezogene Gates, eigenes `<dl>` im Bedienteil, exportierte Vorbedingung `hasCategoryControls`, `null`-Rückgabe für leere Teile |
 | `frontend/src/components/CriterionDetailsList.test.tsx` | bestehende Fälle inhaltlich unverändert; neue Fälle für `part='controls'`/`'info'` in neuen `describe`-Blöcken |
 | `frontend/src/pages/PhotoDetailPage.tsx` | neue Reihenfolge, zwei Instanzen über ein gemeinsames Props-Objekt, zwei Wrapper-Gates, Trennlinie, Neufassung der veralteten Kommentare zu Spec 0058/0041 |
-| `frontend/src/pages/PhotoDetailPage.test.tsx` | neue Reihenfolge- und Verdrahtungstests; bestehende Tests bleiben inhaltlich gültig |
+| `frontend/src/pages/PhotoDetailPage.*.test.tsx` | neue Reihenfolge- und Verdrahtungstests; bestehende Tests bleiben inhaltlich gültig |
 | `frontend/src/components/CriterionDetailsPopover.tsx` (+ Test) | **keine Änderung** — bewusst, als Nachweis für Akzeptanzkriterium 8 |
 | `frontend/src/pages/PhotoGridPage.tsx`, `components/CurationPhotoTile.tsx`, `pages/PhotoComparePage.tsx` | **keine Änderung** (die Vergleichsansicht bindet die Bewertungsdetails ohnehin nicht ein) |
 | `specs/features/0041-…md` | datierter Nachtrag im Kopf (Akzeptanzkriterium 9) |
@@ -461,7 +461,7 @@ versehentliche Doppelplatzierung — mit `part="controls"` die Abwesenheit der F
 **Ebenen.** Reines Frontend, kein Backend-Anteil. Komponentenebene
 (`frontend/src/components/CriterionDetailsList.test.tsx`, neue `describe`-Blöcke): das
 Teilrendering über `part`, die Sichtbarkeitsgates je Teil, `hasCategoryControls`.
-Integrationsebene (`frontend/src/pages/PhotoDetailPage.test.tsx`, gemockte `api/*`): die
+Integrationsebene (`frontend/src/pages/PhotoDetailPage.*.test.tsx`, gemockte `api/*`): die
 DOM-Reihenfolge der Seite, die Verdrahtung beider Einbindungen und die Regressionsfälle für
 Bewerten/Blättern/Auto-Advance/Tastenkürzel/Wischgesten. **Kein neuer E2E-Spec** — die Reihenfolge
 ist in jsdom vollständig prüfbar, das Aufnahmekriterium der E2E-Ebene ("nur, was jsdom prinzipiell

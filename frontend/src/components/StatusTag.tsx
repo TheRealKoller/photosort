@@ -8,7 +8,7 @@ import type { ScanStatusLabel } from '../utils/scanStatus'
  * UMDEFINIERT worden statt gestrichen; die Aufrufstellen hier bleiben dadurch unveraendert.
  *
  * Alle vier Tonwerte halten damit AA auf `#1E2230` (8.64 / 9.48 / 5.08 / 6.44), nachgerechnet
- * in src/designSystem.contract.test.ts.
+ * in src/designSystem.*.contract.test.ts.
  *
  * Vollstaendig ausgeschriebene Klassennamen je Zustand - Tailwind erkennt Utility-Klassen nur als
  * statische, vollstaendige Strings im Quellcode.

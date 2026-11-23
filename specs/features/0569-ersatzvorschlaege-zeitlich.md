@@ -212,8 +212,8 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - **vitest:**
   - `api/photos.test.ts`: Der Parameter `nearest` wird gesendet bzw. weggelassen, der Rückgabetyp stimmt.
   - `usePhotos.test.tsx`: Das Band holt eine einzige Seite mit `nearest`, es gibt kein `fetchNextPage`. Band, Dialog und Panel behalten getrennte Schlüssel.
-  - `DraftAlternativesDialog.test.tsx` und die Band-Tests: Markierung an `reference_index − offset`, Wortlaut (AK5), Albumtauglichkeit getrennt von „Album-würdig“ (AK10), keine zweite Sortierung im Frontend. Die Band-Tests laufen über `AlbumDraftPage.test.tsx` oder eine neue `DraftAlternativesBand.test.tsx`.
-- **Bestehende Strukturwächter** (`designSystem.contract.test.ts`, `albumSelection.structure.test.ts`) bleiben unverändert grün.
+  - `DraftAlternativesDialog.test.tsx` und die Band-Tests: Markierung an `reference_index − offset`, Wortlaut (AK5), Albumtauglichkeit getrennt von „Album-würdig“ (AK10), keine zweite Sortierung im Frontend. Die Band-Tests laufen über `AlbumDraftPage.*.test.tsx` oder eine neue `DraftAlternativesBand.test.tsx`.
+- **Bestehende Strukturwächter** (`designSystem.*.contract.test.ts`, `albumSelection.structure.test.ts`) bleiben unverändert grün.
 
 **Wichtigste Edge Cases**
 - **Gleichstand:**

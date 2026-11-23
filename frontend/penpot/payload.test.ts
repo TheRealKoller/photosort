@@ -3063,7 +3063,7 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
  * waeren die getippte Wertekopie, gegen die diese Testdatei sonst ueberall antritt. Eingefroren
  * sind die Schwelle, die Ausnahmen und ihre Zahl.
  *
- * DIE HELFERFUNKTION IST DUPLIZIERT, nicht geteilt (src/designSystem.contract.test.ts rechnet
+ * DIE HELFERFUNKTION IST DUPLIZIERT, nicht geteilt (src/designSystem.*.contract.test.ts rechnet
  * dasselbe fuer index.css): Zwei getrennte Testprojekte, und eine geteilte Fassung machte aus
  * einem Rechenfehler an einer Stelle einen gruenen Test an beiden. Der Preis ist ein eigener
  * Selbsttest am bekannten Referenzpaar.
@@ -3159,7 +3159,7 @@ const VARIANTEN_OHNE_SCHRIFTFARBE: { pfad: string; varianten: number; grund: str
  *
  * WCAG 1.4.3/1.4.11 nehmen sie ausdruecklich aus. Die Ausnahme haengt NICHT an einer Namensliste,
  * sondern an der Bedingung, die das Design-System ohnehin fuehrt (`--text-disabled` tritt
- * ausschliesslich als `disabled:`-Variante auf, abgesichert in src/designSystem.contract.test.ts):
+ * ausschliesslich als `disabled:`-Variante auf, abgesichert in src/designSystem.*.contract.test.ts):
  * Schrift `color.text-disabled` UND eine Auspraegung `disabled` in der Kombination.
  */
 const AUSNAHME_SCHRIFT = 'color.text-disabled'

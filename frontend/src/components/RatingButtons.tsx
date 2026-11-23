@@ -17,7 +17,7 @@ import type { IconName } from './ui/icon'
  *
  * DIE BELEGUNG BLEIBT 1 / 2 / 3: Übernommen wird die FORM des Kästchens, nicht die
  * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` -
- * beide können auseinanderlaufen, deshalb prüft `PhotoDetailPage.test.tsx` sie
+ * beide können auseinanderlaufen, deshalb prüft `PhotoDetailPage.*.test.tsx` sie
  * tabellengetrieben gegeneinander.
  *
  * ZIFFERNFARBE IN DER ZUSTANDSFARBE, aber für "Verwerfen" `--danger-text` statt

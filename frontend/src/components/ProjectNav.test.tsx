@@ -218,7 +218,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
        * `border-accent` vollstaendig subsumiert und koennte nie rot werden - ein auf
        * `'border-accent bg-overlay text-accent'` verkuerztes Rezept liesse den Ausloeser ohne
        * gerenderten Rand zurueck (reine Farbaussage, WCAG 1.4.1) und beide Zeilen blieben gruen.
-       * Einen zweiten Waechter gibt es nicht: designSystem.contract.test.ts bindet dieses Literal
+       * Einen zweiten Waechter gibt es nicht: designSystem.*.contract.test.ts bindet dieses Literal
        * bewusst NICHT (ein Symbol-Button ist kein Board-Navigationselement).
        */
       expect(trigger().className).toMatch(/(^|\s)border(\s|$)/)

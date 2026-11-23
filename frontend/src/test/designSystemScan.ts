@@ -49,8 +49,7 @@ function walk(dir: string): string[] {
  * SELBSTAUSSCHLUSS, JE DATEI: Teile des Design-Vertrags, die die gestrichenen Tokens, die alten
  * Hexwerte oder die Suchmuster der Verwendungsregeln als LITERALE tragen (Suchbegriffe,
  * Erwartungstabellen, synthetische Zeilen), sind aus dem Scan ausgenommen - andernfalls fiele der
- * Test ueber seine eigenen Suchmuster. Vor dem Aufteilen war es die EINE Datei
- * `designSystem.contract.test.ts`, die sich selbst ausnahm. Jetzt steht jeder betroffene Teil
+ * Test ueber seine eigenen Suchmuster. Jeder betroffene Teil steht
  * EINZELN hier: ein Glob oder Muster ueber alle Teile stellte auch jede kuenftige Datei still
  * frei und gilt als nicht abgeschlossen. Ein neuer Teil mit Suchmuster-Literalen wird hier
  * ergaenzt, ein Teil ohne Literale nicht - er wird mitgescannt.

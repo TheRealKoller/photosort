@@ -108,7 +108,7 @@ Backend (TDD):
 5. `backend/src/photosort/api/projects.py` — `DELETE /projects/{project_id}`: 404 → 409 (vier Lauftypen) → 400 (`confirm_name`) → Foto-Schlüssel laden → Mengenlöschung + `commit()` → `asyncio.to_thread(delete_cached_variants, ...)` → `INFO`-Logzeile → `204`.
 
 Frontend:
-6. `frontend/src/index.css` + `frontend/src/designSystem.contract.test.ts` — Token `--danger-fg` (Wert `#0B0C10`, kein neuer Farbwert; Token-Liste, Deckkraft-Allowlist und die `text-danger`-Erkennerregel des Vertragstests nachziehen — Details im UI/UX-Abschnitt).
+6. `frontend/src/index.css` + `frontend/src/designSystem.*.contract.test.ts` — Token `--danger-fg` (Wert `#0B0C10`, kein neuer Farbwert; Token-Liste, Deckkraft-Allowlist und die `text-danger`-Erkennerregel des Vertragstests nachziehen — Details im UI/UX-Abschnitt).
 7. `frontend/src/components/ui/button.tsx` — Ausprägung `destructive` (`bg-danger text-danger-fg hover:opacity-85 active:opacity-70`), plus Zeilen in `button.test.tsx`.
 8. `frontend/src/components/ui/dialog.tsx` — optionales `cancelDisabled` (+ Test).
 9. `frontend/src/api/projects.ts` — `deleteProject(id: number, confirmName: string): Promise<void>`.
@@ -193,7 +193,7 @@ Ausprägung: `destructive: 'bg-danger text-danger-fg hover:opacity-85 active:opa
 
 **Kollisionsregel (verbindlich):** gefülltes `--danger` mit dunkler Tinte bei Radius 6px ist **formgleich** mit dem Kennzeichen „Aussortiert" und dem aktiven „Verwerfen"-Eintrag der Bewertungsleiste. `destructive` darf deshalb auf keiner Ansicht stehen, die Bewertungs-Kennzeichen oder die Bewertungsleiste zeigt (Raster, Kuratierung, Einzelbild, Vergleich). Heute kein Konflikt — die Gefahrenzone lebt in den Einstellungen.
 
-**Nachzuziehen in `frontend/src/designSystem.contract.test.ts`** (vier Stellen, die dritte ist die, die sonst still hochgeht):
+**Nachzuziehen in `frontend/src/designSystem.*.contract.test.ts`** (vier Stellen, die dritte ist die, die sonst still hochgeht):
 1. `inkRows` um `{ foreground: '--danger-fg', background: '--danger', threshold: TEXT_THRESHOLD }` ergänzen.
 2. `FOREGROUND_PATTERNS`: `/^--danger(-text)?$/` → `/^--danger(-text|-fg)?$/`. Ohne das entkommt das neue Vordergrund-Token dem Deckungstest komplett — es matcht heute kein einziges Muster.
 3. **Falsch-Positiv, das die Umsetzung sonst blockiert:** die Regel „verwendet `--danger` nie als Fließtextfarbe" prüft `/\btext-danger\b(?!-text)/`. In `text-danger-fg` liegt hinter `danger` eine Wortgrenze und der Lookahead sieht `-fg`, nicht `-text` → **die Regel schlägt auf dem korrekten neuen Token an.** Erkenner auf `/\btext-danger\b(?!-text\b|-fg\b)/` erweitern, mit Kommentar warum.
@@ -297,7 +297,7 @@ Das Setzen des Pragmas ist gemessen worden (1440 grün, ein einziger Fehlschlag,
 
 **Grundelemente:** je eine Zeile in den bestehenden `button.test.tsx`-Matrizen für `destructive`, ein `dialog.test.tsx`-Fall für `cancelDisabled`. Kein neues Testmuster, keine Kosmetikprüfung.
 
-**Design-Vertrag (`designSystem.contract.test.ts`) — der riskanteste Handgriff der Spec.** Die Aufweichung des Erkenners `/\btext-danger\b(?!-text)/` auf `/\btext-danger\b(?!-text\b|-fg\b)/` entschärft eine scharfe Regel. Verbindlich im selben Commit: ein tabellengetriebener Mikrotest des Erkenners mit Muss-Treffern (`text-danger` in einer echten Klassenliste) und Muss-Nicht-Treffern (`text-danger-text`, `text-danger-fg`). Ohne ihn ist nicht mehr unterscheidbar, ob die Regel noch greift oder ob der Lookahead sie stillgelegt hat.
+**Design-Vertrag (`designSystem.*.contract.test.ts`) — der riskanteste Handgriff der Spec.** Die Aufweichung des Erkenners `/\btext-danger\b(?!-text)/` auf `/\btext-danger\b(?!-text\b|-fg\b)/` entschärft eine scharfe Regel. Verbindlich im selben Commit: ein tabellengetriebener Mikrotest des Erkenners mit Muss-Treffern (`text-danger` in einer echten Klassenliste) und Muss-Nicht-Treffern (`text-danger-text`, `text-danger-fg`). Ohne ihn ist nicht mehr unterscheidbar, ob die Regel noch greift oder ob der Lookahead sie stillgelegt hat.
 
 ### E2E (`e2e/`, Playwright)
 

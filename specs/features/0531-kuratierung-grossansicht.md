@@ -134,7 +134,7 @@ Der neue Hook `hooks/useCurationLightbox.ts` wird von beiden Seiten gleich benut
 ### Begleitende Pflege im selben PR
 
 - `docs/architecture.md`: neuer Eintrag zur Großansicht (Komponente, Verlaufseintrag als Öffnungszustand, Fokus-Rückgabe).
-- `frontend/src/designSystem.contract.test.ts`: Freigabeeintrag für die Abdunklung des neuen `<dialog>`, nach dem Vorbild des Eintrags für `ui/dialog.tsx`. Der Wert kommt aus dem Entwurf (Lücke `abdunklung`).
+- `frontend/src/designSystem.*.contract.test.ts`: Freigabeeintrag für die Abdunklung des neuen `<dialog>`, nach dem Vorbild des Eintrags für `ui/dialog.tsx`. Der Wert kommt aus dem Entwurf (Lücke `abdunklung`).
 - `frontend/src/photoDetail.structure.test.ts`: Die Prüfung, ob `eventPlaceName` importiert wird, zieht von `pages/PhotoDetailPage.tsx` auf `components/PhotoCaptureFacts.tsx` um.
 - `design/penpot/views.json`: `src/components/CurationLightbox.tsx` in `kuratierung-grossansicht.produktdateien` aufnehmen.
 
@@ -423,7 +423,7 @@ Fokusfalle, Scroll-Sperre und die Absprache zwischen Esc und `cancel` werden **n
 - Die Entscheidungs- und Alternativenflächen rufen `onOpenLarge` nicht.
 - Der Auslöser ist das erste tabbare Element der Kachel; `largeTriggerRef` erhält den Button.
 
-**Erweitert: Seitentests** (`AlbumDraftPage.test.tsx`, `AlbumSelectionPage.test.tsx`; `MemoryRouter` mit einer Stub-Route vor der Seite als Verlaufssonde)
+**Erweitert: Seitentests** (`AlbumDraftPage.*.test.tsx`, `AlbumSelectionPage.test.tsx`; `MemoryRouter` mit einer Stub-Route vor der Seite als Verlaufssonde)
 
 - Öffnen über `fireEvent.click`, **nicht** `userEvent.click`: Das bildet Safari nach, das einen angeklickten Button nicht fokussiert. Eine Rückgabe über das vorher fokussierte Element wäre damit rot.
 - Für jeden der vier Schließwege (Browser-Zurück über `navigate(-1)` aus der Sonde): Dialog weg, Fokus auf dem Auslöser, Zahl der API-Aufrufe unverändert (keine Neumontierung, keine Neuladung), keine Mutation.
@@ -449,7 +449,7 @@ Dazu kommen die Regeln des Testkonzepts: exakte Kardinalität, eine Vorbedingung
 **Strukturwächter und Design-Vertrag**
 
 - `albumSelection.structure.test.ts`: `components/CurationLightbox.tsx` kommt in `DRAFT_FILES` (nennt keines der drei Endauswahl-Felder) **und** in `SELECTION_FILES` (importiert `isInAlbum` nicht). Beide Seiten montieren die Komponente, und die Architektur sagt genau das zu.
-- `designSystem.contract.test.ts`: `COLOR_OPACITY_ALLOWLIST` bekommt einen Eintrag `CurationLightbox.tsx`/`backdrop:bg-bg/72`. Die Bilddämpfungsregel greift ohne Zutun, weil die Datei `PhotoImage` nennt, und muss ohne Ausnahme grün bleiben. Braucht `container-type: size` eine willkürliche Tailwind-Klasse, ist das ein eigener, begründeter Eintrag in `ARBITRARY_VALUE_ALLOWLIST`.
+- `designSystem.*.contract.test.ts`: `COLOR_OPACITY_ALLOWLIST` bekommt einen Eintrag `CurationLightbox.tsx`/`backdrop:bg-bg/72`. Die Bilddämpfungsregel greift ohne Zutun, weil die Datei `PhotoImage` nennt, und muss ohne Ausnahme grün bleiben. Braucht `container-type: size` eine willkürliche Tailwind-Klasse, ist das ein eigener, begründeter Eintrag in `ARBITRARY_VALUE_ALLOWLIST`.
 
 ### Wichtigste Edge Cases
 
@@ -476,13 +476,13 @@ Dazu kommen die Regeln des Testkonzepts: exakte Kardinalität, eine Vorbedingung
 - **`photoDetail.structure.test.ts`:** Im Fall „lässt beide Aufrufstellen die Funktion importieren“ wird für `eventPlaceName` die Datei `components/PhotoCaptureFacts.tsx` gelesen statt `pages/PhotoDetailPage.tsx`. Die übrigen Fälle bleiben unverändert und werden damit zum Wächter: Die Großansicht nutzt `CriterionScoreGrid`, **nicht** `CriterionDetailsList` (die Aufrufmenge bleibt `['components/CriterionDetailsPopover.tsx']`), und `PhotoCaptureFacts` liest `landmark_name` nicht selbst.
 - **`components/SelectionPhotoTile.test.tsx`:** Die Zeilen 150 und 158 (`getAllByRole('button')).toHaveLength(1)`) und die Schleife in Zeile 184 (`tap-target` und kein `h-11` an **jedem** Button) werden auf die Entscheidungsflächen eingegrenzt. Der Bild-Auslöser ist eine zusätzliche Schaltfläche und braucht keine Aufspannung. Voraussetzung: `onOpenLarge` und `largeTriggerRef` sind an beiden Kacheln **Pflicht**-Props, weil beide Produktivaufrufer sie immer übergeben. Optionale Props ließen die Kacheltests an der Wirklichkeit vorbeiprüfen.
 - **`albumSelection.structure.test.ts`:** Die beiden Dateilisten werden erweitert (siehe oben).
-- **`designSystem.contract.test.ts`:** ein Freigabeeintrag (siehe oben).
+- **`designSystem.*.contract.test.ts`:** ein Freigabeeintrag (siehe oben).
 - **`e2e/tests/toolchain.spec.ts`:** neuer Eintrag in `beidbreitig`. **`e2e/tests/tap-targets.spec.ts`:** Ergänzung.
 
 **Nachweis ohne Rot-Grün** (Testkonzept, bereichsübergreifend) für die verhaltensneutralen Schritte 1 und 3 der Reihenfolge:
 
 - Das Herauslösen von `useModalDialog` hat **keinen** Diff in `ui/dialog.test.tsx`, `DeleteProjectDialog.test.tsx`, `CameraTimeOffsetDialog.test.tsx`, `DraftAlternativesDialog.test.tsx` und `ProjectSettingsPage.test.tsx`.
-- Das Herauslösen von `PhotoCaptureFacts` und der Motiv-Ableitung hat keinen Diff in `PhotoDetailPage.test.tsx` und `MotifStrengthSection.test.tsx`.
+- Das Herauslösen von `PhotoCaptureFacts` und der Motiv-Ableitung hat keinen Diff in `PhotoDetailPage.*.test.tsx` und `MotifStrengthSection.test.tsx`.
 - In beiden Fällen bleibt die Menge der Testknoten gleich, mit gleichem Ausgang. Einzige angekündigte Ausnahme ist der eine Pfad in `photoDetail.structure.test.ts`.
 
 **Unberührt und bleiben grün:** `photoGridTile.structure.test.ts` (`PhotoCard` behält genau die beiden Kachel-Aufrufer), `no-horizontal-scroll`, `popover-position`, `bilddetail-buehne` und die übrigen E2E-Specs.

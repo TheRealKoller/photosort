@@ -4,7 +4,7 @@
  * GERENDERT WIRD UEBER DIE PROJEKTEIGENE `Icon`-KOMPONENTE, nicht ueber einen Direktzugriff auf
  * `lucide-react`. Zwei Gruende: Erstens bleibt gueltig, dass `icon.tsx` die einzige Datei im
  * Projekt ist, die aus dem Paket importieren darf (statisch erzwungen in
- * src/designSystem.contract.test.ts - dessen Suchraum endet allerdings bei `src/**`, weshalb
+ * src/designSystem.*.contract.test.ts - dessen Suchraum endet allerdings bei `src/**`, weshalb
  * `icons.test.ts` die Regel fuer diese Datei eigenstaendig wiederholt). Zweitens sind die
  * Penpot-Symbole dadurch nachweislich genau die, die das Produkt zeichnet, samt zentral gesetzter
  * Strichstaerke 2 und `currentColor`; ein zweiter Bezugsweg koennte davon abweichen, ohne dass es

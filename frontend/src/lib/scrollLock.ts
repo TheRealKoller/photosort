@@ -51,7 +51,7 @@ export function lockBodyScroll(): () => void {
  * naechste Testdatei leckt.
  *
  * Die DOM-Pruefung ist noetig, weil `setupTests.ts` auch fuer die Testdatei mit der Umgebung
- * `node` (designSystem.contract.test.ts) laeuft - dort gibt es kein `document`.
+ * `node` (designSystem.*.contract.test.ts) laeuft - dort gibt es kein `document`.
  */
 export function resetBodyScrollLock(): void {
   lockCount = 0

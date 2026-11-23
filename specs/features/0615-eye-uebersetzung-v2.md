@@ -111,7 +111,7 @@ Alle Eye-Tests laufen mit synthetischen `toJSON()`-Payloads und Fake-Eye-Client.
   Downgrade entfernt die Spalte.
 - **API/Prüfpfad:** `eye_result.mapping_version` gesetzt (`test_api_photos_*.py`); Prüfoptionen
   listen v1 und v2; Eye-Seite ohne Fassung wirft `EyeMappingError`.
-- **Frontend (`PhotoDetailPage.test.tsx`):** Band nennt „Übersetzung eye-4.2.3/v2“ bzw. v1, in
+- **Frontend (`PhotoDetailPage.*.test.tsx`):** Band nennt „Übersetzung eye-4.2.3/v2“ bzw. v1, in
   der Reihenfolge Modellrevision, Übersetzung, Zeitpunkt.
 - **Regression:** bestehende Cloud-, Album- und Isolationstests bleiben grün.
 - **Anzupassen:** Pins von `MAPPING_VERSION`, `len(excluded_types)` (auf v1), Pin-Vergleich über

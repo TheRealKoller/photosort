@@ -1,10 +1,11 @@
+import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import * as overviewApi from '../api/projectOverview'
 import { clearToken, setToken } from '../auth/token'
 import { overviewSeenQueryKey, useMarkOverviewSeen, useOverviewSeen } from './useOverviewSeen'
-import { queryWrapper, makeQueryClient } from '../test/render'
+import { queryWrapper } from '../test/render'
 
 vi.mock('../api/projectOverview')
 
@@ -16,7 +17,7 @@ function tokenFor(username: string): string {
 
 /** Bewusst OHNE Vorgaben: Der Test-Standard des Projekts setzt `retry: false` bereits - ein im
  * Hook vergessenes `retry: false` fiele damit nicht auf. */
-function makeWrapper(queryClient = makeQueryClient()) {
+function makeWrapper(queryClient = new QueryClient()) {
   return {
     queryClient,
     wrapper: queryWrapper(queryClient),

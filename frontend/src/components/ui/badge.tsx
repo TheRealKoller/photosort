@@ -18,7 +18,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * Template-String) - Tailwind erkennt Utility-Klassen nur als statische, vollstaendige Strings im
  * Quellcode; dynamisch zusammengesetzte Klassennamen wie `bg-${color}` wuerden vom Production-
  * Build-Scan uebersehen und fielen im gebauten CSS ganz weg. Statisch erzwungen in
- * src/designSystem.contract.test.ts.
+ * src/designSystem.*.contract.test.ts.
  *
  * SOLID: Board-Bewertungs-Badge - voll gefuellte Flaeche mit DUNKLER TINTE. Jeder Bewertungston
  * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen zwar alle denselben

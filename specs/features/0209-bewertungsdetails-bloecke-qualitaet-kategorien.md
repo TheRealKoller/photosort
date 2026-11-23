@@ -86,7 +86,7 @@ Alle Interaktionen (Kandidat "Übernehmen"/"Zurücksetzen", `pendingOverrideKey`
 - `backend/src/photosort/api/photos.py` — `CriterionScoreOut` um `category_eligible` erweitert, `_criterion_scores_out` befüllt es aus `CRITERIA_REGISTRY`.
 - `frontend/src/api/types.ts` — `CriterionScoreOut` um `category_eligible: boolean`.
 - `frontend/src/components/CriterionDetailsList.tsx` — Umstrukturierung in zwei beschriftete Blöcke plus unveränderten dritten Ausschuss-Bereich.
-- Tests: `backend/tests/test_api_photos_*.py`, `frontend/src/components/CriterionDetailsList.test.tsx`, `frontend/src/components/CriterionDetailsPopover.test.tsx`, `frontend/src/pages/PhotoDetailPage.test.tsx`, `frontend/src/pages/PhotoGridPage.test.tsx`, `frontend/src/pages/CurateCategoriesPage.test.tsx` (die letzten beiden nur Fixture-Anpassung).
+- Tests: `backend/tests/test_api_photos_*.py`, `frontend/src/components/CriterionDetailsList.test.tsx`, `frontend/src/components/CriterionDetailsPopover.test.tsx`, `frontend/src/pages/PhotoDetailPage.*.test.tsx`, `frontend/src/pages/PhotoGridPage.test.tsx`, `frontend/src/pages/CurateCategoriesPage.test.tsx` (die letzten beiden nur Fixture-Anpassung).
 
 ### ADR-Bewertung
 
@@ -116,7 +116,7 @@ Das Feature hat eine sichtbare Oberfläche an zwei Stellen (Info-Popover in Grid
 
 **Frontend Unit (`CriterionDetailsList.test.tsx`, Schwerpunkt):** Die Blockbildung wird vollständig hier abgedeckt. Block-Zugehörigkeit immer positiv **und** negativ prüfen (`within(blockA).getByText` plus `within(blockB).queryByText → not.toBeInTheDocument`) sowie eine Partitions-Assertion (Vereinigung beider Blöcke == Eingabeliste). "Text existiert irgendwo im DOM" ist für ein Gliederungsfeature keine gültige Assertion. Generierte IDs nie als Wert asserten, sondern auflösen (`aria-labelledby` → `getElementById` → Textvergleich); dazu ein Kollisionstest mit zwei Instanzen im selben Render. Reihenfolge-Erhalt nur mit bewusst verschränkter Eingabe testen.
 
-**Frontend Oberflächennachweis (je genau eine Assertion, keine Logik-Dopplung):** `CriterionDetailsPopover.test.tsx` (beide `<h3>` im geöffneten Popover) und `PhotoDetailPage.test.tsx` (beide `<h3>` in der permanenten Sektion) — damit ist Akzeptanzkriterium 1 an beiden geforderten Oberflächen belegt. `PhotoGridPage.test.tsx`/`CurateCategoriesPage.test.tsx` bekommen nur ein Fixture-Update, keinen neuen Test (sie mounten dasselbe Popover).
+**Frontend Oberflächennachweis (je genau eine Assertion, keine Logik-Dopplung):** `CriterionDetailsPopover.test.tsx` (beide `<h3>` im geöffneten Popover) und `PhotoDetailPage.*.test.tsx` (beide `<h3>` in der permanenten Sektion) — damit ist Akzeptanzkriterium 1 an beiden geforderten Oberflächen belegt. `PhotoGridPage.test.tsx`/`CurateCategoriesPage.test.tsx` bekommen nur ein Fixture-Update, keinen neuen Test (sie mounten dasselbe Popover).
 
 **Regressionsabsicherung für Akzeptanzkriterium 6:** Die Absicherung ist die Unveränderlichkeit der bestehenden Interaktionstests (`CriterionDetailsList.test.tsx`, `useCategoryOverrideControls.test.tsx`, Override-Tests der drei Seiten). Review-Regel für den Diff: in diesen Dateien darf nichts außer der `criterionScore()`-Factory angefasst werden. Ein zusätzlicher Test sichert die neue Verschachtelung: Kandidaten-Gruppe und "Rang" liegen innerhalb des Kategorien-Blocks, und "Übernehmen" funktioniert von dort aus unverändert.
 

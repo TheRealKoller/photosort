@@ -57,7 +57,7 @@ gibt keine neue Technologie, keine neue Abhängigkeit und keine neue Datenstrukt
 | `frontend/src/components/DuplicatePhotoTile.tsx` (+ Test) | neue Props `imageWidth`/`imageHeight`; Bildfläche mit gerechneten Maßen und `object-contain`; Kachelbreite = Bildbreite + Rand; `aspect-square` und `object-cover` fallen weg |
 | `frontend/src/pages/DuplicateComparePage.tsx` (+ Test) | `useElementWidth` an der Liste; `grid grid-cols-*` wird zu `flex w-full flex-wrap items-start gap-3`; Platzhalter in derselben Geometrie |
 | `frontend/src/components/DuplicateEnlargedView.tsx` (+ Test) | Streifen: `size-16 sm:size-20` + `object-cover` werden zu `h-16 sm:h-20` + `aspect-ratio` + `min-w-11 max-w-full` + `object-contain` |
-| `frontend/src/designSystem.contract.test.ts` | die drei Dateien in die Regel „kein `object-cover`/`aspect-square`/`grid-cols-`“ und in die Kopplung `gap-3` ↔ `GRID_GAP_PX` aufnehmen |
+| `frontend/src/designSystem.*.contract.test.ts` | die drei Dateien in die Regel „kein `object-cover`/`aspect-square`/`grid-cols-`“ und in die Kopplung `gap-3` ↔ `GRID_GAP_PX` aufnehmen |
 | `e2e/tests/grid-columns.spec.ts` | den Duplikat-Fall (feste Spaltenzahl 2/3, gleiche Breiten) durch die Zusagen des justierten Rasters ersetzen |
 | `e2e/tests/duplikat-vergleich.spec.ts` | Streifen: gleiche Höhe je Reihe, ≥ 44×44, kein Beschnitt (Kastenverhältnis gegen `naturalWidth/naturalHeight`) |
 | `e2e/tests/no-horizontal-scroll.spec.ts` | nur den Kommentar „zwei Spalten“ anpassen, die Messung bleibt |
@@ -255,7 +255,7 @@ Bild-`button` mit `style = {width, height}`).
   - Jeder Streifenknopf trägt `h-16 sm:h-20 min-w-11 max-w-full` und `aspectRatio` als bereinigte Zahl: Aus einem `null`-Verhältnis wird 1,5, nie `NaN`, nie eine Zeichenkette.
   - Das Bild trägt `object-contain`.
   - Der bestehende Fall zu Name und `aria-current` bleibt wörtlich (AK9), dazu `border-text-h` am aktuellen und `border-transparent` an den übrigen Knöpfen.
-- Vertrag (`designSystem.contract.test.ts`):
+- Vertrag (`designSystem.*.contract.test.ts`):
   - Die drei Dateien kommen in die Regel „kein `object-cover`/`aspect-square`/`grid-cols-`“.
   - Kopplung `gap-3` ↔ `GRID_GAP_PX` an der Duplikatliste.
   - **Neue Kopplung** `DUPLICATE_TILE_INSET_X_PX` = 20 ↔ `px-2` an allen Breiten plus `border-2`: Ein `sm:px-3` an der Kachel muss rot werden.

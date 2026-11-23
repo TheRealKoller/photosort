@@ -701,7 +701,7 @@ sondern für die heutige Suite praktisch unsichtbar — das ist die Begründung 
 true* — ein Test, der grün bleibt und nichts mehr prüft, ist schlimmer als ein gebrochener; er
 muss aktiv auf das neue Maß umgezogen werden.
 
-### Neue Ebene: `frontend/src/designSystem.contract.test.ts` (vitest, Umgebung `node`)
+### Neue Ebene: `frontend/src/designSystem.*.contract.test.ts` (vitest, Umgebung `node`)
 
 1. **Kontrastmatrix.** Werte ausschließlich aus `index.css`; Schwelle (4,5 / 3,0),
    WCAG-Luminanzformel und Vordergrund/Untergrund-Paarung sind die unabhängigen Sollgrößen im

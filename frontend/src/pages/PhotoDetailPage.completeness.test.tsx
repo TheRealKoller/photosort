@@ -315,7 +315,7 @@ describe('PhotoDetailPage: der Ort (S2)', () => {
   /* S5 — DER NACHWEIS GEHÖRT AN DIE RENDERSTELLE, nicht in den Test der Funktion: Dass
      `eventPlaceName` nichts interpretiert, sagt nichts darüber, was das Markup daraus macht.
      Beide Felder tragen S1, und der Ort ist auf dieser Route ERSTKONTAKT - der bestehende Nachweis
-     in `AlbumDraftPage.test.tsx` trägt hier nicht. */
+     in `AlbumDraftPage.*.test.tsx` trägt hier nicht. */
   it.each([
     {
       name: 'landmark_name',

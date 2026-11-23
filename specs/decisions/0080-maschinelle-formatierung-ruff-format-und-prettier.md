@@ -215,7 +215,7 @@ Nach dieser Entscheidung gibt es **keinen** handgeschriebenen Quelltextbaum des 
 
 ### 10. Die einzige inhaltliche Anpassung, die die Formatierung erzwingt
 
-`frontend/src/designSystem.contract.test.ts` führt Freigabelisten, deren Einträge **wörtliche Ausschnitte aus Quellzeilen** sind. Ein Eintrag spannt über eine Quellzeile, die heute 110 Zeichen lang ist:
+`frontend/src/designSystem.*.contract.test.ts` führt Freigabelisten, deren Einträge **wörtliche Ausschnitte aus Quellzeilen** sind. Ein Eintrag spannt über eine Quellzeile, die heute 110 Zeichen lang ist:
 
 ```
 snippet: "aspect-square overflow-hidden rounded-md', isRejected && 'opacity-40'"

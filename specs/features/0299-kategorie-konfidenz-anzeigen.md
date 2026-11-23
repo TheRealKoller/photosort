@@ -158,7 +158,7 @@ Die Leertexte des aktiven Filters unterscheiden sich vom Erschöpfungshinweis (�
 
 **Zustände.** Laden über die bestehenden Skeleton-Platzhalter, keine neuen Ladezustände. Fehlende Zahl: leer, siehe oben. Leerer Filter: eigener Text je Gruppe. Leere Statistik: Kategoriename ohne Wert.
 
-**Barrierefreiheit.** Die Prozentzahl ist eigener Textknoten neben dem Kategorienamen und wird als „Landschaft 78 Prozent" vorgelesen; begleitende Icons tragen `aria-hidden="true"`. `--text-muted` erreicht gegen alle vier Flächen mindestens 3:1 (nachgerechnet in `frontend/src/designSystem.contract.test.ts`) — die Zahl sitzt auf derselben Fläche wie der Kategoriename, es entsteht kein neuer Kontrastfall.
+**Barrierefreiheit.** Die Prozentzahl ist eigener Textknoten neben dem Kategorienamen und wird als „Landschaft 78 Prozent" vorgelesen; begleitende Icons tragen `aria-hidden="true"`. `--text-muted` erreicht gegen alle vier Flächen mindestens 3:1 (nachgerechnet in `frontend/src/designSystem.*.contract.test.ts`) — die Zahl sitzt auf derselben Fläche wie der Kategoriename, es entsteht kein neuer Kontrastfall.
 
 **Responsivität.** Der Kategoriename bleibt einzeilig, die Zahl sitzt rechts in derselben Zeile; die vier zusätzlichen Zeichen passen auch in der Grid-Kachel bei 360 px ohne Umbruch.
 

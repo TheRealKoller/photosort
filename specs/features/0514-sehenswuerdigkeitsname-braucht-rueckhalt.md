@@ -255,7 +255,7 @@ damit an einer Umbruchstelle.
 
 **Design-System nicht berührt — keine Ergänzung nötig.** Kein neues Token, keine neue Farb-, Typo-,
 Abstands- oder Radiusentscheidung, kein neuer Baustein, keine neue Interaktion. Die
-Überschriftenleiter bleibt unangetastet, `designSystem.contract.test.ts` wird nicht getroffen. Die
+Überschriftenleiter bleibt unangetastet, `designSystem.*.contract.test.ts` wird nicht getroffen. Die
 Design-Quelle (Penpot) und der Entwurfsweg sind nicht betroffen.
 
 Die beiden Teile bleiben **gleichrangig ausgezeichnet** (ein Textknoten, kein zweiter Schnitt, kein
@@ -343,7 +343,7 @@ wird. Schwellwert-Fälle werden aus dem Symbol gebaut (`Fraction.numerator`/`.de
 | Backend Integration (Request-Pfad) | `test_worker_place_names.py` | `rebuild_run_grouping`: geänderte Schwelle wirkt, keine Erkennung, Detektionszeilen unverändert |
 | Messkommando (rein) | `test_place_probe.py`, `test_event_probe.py` | Block D: überlappende Partition; Block C3: benannte Events, kleinster Trägeranteil, Events unter der Schwelle |
 | Frontend Unit (`vitest`) | `timeOfDay.test.ts` | `eventPlaceName`: vier Ausgänge; `formatEventHeading` unverändert |
-| Frontend Renderstelle | `DraftAlternativesDialog.test.tsx`, `AlbumDraftPage.test.tsx` | kombinierte Form als **ein** Textknoten, auch bei feindlichem Inhalt in beiden Feldern |
+| Frontend Renderstelle | `DraftAlternativesDialog.test.tsx`, `AlbumDraftPage.*.test.tsx` | kombinierte Form als **ein** Textknoten, auch bei feindlichem Inhalt in beiden Feldern |
 | Strukturwächter | `photoDetail.structure.test.ts` | bleibt **unverändert** gültig |
 | Nicht | — | kein neuer E2E-Fall; kein Netz; kein echter Landmark-Client |
 

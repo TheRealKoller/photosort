@@ -1,3 +1,4 @@
+import { QueryClient } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
@@ -80,7 +81,7 @@ function BackButton() {
 
 function renderHost(
   projectIdParam = '1',
-  { queryClient = makeQueryClient(), path = '/projects/1/photos/5' } = {},
+  { queryClient = new QueryClient(), path = '/projects/1/photos/5' } = {},
 ) {
   const wrapper = queryWrapper(queryClient)
   return render(

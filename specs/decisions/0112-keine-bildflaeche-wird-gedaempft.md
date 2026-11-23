@@ -47,7 +47,7 @@ Deckkraft statisch nicht nachrechenbar. Die Regel wird ausdrücklich **nicht** m
 
 ### 4. Drei Wächter, und nur der erste kennt eine besetzte Freigabeliste
 
-Punkt 1 hängt an `frontend/src/designSystem.contract.test.ts`:
+Punkt 1 hängt an `frontend/src/designSystem.*.contract.test.ts`:
 
 - Die bestehende fundstellengenaue `opacity-*`-Regel behält ihre Freigabeliste. Deren Einträge sind
   ab hier ausschließlich **Zustände von Bedienelementen** (deaktiviert, überfahren, gedrückt); die

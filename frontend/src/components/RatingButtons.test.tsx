@@ -138,7 +138,7 @@ describe('RatingButtons', () => {
 
   it('keeps the key assignment 1 / 2 / 3 in the order favorite, album, reject', () => {
     // Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` - beide koennen auseinander
-    // laufen, deshalb prueft `PhotoDetailPage.test.tsx` sie tabellengetrieben gegeneinander.
+    // laufen, deshalb prueft `PhotoDetailPage.*.test.tsx` sie tabellengetrieben gegeneinander.
     renderBar()
 
     const boxes = within(screen.getByRole('group', { name: 'Bewertung' }))

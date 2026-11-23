@@ -745,7 +745,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - `SelectionPhotoTile`: Haltungstabelle mit 4 Zeilen, „Nicht im Entwurf“ in **einem** Fall mit beiden Datenformen.
   - ~~`DraftAlternativesDialog`: „Gestrichen“, „Tauschen: {Pfad}“.~~ *(Dialog entfernt mit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md); dieselben Fälle in `DraftAlternativesBand.test.tsx`)*
   - Keine CSS-Assertions; Geometrie gehört nach E2E.
-- **Seite `AlbumDraftPage.test.tsx`:**
+- **Seite `AlbumDraftPage.*.test.tsx`:**
   - Verdrahtung von Kopf, Position und Abschluss (Observer-Attrappe mit Meldung je Element).
   - Streichen und Rückgängig aus beiden Vorzuständen (`DELETE` bzw. `PUT album_worthy`).
   - **Ein Fall:** Rückgängig gegen Wiederaufnehmen am vorgeschlagenen Foto mit eigenem `album_worthy`.
@@ -757,7 +757,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - Leerzustand und Vorrang der Cloud-Freigabe; Großansicht-Sonde unverändert.
 - **Wächter:**
   - `albumSelection.structure.test.ts`: die neuen Entwurfsdateien kommen in `DRAFT_FILES`. Die Endauswahl-Dateien importieren zusätzlich `draftMembership` nicht.
-  - `designSystem.contract.test.ts`: Freigabeliste für `h-11` mit neuen Fundstellen (Kachel, Band, Panel, Gestrichen-Liste).
+  - `designSystem.*.contract.test.ts`: Freigabeliste für `h-11` mit neuen Fundstellen (Kachel, Band, Panel, Gestrichen-Liste).
 
 ### E2E (Playwright, 360 px und Desktop)
 
@@ -799,7 +799,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - Den Mock in `useDeleteRatingMutation` auf `RatingWriteOut` umstellen.
   - `applyWrittenRating` auf `AlbumDraftOut` umstellen.
   - Den Kommentar in `useDraftExchangeMutation` „ersetztes Bild bleibt an seiner Stelle“ ändern: Es bleibt im Cache, die Ansicht blendet es aus.
-- `AlbumDraftPage.test.tsx`:
+- `AlbumDraftPage.*.test.tsx`:
   - Alle `listPhotos`-Mocks werden zu `getAlbumDraft` mit `events`.
   - `strikes a photo without reloading … without moving the tiles` **umschreiben**: Kachel weg, Reihenfolge der übrigen gleich.
   - `takes a struck photo back` geht jetzt über die Gestrichen-Zeile.
@@ -822,7 +822,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - Kommentar „gestrichenes Bild bleibt sichtbar“ in `leaves out the motifs of a struck photo` ändern.
   - `isInAlbum` nur behalten, wenn es noch Aufrufer hat; sonst mit Tests entfernen.
 - `PersonsPage.test.tsx` Z. 230: Cache-Fixture auf `{events: [], items: []}` umstellen.
-- `designSystem.contract.test.ts`: Fundstelle `CurationPhotoTile` `h-11 flex-1 sm:h-8` nachziehen, die neuen Fundstellen aufnehmen.
+- `designSystem.*.contract.test.ts`: Fundstelle `CurationPhotoTile` `h-11 flex-1 sm:h-8` nachziehen, die neuen Fundstellen aufnehmen.
 - Unverändert grün bleiben müssen, ohne angepasste Erwartung: `RatingBadge`/`RatingButtons` (Bildbestand).
 
 **E2E**

@@ -510,7 +510,7 @@ Literale Fixture-Tabelle aus `CriterionScoringRunSummary`-Objekten; beide `cloud
 - **Test-Migrationskarte:** der Block `describe('Teilschritt-Fortschritt')` (heute Zeilen 309–372) wandert nach `ClassificationProgress.test.tsx`; im Container bleibt je ein schlanker Wiring-Nachweis. Die Blöcke „ein Auslöser", „Cloud-Nutzung pro Durchlauf", „Fehlerverhalten und Herkunft des Ergebnisses" und „Feinlabel-Häufigkeiten" bleiben **unverändert** im Container — sie prüfen den Auslöser, der sich laut Spec nicht ändert.
 - `hooks/useProjects.test.tsx`: `keeps polling while the last remote category classification run is running` entfällt mit dem Feld. Nachfolger im selben Commit: `test_keeps_polling_during_the_remote_phase_of_a_classification_run` (`last_criterion_scoring_run.status === 'running'`, `phase === 'remote_categories'`) — die Frage bleibt gestellt, nur an der Zeile, die sie ab jetzt beantwortet.
 - `api/types.ts`: das Feld wird **zuerst** im Typ gelöscht; die `tsc`-Fehlerliste ist die vollständige Fundstellenliste der ~15 Testfabriken. Alle neuen Felder werden pflichtig (`| null`, kein `?`) typisiert, damit eine Auslassung ein Typfehler ist.
-- `designSystem.contract.test.ts` läuft automatisch über die drei neuen Dateien; braucht eine Regel eine Freigabe, ist sie **fundstellengenau** einzutragen, nie dateiweise.
+- `designSystem.*.contract.test.ts` läuft automatisch über die drei neuen Dateien; braucht eine Regel eine Freigabe, ist sie **fundstellengenau** einzutragen, nie dateiweise.
 
 **F6 — E2E**
 

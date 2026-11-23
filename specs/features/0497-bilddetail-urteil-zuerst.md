@@ -67,7 +67,7 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
 - [x] **AK7 — Der reservierte Platz erklärt die Bedienung.** Solange kein Motiv aufgeklappt ist,
       steht dort der Aufforderungssatz statt einer leeren Fläche. Beide Zustände trägt **derselbe**
       Container — das ist die Bauform, die die Reservierung möglich macht.
-- [x] **AK8 — Bedienelemente vor Information.** Die Soll-Folge in `PhotoDetailPage.test.tsx`
+- [x] **AK8 — Bedienelemente vor Information.** Die Soll-Folge in `PhotoDetailPage.*.test.tsx`
       („Reihenfolge: Bedienelemente zuerst") wird um die neuen Abschnitts-Handles erweitert und
       bleibt **eine** Liste in **einem** `toEqual`.
 - [x] **AK9 — Gleiche Lesereihenfolge, kein Querscrollen.**
@@ -137,7 +137,7 @@ Höhe festgelegt und damit auf Telefonbreite von selbst höhengeführt. Keine Mi
 Fotofläche: bei einem sehr flachen Fenster schrumpft das Bild, statt die Bedienleiste
 hinauszuschieben. Keine in JavaScript gemessene Höhe und kein gerechneter Wert in einem Inline-Stil.
 
-Der willkürliche Wert ist im Design-Vertrag freigabepflichtig: In `designSystem.contract.test.ts`
+Der willkürliche Wert ist im Design-Vertrag freigabepflichtig: In `designSystem.*.contract.test.ts`
 entfällt der Eintrag `aspect-[4/3] w-full` für `src/pages/PhotoDetailPage.tsx` (eine verwaiste
 Freigabe ist rot) und kommt ein Eintrag für die Bühnenhöhe in `src/components/PhotoDetailStage.tsx`
 hinzu. Weist der Vertrag die Klasse zurück, ist der Ausweg **weder** eine in JavaScript gemessene
@@ -362,10 +362,10 @@ Kein Backend-Anteil, also keine `pytest`-Zeile und kein Einfluss auf `--cov-fail
 - **Sicherheit:** die Regressionsfälle aus S5.
 
 **Regressionsnachweis mit Zahl.** Gemessene Ausgangslage vor der Umsetzung:
-`PhotoDetailPage.test.tsx` 54, `MotifStrengthSection.test.tsx` 84, `CriterionDetailsList.test.tsx`
+`PhotoDetailPage.*.test.tsx` 54, `MotifStrengthSection.test.tsx` 84, `CriterionDetailsList.test.tsx`
 32, `CriterionDetailsPopover.test.tsx` 26 — zusammen 196 grüne Fälle. Für die drei
 Komponentendateien gilt: kein geänderter Bestandsfall, neue Fälle nur in neuen `describe`-Blöcken;
-ein Diff an einem Bestandsfall ist ein begründungspflichtiger Review-Befund. `PhotoDetailPage.test.tsx`
+ein Diff an einem Bestandsfall ist ein begründungspflichtiger Review-Befund. `PhotoDetailPage.*.test.tsx`
 wird umgebaut — dort bleibt die **Menge der geprüften Verhaltensweisen** vollständig, Fälle dürfen in
 die neuen Komponentendateien umziehen, aber keiner verschwindet ersatzlos.
 
@@ -443,7 +443,7 @@ Bereichs, je Zustandswechsel der Nachweis, dass er stattgefunden hat); ein dritt
   Kriterium „alle heute vorhandenen Angaben … Ort" ist an dieser Stelle sachlich falsch. Der Ort
   wird trotzdem gezeigt — die Absicht des Kriteriums ist eindeutig —, aber als Neuzugang behandelt:
   mit eigenem XSS-Nachweis an der neuen Renderstelle (S2), nicht unter Berufung auf den bestehenden
-  Nachweis in `AlbumDraftPage.test.tsx`.
+  Nachweis in `AlbumDraftPage.*.test.tsx`.
 - **Schwelle für AK5 ist 1,4** — `text-lg` gegen `text-sm` ergibt 1,43. Die Schwelle steht als
   Produktzusage in der Spec, nicht im Test.
 - **`CriterionDetailsList` bleibt bestehen**, statt für beide Stellen parametrisiert zu werden: Der

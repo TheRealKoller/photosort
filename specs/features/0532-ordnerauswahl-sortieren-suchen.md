@@ -112,7 +112,7 @@ Neue Datei `frontend/src/utils/folderListing.ts` mit Test daneben. Die Funktion 
 - **Sortierung:** `useState<FolderSort>` in `FolderBrowser`. Die Komponente bleibt auf `ProjectCreatePage` über alle Wechsel von `value` hinweg gemountet, deshalb überdauert die Sortierung jeden Ordnerwechsel. Sie wird nicht gespeichert und beginnt beim erneuten Öffnen der Seite wieder mit `name_asc`.
 - **Suchbegriff:** gehört zu einer internen Ebenen-Komponente in `FolderBrowser.tsx` mit Suchfeld, Liste und Leer-/Kein-Treffer-Zustand. Sie wird mit `key={value}` gerendert. Jede Änderung von `value` (Zeile, Brotkrume, Elternseite) mountet sie neu und leert den Begriff. Invariante: Ein Begriff taucht auch bei der Rückkehr auf eine früher durchsuchte Ebene nicht wieder auf.
 - Weder Sortierung noch Suche rufen `onChange` auf. `value` ändert sich nur durch Navigation.
-- `FolderCountIndicator` und der Spinner bleiben in `FolderBrowser.tsx`, weil `designSystem.contract.test.ts` den Spinner-Ausschnitt dort festschreibt. Zähler werden weiter per Pfad aus der ungefilterten Zählerantwort gelesen; der Filter berührt sie nicht.
+- `FolderCountIndicator` und der Spinner bleiben in `FolderBrowser.tsx`, weil `designSystem.*.contract.test.ts` den Spinner-Ausschnitt dort festschreibt. Zähler werden weiter per Pfad aus der ungefilterten Zählerantwort gelesen; der Filter berührt sie nicht.
 
 ### Formular-Invariante
 
@@ -136,7 +136,7 @@ Wortlaut, Form der Sortierauswahl, Hinweis „vorläufig“ und Zurücksetzen-Be
 - `frontend/src/components/FolderBrowser.tsx` und `FolderBrowser.test.tsx`.
 - Alle `BrowseEntry`-Fixtures, z. B. `frontend/src/api/opencloud.test.ts` und `FolderBrowser.test.tsx`: Feld ergänzen (`tsc`).
 - `frontend/src/pages/ProjectCreatePage.test.tsx`: Formular-Invariante (AK15).
-- `frontend/src/designSystem.contract.test.ts`: `h-11`-Freigabe für das `<select>` (siehe UI/UX).
+- `frontend/src/designSystem.*.contract.test.ts`: `h-11`-Freigabe für das `<select>` (siehe UI/UX).
 - `specs/architecture/0004-design-system.md` und Skill `design-system`: Muster „Suche und Sortierung über einer Liste“ (siehe UI/UX).
 - `specs/architecture/0003-securitykonzept.md`: Ankerzeile für S1 mit Codestelle und Test (siehe Security).
 - `docs/architecture.md`: Vertrag von `browse`, bereits nachgezogen.
@@ -205,7 +205,7 @@ Die Änderung betrifft den Ordner-Browser auf „Neues Projekt anlegen“. Verwe
 - Die Hinweiszeile ist die einzige neue Live-Region.
 - Beide Felder sind sichtbar 44px hoch (Kategorie „Eingabefelder“). „Suche zurücksetzen“ nutzt das Standardmaß des `Button` samt `tap-target`.
 
-**Vertragstest:** Das `h-11` am `<select>` in `FolderBrowser.tsx` ist eine neue Fundstelle für die `h-11`-Freigabeliste in `designSystem.contract.test.ts`. Kategorie und Begründung sind dieselben wie beim Feld „Referenzkamera“.
+**Vertragstest:** Das `h-11` am `<select>` in `FolderBrowser.tsx` ist eine neue Fundstelle für die `h-11`-Freigabeliste in `designSystem.*.contract.test.ts`. Kategorie und Begründung sind dieselben wie beim Feld „Referenzkamera“.
 
 **Design-System:** In `specs/architecture/0004-design-system.md` unter „Wiederkehrende Muster“ und gleichlautend im Skill `design-system` kommt ein Eintrag „Suche und Sortierung über einer Liste“ hinzu. Er fasst zusammen:
 
@@ -276,7 +276,7 @@ Die Muster für den Commit-Aufzeichner, Enter im Formular und den Listenschlüss
 
 - `backend/tests/test_api_opencloud_browse.py::test_browse_returns_only_folders`: Das erwartete JSON bekommt `"modified_at": None`, der Vergleich bleibt exakt.
 - `FolderBrowser.test.tsx`, Fall „shows a hint instead of an empty area when the folder has no subfolders“: geht im Unterscheidungsfall zu AK12 auf, mit neuem Wortlaut und exakter Prüfung statt Regex.
-- `designSystem.contract.test.ts`: neuer Eintrag in `TALL_CONTROL_ALLOWLIST` für das `h-11` des `<select>` in `FolderBrowser.tsx`. Kategorie Eingabefeld, Begründung wie beim Auswahlfeld der Referenzkamera. Der `rounded-full`-Eintrag des Spinners bleibt unverändert und muss weiter treffen.
+- `designSystem.*.contract.test.ts`: neuer Eintrag in `TALL_CONTROL_ALLOWLIST` für das `h-11` des `<select>` in `FolderBrowser.tsx`. Kategorie Eingabefeld, Begründung wie beim Auswahlfeld der Referenzkamera. Der `rounded-full`-Eintrag des Spinners bleibt unverändert und muss weiter treffen.
 - `BrowseEntry`-Literale in `api/opencloud.test.ts`, `FolderBrowser.test.tsx`, `hooks/useOpenCloudBrowse.test.tsx` und `pages/ProjectCreatePage.test.tsx`: `modified_at: null` ergänzt, reiner Typnachzug.
 
 Jede andere geänderte Erwartung ist ein Review-Befund, vor allem in den Zählertests von `FolderBrowser.test.tsx` und in `ProjectCreatePage.test.tsx`.

@@ -102,7 +102,7 @@ Marker-Hinterlegungen über einer Kachel, keine Bildflächen, und bleiben unber�
 | `frontend/src/components/PhotoGridTile.tsx` | `const rejected` (Zeile 145) entfällt vollständig (sonst ungenutzt ⇒ Lint/`tsc`), `data-dimmed` und `opacity-40` mit ihm. Die gleichnamigen **Schlüssel** in `DOT_COLOR`/`DOT_FILL` bleiben — sie sind der AK4-Träger dieser Ansicht. Das umschließende `<div>` **bleibt**: es trägt `size-full overflow-hidden rounded-md`, also Beschnitt und Rundung der Bildfläche. Entfiele es, bliebe jeder Test grün und die Bildfläche liefe über die Kachelrundung hinaus. |
 | `frontend/src/components/PhotoCard.tsx` | `imageAreaClassName` verliert `stepsBack && 'opacity-40'` und wird dadurch zur Konstante. **`stepsBack` bleibt** — es trägt weiterhin `data-struck` und die Durchstreichung des Dateinamens, und es deckt **zwei** Datenwege (`status === 'rejected'` und `setAside`). Doku-Block neu gefasst. |
 | `frontend/src/components/CurationPhotoTile.tsx`, `SelectionPhotoTile.tsx` | Nur Doku-Blöcke: beide zählen „gedämpfte Bildfläche" als Bestandteil der Kartendarstellung auf. Kein Verhaltenswechsel. |
-| `frontend/src/designSystem.contract.test.ts` | Drei Einträge aus `OPACITY_ALLOWLIST` entfernen samt ihrem begründenden Kommentarblock; zwei neue Regeln (unten); der bestehenden `opacity-`-Regel die fehlende Positiv-Gegenprobe ergänzen. |
+| `frontend/src/designSystem.*.contract.test.ts` | Drei Einträge aus `OPACITY_ALLOWLIST` entfernen samt ihrem begründenden Kommentarblock; zwei neue Regeln (unten); der bestehenden `opacity-`-Regel die fehlende Positiv-Gegenprobe ergänzen. |
 | `frontend/src/components/DuplicatePhotoTile.test.tsx` | Drei Fälle entfallen; Ersatz ist **ein** Fall über `discard`/`keep` × `enlarged`, der zusichert, dass kein Knoten der Kachel `data-dimmed` trägt. Der Rahmen-Fall in der Vergrößerung **bleibt** und trägt jetzt AK4. |
 | `frontend/src/components/PhotoCard.test.tsx` | Die `.opacity-40`-Abfrage entfällt aus dem `setAside`-Fall; `data-struck` bleibt der Träger. Testname und Doku-Block anpassen. |
 | `frontend/src/components/PhotoGridTile.test.tsx` | Der `describe`-Block „der Rücktritt einer verworfenen Aufnahme (AK6)" entfällt. **Sein dritter Fall hielt zugleich die Zusage „ein Vorschlag ist keine Entscheidung" fest** — der Ersatz iteriert über `rejected`/`album_worthy`/vorgeschlagen-`rejected` und prüft beides: kein `data-dimmed` im Baum, und Füllung vs. Ring bleibt unterschieden (Spec 0489 AK5). |
@@ -201,7 +201,7 @@ Zustandswörter der Kachel vollständig.
 
 ## Teststrategie
 
-**Vertragstest** (`frontend/src/designSystem.contract.test.ts`) trägt AK1–AK3: Er ist die einzige
+**Vertragstest** (`frontend/src/designSystem.*.contract.test.ts`) trägt AK1–AK3: Er ist die einzige
 Ebene mit CSS-Assertions, und die Abwesenheit einer Utility ist genau seine Fehlerklasse.
 
 **Komponentenebene** (`vitest`/jsdom) trägt AK1/AK2 nur, soweit es um **DOM-Attribute** geht

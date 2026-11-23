@@ -236,7 +236,7 @@ Das Testkonzept [`0002`](../architecture/0002-testkonzept.md) ist um zwei Sektio
 
 - **Backend/Unit:** `test_categories.py`, `test_ranking.py`, `test_models.py`, neu `test_migration_nebenkategorien.py`, `test_postgres_ddl_compatibility.py` (nur `upgrade()`), `test_migration_chain.py`.
 - **Backend/Integration:** `test_worker_criterion_scoring_*.py`, `test_worker_reassign_photo_category.py`, `test_api_photos_*.py`, `test_api_category_override.py`, `test_api_stats.py`, `test_category_diff.py`, `test_demo_state_*.py`.
-- **Frontend:** neu `utils/rankings.test.ts`; angepasst `CurateCategoriesPage.test.tsx`, `CriterionDetailsList.test.tsx`, `PhotoCard.test.tsx`; Fabrik-Anpassung (`rankings: []` statt `ranking: null`) in `PhotoGridPage.test.tsx`, `PhotoDetailPage.test.tsx`, `PhotoComparePage.test.tsx`, `api/photos.test.ts`, `hooks/usePhotos.test.tsx`. Ein geänderter **Zugriffspfad** dort ist angekündigt, eine geänderte **Erwartung** ein Review-Befund.
+- **Frontend:** neu `utils/rankings.test.ts`; angepasst `CurateCategoriesPage.test.tsx`, `CriterionDetailsList.test.tsx`, `PhotoCard.test.tsx`; Fabrik-Anpassung (`rankings: []` statt `ranking: null`) in `PhotoGridPage.test.tsx`, `PhotoDetailPage.*.test.tsx`, `PhotoComparePage.test.tsx`, `api/photos.test.ts`, `hooks/usePhotos.test.tsx`. Ein geänderter **Zugriffspfad** dort ist angekündigt, eine geänderte **Erwartung** ein Review-Befund.
 
 **Edge Cases, die sonst durchrutschen:**
 

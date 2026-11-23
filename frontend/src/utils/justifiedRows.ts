@@ -30,7 +30,7 @@ export const FALLBACK_ASPECT_RATIO = 3 / 2
  * 8-Punkt-Skala) am Listenelement des Rasters - der Vertragstest weist ein gerechnetes Mass als
  * willkuerliche Klasse (`gap-[12px]`) zurueck. Laufen die beiden auseinander, rechnet die Funktion
  * mit einem anderen Abstand als der Browser setzt, und jede Zeile bricht einen Pixel zu frueh oder
- * zu spaet um. `justifiedRows.test.ts` und `designSystem.contract.test.ts` halten sie aneinander.
+ * zu spaet um. `justifiedRows.test.ts` und `designSystem.*.contract.test.ts` halten sie aneinander.
  */
 export const GRID_GAP_PX = 12
 

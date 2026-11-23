@@ -90,7 +90,7 @@ export const SPACING_STEPS = [1, 2, 3, 4, 6, 8, 12, 16] as const
 const DEFAULT_SPACING_BASE = '0.25rem'
 
 /** Die beiden Schriftfamilien-Tokens des Projekts. Sie sind die einzigen `:root`-Tokens ohne
- * Farbwert - dieselbe Ausnahmeliste wie in src/designSystem.contract.test.ts. */
+ * Farbwert - dieselbe Ausnahmeliste wie in src/designSystem.*.contract.test.ts. */
 const FONT_FAMILY_TOKENS: Readonly<Record<string, string>> = {
   '--sans': 'sans',
   '--mono': 'mono',
@@ -215,7 +215,7 @@ export function buildTokens(css: string): TokenBuildResult {
       continue
     }
     if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
-      // Dieselbe Regel, die src/designSystem.contract.test.ts fuer die Kontrastmatrix erzwingt:
+      // Dieselbe Regel, die src/designSystem.*.contract.test.ts fuer die Kontrastmatrix erzwingt:
       // ein indirekter oder deckkraftbasierter Wert waere weder rechenbar noch uebertragbar.
       throw new Error(`${name} traegt keinen 6-stelligen Hexwert, sondern "${value}".`)
     }

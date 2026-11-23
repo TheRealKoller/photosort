@@ -103,9 +103,9 @@ dort ein Testverzeichnis beschrieben ist.
 `test_worker_criterion_scoring_*.py` → je Kriterium/Phase. Der genaue Schnitt ergibt sich aus den
 `class Test…`-Gruppen und `# ---`-Abschnitten der Dateien; Testklassen wandern vollständig. Alles
 Gemeinsame, das nach dem Schnitt in zwei Teilen gebraucht wird, geht nach `support/`, nie in eine
-Schwesterdatei. Frontend: `designSystem.contract.test.ts` je Regelgruppe; Suchmuster-Literale tragende
+Schwesterdatei. Frontend: `designSystem.*.contract.test.ts` je Regelgruppe; Suchmuster-Literale tragende
 Teile stehen einzeln in der Ausnahmeliste (Selbstausnahme je Datei, kein Glob über alle Teile);
-`PhotoDetailPage.test.tsx` und `AlbumDraftPage.test.tsx` je Bereich der Seite.
+`PhotoDetailPage.*.test.tsx` und `AlbumDraftPage.*.test.tsx` je Bereich der Seite.
 
 **Verweise:** Fundstellen über `rg` auf die sieben Dateinamen (und `Klasse::test`-Knoten) in
 `backend/src`, `backend/alembic`, `docs`, `specs`, `.claude`, `.omp`, `frontend/src`; 115 Dateien

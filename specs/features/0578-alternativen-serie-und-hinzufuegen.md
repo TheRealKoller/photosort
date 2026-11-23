@@ -123,7 +123,7 @@ Keine Änderung am Datenmodell und keine Migration. Die Antwort von `GET /projec
 - **Entfernt:**
   - `components/DraftAlternativesDialog.tsx` samt Test.
   - In `AlbumDraftPage.tsx`: `allAlternativesPhotoId`/`setAllAlternativesPhotoId`, die Prop `onOpenAll`, die Fehlerstelle `'dialog'` und der Import.
-  - Die Dialog-Einträge in `designSystem.contract.test.ts` und der Dialog-Abschnitt in `e2e/tests/no-horizontal-scroll.spec.ts`. Letzterer wird durch die aufgeklappte Reihe ersetzt.
+  - Die Dialog-Einträge in `designSystem.*.contract.test.ts` und der Dialog-Abschnitt in `e2e/tests/no-horizontal-scroll.spec.ts`. Letzterer wird durch die aufgeklappte Reihe ersetzt.
 
 ### 4. Tauschen und Hinzufügen an jeder Alternative
 
@@ -402,7 +402,7 @@ Der Docstring von `draft_alternatives` wird umgeschrieben, nicht gelöscht: `pho
 - `AlbumDraftPage`: Hinzufügen aus Band und Reihe → Band bleibt offen, Foto verschwindet, Fokus Nachfolger/Vorgänger/Überschrift (drei Fälle), Entwurfszahl +1, Bezugsfoto unverändert, gestrichene Alternative wird „Aufgenommen“, offener „Getauscht“-Hinweis endet, kein Rückgängig-Hinweis, keine Richtwert-Warnung. **Hinzufügen-dann-Tauschen** als Folge (Muster 2 der Sektion zu #558, Cache = Serverantwort nach jedem Schritt): zwei Hinzufügungen, dann Tausch → ersetzt wird das Bezugsfoto; Rückgängig → nur der Tausch zurück, beide Hinzufügungen bleiben. Tausch aus der Reihe = Tausch aus dem Band (Band zu, „Getauscht“, kein Neuladen). Fehlschlag Hinzufügen und Tauschen je einzeln: Entwurf unverändert, Band offen, `role="alert"` mit Server-`detail` im Band, Kachel wieder bedienbar, Fokus bleibt. Höchstens ein Band: zweites Öffnen schließt das erste samt Reihe; neues Band startet zugeklappt.
 - **Kein Nachrücken:** `invalidateAllButTheDraft` markiert `'alternatives'` nur veraltet — Spion: nach Hinzufügen kein Alternativen-Abruf, Liste −1, Serienrest-Zahl unverändert; Gegenfall: nach Schließen und erneutem Öffnen genau ein frischer Abruf. Gleiches für das Hinzufügen-Panel (ebenfalls kein Nachrücken mehr — benannte Erwartungsänderung, kein Regress).
 - `DraftEventSection`: „+“ in `aria-hidden`-Span, zugänglicher Name exakt „Foto hinzufügen: {Eventname}“; das „+“ kommt in Band/Reihe/Panel nicht vor.
-- Entfernen: `DraftAlternativesDialog` samt Test, Dialog-Einträge in `designSystem.contract.test.ts`, `onOpenAll`/Fehlerstelle `'dialog'` — benannte Löschungen abgelöster Zusagen.
+- Entfernen: `DraftAlternativesDialog` samt Test, Dialog-Einträge in `designSystem.*.contract.test.ts`, `onOpenAll`/Fehlerstelle `'dialog'` — benannte Löschungen abgelöster Zusagen.
 
 **E2E (Playwright, 360 px).**
 - `no-horizontal-scroll.spec.ts`: Dialog-Abschnitt ersetzt durch geöffnetes Band zugeklappt **und** aufgeklappt (Vorbedingung: Raster mit ≥ 1 Alternative und Umschalter `aria-expanded=true` sichtbar); dazu Höhe ≥ 44 px von „Tauschen“/„Hinzufügen“ und 12 px Abstand.

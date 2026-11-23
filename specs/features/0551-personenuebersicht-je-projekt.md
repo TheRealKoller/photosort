@@ -1089,7 +1089,7 @@ Grundlage ist das Testkonzept 0002 mit den Sektionen „Biometrische Merkmale oh
   - Der Fall „Obergrenze als `409`“ entfällt.
 - **`PersonsPage`:** der neue Leertext.
 - **`ProjectNav`/`projectRoutes`:** Das Nebenziel „Personen“ steht hinter „Einstellungen“ und „Statistik“, in beiden Darstellungen (Muster 0298), mit `aria-current` auf der Route.
-- **Design-Vertrag:** Die Zuordnen-Schaltflächen stehen in der Freigabeliste des heißen Pfads (`designSystem.contract.test.ts`).
+- **Design-Vertrag:** Die Zuordnen-Schaltflächen stehen in der Freigabeliste des heißen Pfads (`designSystem.*.contract.test.ts`).
 
 ### E2E und Prüfstack
 

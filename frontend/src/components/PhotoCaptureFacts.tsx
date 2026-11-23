@@ -75,7 +75,7 @@ export function PhotoCaptureFacts({
           S2 - RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
           `place_name` (Ortsdatensatz Dritter), in EINEM Wert, den `eventPlaceName` bildet. Reiner
           React-Textknoten, nie `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`. Bricht in
-          `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen aus $name als
+          `PhotoDetailPage.completeness.test.tsx > rendert einen feindlich belegten Ortsnamen aus $name als
           reinen Textknoten`. */}
       {showPlace && (
         <p className="text-xs text-text-muted" data-testid="place-line">

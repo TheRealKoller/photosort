@@ -46,7 +46,7 @@ Bewusst nicht gewählt: „Penpot gewinnt über alles, auch über den ausgeliefe
 
 Akzeptanzkriterium 8 verlangt, dass die Werte im Repo nachvollziehbar bleiben, auch wenn die Instanz gerade nicht erreichbar ist. Es wird **nicht** über ein zweites Wertedokument erfüllt, sondern über das, was ohnehin da ist:
 
-- **`frontend/src/index.css`** ist die maßgebliche Werteliste im Repo. Jedes Token trägt dort einen ausgeschriebenen Hexwert bzw. eine ausgeschriebene Größe, nie `var()` oder `color-mix()` — diese Eigenschaft existiert bereits und ist die Voraussetzung dafür, dass `frontend/src/designSystem.contract.test.ts` die vollständige Kontrastmatrix nachrechnet. Sie wird damit vom Prüfmittel zusätzlich zum Auskunftsmittel.
+- **`frontend/src/index.css`** ist die maßgebliche Werteliste im Repo. Jedes Token trägt dort einen ausgeschriebenen Hexwert bzw. eine ausgeschriebene Größe, nie `var()` oder `color-mix()` — diese Eigenschaft existiert bereits und ist die Voraussetzung dafür, dass `frontend/src/designSystem.*.contract.test.ts` die vollständige Kontrastmatrix nachrechnet. Sie wird damit vom Prüfmittel zusätzlich zum Auskunftsmittel.
 - **`specs/architecture/0004-design-system.md`** bleibt der Ort für die *Regeln* (welches Token welche Rolle hat, welche Verwendung verboten ist, welche Abweichungen begründet sind). Werte ohne Regeln sind nicht benutzbar; Penpot trägt die Werte, nicht die Begründungen.
 - Ein **drittes**, von Hand gepflegtes Wertedokument entsteht nicht. Genau das wäre der zweite Wahrheitsort, den Akzeptanzkriterium 8 nicht meint und den 0005 heute darstellt.
 

@@ -28,7 +28,7 @@ import type { LucideIcon } from 'lucide-react'
  * Der Zweiundzwanziger-Symbolsatz des Boards: vierzehn Board-Symbole und die acht Motivsymbole.
  *
  * DIES IST DIE EINZIGE DATEI IM PROJEKT, DIE AUS `lucide-react` IMPORTIEREN DARF - statisch
- * erzwungen in src/designSystem.contract.test.ts. Die Aufrufstellen waehlen ihr Symbol
+ * erzwungen in src/designSystem.*.contract.test.ts. Die Aufrufstellen waehlen ihr Symbol
  * datengetrieben ueber seinen Namen, nicht ueber eine Komponenten-Referenz.
  *
  * TREE-SHAKING IST BEDINGUNG, NICHT KOSMETIK: `lucide-react` ist entpackt rund 32 MB (ein Modul je

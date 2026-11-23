@@ -271,7 +271,7 @@ Zahl, er wählt ein Motiv ab oder zu.
   einen Datenwert.
 - `components/ui/progress.tsx` bekommt ein Prop `tone`: `accent` (Vorgabe, die drei bestehenden
   Aufrufstellen bleiben unverändert) und `neutral` (Füllung `--text-h`, Spur `--separator`). Beide
-  Paare in die Kontrastmatrix von `designSystem.contract.test.ts` aufnehmen.
+  Paare in die Kontrastmatrix von `designSystem.*.contract.test.ts` aufnehmen.
 - Keine neuen Formatierer: `formatCriterionPercent`, `formatDateTime`, `formatProviderLabel`,
   `NOT_AVAILABLE`.
 
@@ -637,7 +637,7 @@ Kriterium unbelegt, auch wenn die Oberfläche richtig aussieht.
 `test_api_projects.py`, `test_auth_guard.py`, `test_openapi_beschreibungen.py`. **Frontend neu:**
 `test/motifSetFixture.ts`, `api/motifs.test.ts`, `hooks/useMotifs.test.tsx`,
 `hooks/useMotifCorrection.test.tsx`, `utils/motifLabels.test.ts`,
-`components/MotifStrengthList.test.tsx`; erweitert `pages/PhotoDetailPage.test.tsx`.
+`components/MotifStrengthList.test.tsx`; erweitert `pages/PhotoDetailPage.*.test.tsx`.
 
 Nicht offensichtliche Nachweise:
 
@@ -709,7 +709,7 @@ Modell. Ihre Revisionen laufen bei jedem Containerstart weiter; mitgelöscht wä
 `CurateCategoriesPage.test.tsx`, `ProjectStatsPage.test.tsx`, `PhotoGridPage.test.tsx`,
 `CurationPhotoTile.test.tsx`, `PhotoCard.test.tsx`, `ClassificationBalance.test.tsx`,
 `utils/rankings.test.ts`, `utils/formatStats.test.ts`, `utils/curationTopN.test.ts`,
-`designSystem.contract.test.ts`; neu `components/MotifAssessmentMarker.test.tsx`.
+`designSystem.*.contract.test.ts`; neu `components/MotifAssessmentMarker.test.tsx`.
 
 - **Struktureller Wächter für die negative Hälfte:** kein Modul unter `backend/src/photosort/` und
   keine Datei unter `frontend/src/` nennt `category_key`, `is_primary`, `category_override`,

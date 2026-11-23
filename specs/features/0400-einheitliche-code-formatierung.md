@@ -458,7 +458,7 @@ Formatzusicherung.** Ohne Zusicherung bleibt allein Markdown — dort ausdrückl
 
 ### 7. Die einzige inhaltliche Nachführung — und vier geprüfte Beinahe-Fälle
 
-`frontend/src/designSystem.contract.test.ts` führt Freigabelisten, deren Einträge wörtliche
+`frontend/src/designSystem.*.contract.test.ts` führt Freigabelisten, deren Einträge wörtliche
 Ausschnitte aus Quellzeilen sind. Ein Eintrag spannt über eine Quellzeile, die heute 110 Zeichen
 lang ist. Prettier bricht die zugehörige Zeile in `frontend/src/components/PhotoCard.tsx` um
 (`cn(` über drei Zeilen); der Ausschnitt steht danach auf keiner einzelnen Zeile mehr. Der Test
@@ -567,7 +567,7 @@ kann — und das Nachrechnen-Können ist die einzige Begründung dafür, auf ein
 | `build(format): Formatierer festlegen und Versionen exakt fixieren` | `.prettierrc.json` (neu, Wurzel), `.prettierignore` (neu, Wurzel), `backend/pyproject.toml`, `scripts/pyproject.toml`, `frontend/package.json`, `frontend/package-lock.json`, `e2e/package.json`, `e2e/package-lock.json` |
 | `test(scripts): Formatier-Skript testgetrieben anlegen` | `scripts/tests/test_format_sh.py` (neu, zuerst rot), `scripts/format.sh` (neu) |
 | `chore(format): Codebasis einmalig durchformatieren` | rein maschinell, alle vier Bäume |
-| `test(frontend): Freigabe-Ausschnitt im Design-Vertrag an den Umbruch anpassen` | `frontend/src/designSystem.contract.test.ts` (ein `snippet`, siehe 7.) |
+| `test(frontend): Freigabe-Ausschnitt im Design-Vertrag an den Umbruch anpassen` | `frontend/src/designSystem.*.contract.test.ts` (ein `snippet`, siehe 7.) |
 
 CI nach dem Merge von A: grün. Es gibt noch keine Formatprüfung, und alle bestehenden Prüfungen
 sind auf dem formatierten Stand nachweislich grün (siehe 7.).
@@ -705,7 +705,7 @@ zählt und dort eine Einmaligkeits-Zusicherung hält.
 
 **Akzeptierter Erwartungswert, präzise:**
 
-- Vor der Nachführung: **genau ein** roter Fall, `designSystem.contract.test.ts`, und er schlägt
+- Vor der Nachführung: **genau ein** roter Fall, `designSystem.*.contract.test.ts`, und er schlägt
   **zweifach** an ("nicht freigegeben" für den neuen Fundort, "verwaiste Freigabe ohne Fundstelle"
   für den alten Eintrag). Schlägt er nur einfach an, oder schlägt zusätzlich etwas anderes an, ist
   die Lage **nicht** die gemessene — dann hält der Lauf an, statt weiterzumachen.

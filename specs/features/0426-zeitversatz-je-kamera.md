@@ -506,7 +506,7 @@ Mutation übergebenen Werts, Vorschau gegen die reine Funktion statt gegen einen
 String, `409`/`422` als Klartext samt Hinweis „nichts gespeichert", Speichern gesperrt bei
 ungültiger Eingabe, „Vorschlag übernehmen" schreibt nicht und lässt die Felder änderbar).
 Erweitert: `ProjectSettingsPage.test.tsx` (Liste, Ladezustand, leerer Zustand ohne Fehlerton) und
-`PhotoDetailPage.test.tsx` (wirksame Zeit, Marke nur bei Korrektur, aufgezeichnete Zeile nur im
+`PhotoDetailPage.*.test.tsx` (wirksame Zeit, Marke nur bei Korrektur, aufgezeichnete Zeile nur im
 Korrekturfall, ruhiger Satz ohne bestimmbare Kamera).
 
 **10. Doku** — kein Testgegenstand.
