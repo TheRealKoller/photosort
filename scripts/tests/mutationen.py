@@ -26,9 +26,19 @@ REFINEMENT = ".claude/skills/refinement/SKILL.md"
 SKILLER = ".claude/skills/skiller/SKILL.md"
 
 CI = ".github/workflows/ci.yml"
+CI_PYTEST_BEFEHL = (
+    "pytest -n auto --cov=photosort --cov-report= "
+    "--splits ${{ strategy.job-total }} --group ${{ matrix.shard }} "
+    "--splitting-algorithm=least_duration"
+)
 CI_TEST_SCHRITT = (
-    "      - name: Test (pytest, coverage gate 80%)\n"
-    "        run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80"
+    "      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})\n"
+    "        env:\n"
+    "          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}\n"
+    f"        run: {CI_PYTEST_BEFEHL}"
+)
+CI_GATE_BEFEHL = (
+    "python -m coverage combine && python -m coverage report --show-missing --fail-under=80"
 )
 DEVELOPER = ".claude/agents/developer.md"
 
@@ -174,9 +184,96 @@ MUTATIONEN: tuple[Mutation, ...] = (
         name="coverage-schwelle-gesenkt",
         waechter="ci",
         datei=CI,
-        alt="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80",
-        neu="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=70",
+        alt=CI_GATE_BEFEHL,
+        neu=(
+            "python -m coverage combine && python -m coverage report --show-missing --fail-under=70"
+        ),
         invariante="coverage-schwelle",
+    ),
+    Mutation(
+        name="schwelle-am-shard",
+        waechter="ci",
+        datei=CI,
+        alt=f"        run: {CI_PYTEST_BEFEHL}",
+        neu=f"        run: {CI_PYTEST_BEFEHL} --cov-fail-under=80",
+        invariante="coverage-schwelle",
+    ),
+    Mutation(
+        name="aggregator-ohne-always",
+        waechter="ci",
+        datei=CI,
+        alt="  backend:\n    needs: [backend-test]\n    if: always()\n",
+        neu="  backend:\n    needs: [backend-test]\n",
+        invariante="coverage-schwelle",
+    ),
+    Mutation(
+        name="shard-nicht-in-needs",
+        waechter="ci",
+        datei=CI,
+        alt="  backend:\n    needs: [backend-test]\n",
+        neu="  backend:\n    needs: []\n",
+        invariante="coverage-schwelle",
+    ),
+    Mutation(
+        name="splits-fest",
+        waechter="ci",
+        datei=CI,
+        alt="--splits ${{ strategy.job-total }}",
+        neu="--splits 8",
+        invariante="testmenge-vollstaendig",
+    ),
+    Mutation(
+        name="matrix-luecke",
+        waechter="ci",
+        datei=CI,
+        alt="        shard: [1, 2, 3, 4, 5, 6, 7, 8]",
+        neu="        shard: [1, 2, 3, 5, 6, 7, 8]",
+        invariante="testmenge-vollstaendig",
+    ),
+    Mutation(
+        name="auswahl-per-k",
+        waechter="ci",
+        datei=CI,
+        alt="--splitting-algorithm=least_duration",
+        neu='--splitting-algorithm=least_duration -k "not slow"',
+        invariante="testmenge-vollstaendig",
+    ),
+    Mutation(
+        name="playwright-shard-fest",
+        waechter="ci",
+        datei=CI,
+        alt="--shard=${{ matrix.shard }}/${{ strategy.job-total }}",
+        neu="--shard=1/1",
+        invariante="testmenge-vollstaendig",
+    ),
+    Mutation(
+        name="required-kontext-umbenannt",
+        waechter="ci",
+        datei=CI,
+        alt="  backend:\n",
+        neu="  backend-ci:\n",
+        invariante="required-kontext-stabil",
+    ),
+    Mutation(
+        name="cache-schreibpfad-ohne-fork",
+        waechter="ci",
+        datei=CI,
+        alt="      - name: Image-Cache-Schreibpfad bestimmen\n        run: |\n",
+        neu=(
+            "      - name: Image-Cache-Schreibpfad bestimmen\n"
+            "        with:\n"
+            "          cache_to: type=gha\n"
+            "        run: |\n"
+        ),
+        invariante="cache-und-artefakte",
+    ),
+    Mutation(
+        name="download-mit-run-id",
+        waechter="ci",
+        datei=CI,
+        alt="          pattern: coverage-shard-*\n",
+        neu="          run-id: 123\n          pattern: coverage-shard-*\n",
+        invariante="cache-und-artefakte",
     ),
     Mutation(
         name="qualitaet-nicht-ausgefuehrt",
@@ -190,8 +287,8 @@ MUTATIONEN: tuple[Mutation, ...] = (
         name="tests-nicht-ausgefuehrt",
         waechter="ci",
         datei=CI,
-        alt="run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80",
-        neu="run: echo pytest",
+        alt=f"        run: {CI_PYTEST_BEFEHL}",
+        neu="        run: echo pytest",
         invariante="tests-je-baum",
     ),
     Mutation(
@@ -200,10 +297,11 @@ MUTATIONEN: tuple[Mutation, ...] = (
         datei=CI,
         alt=CI_TEST_SCHRITT,
         neu=(
-            "      - name: Test (pytest, coverage gate 80%)\n"
+            "      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})\n"
             "        continue-on-error: true\n"
-            "        run: pytest -n auto --cov=photosort --cov-report=term-missing "
-            "--cov-fail-under=80"
+            "        env:\n"
+            "          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}\n"
+            f"        run: {CI_PYTEST_BEFEHL}"
         ),
         invariante="nicht-ueberspringbar",
     ),
@@ -323,10 +421,41 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
         aenderungen=(
             (
                 CI,
-                "      - name: Test (pytest, coverage gate 80%)\n        run: pytest -n auto "
-                "--cov=photosort --cov-report=term-missing --cov-fail-under=80",
-                "      - name: Backend-Tests\n        run: pytest -n auto --cov=photosort "
-                "--cov-report=term-missing --cov-fail-under=80",
+                "      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})\n",
+                "      - name: Backend-Tests fuer Shard ${{ matrix.shard }}\n",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="ci-always-als-ausdruck",
+        waechter="ci",
+        aenderungen=(
+            (
+                CI,
+                "  backend:\n    needs: [backend-test]\n    if: always()\n",
+                "  backend:\n    needs: [backend-test]\n    if: ${{ always() }}\n",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="ci-needs-als-blockliste",
+        waechter="ci",
+        aenderungen=(
+            (
+                CI,
+                "  backend:\n    needs: [backend-test]\n",
+                "  backend:\n    needs:\n      - backend-test\n",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="ci-splits-ohne-leerzeichen",
+        waechter="ci",
+        aenderungen=(
+            (
+                CI,
+                "--splits ${{ strategy.job-total }} --group ${{ matrix.shard }}",
+                "--splits=${{strategy.job-total}} --group=${{matrix.shard}}",
             ),
         ),
     ),
@@ -381,10 +510,8 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
             ),
             (
                 CI,
-                CI_TEST_SCHRITT,
-                "      - name: Backend-Tests\n"
-                "        run: pytest -n auto --cov=photosort --cov-report=term-missing "
-                "--cov-fail-under=80",
+                "      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})\n",
+                "      - name: Backend-Tests\n",
             ),
         ),
     ),

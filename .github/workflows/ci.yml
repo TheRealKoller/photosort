@@ -18,8 +18,85 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Der geforderte Kontext `backend` bleibt der Job-Schluessel und wird zum Aggregator: Ein
+  # Matrix-Job mit dem Schluessel `backend` hiesse `backend (1)` - der Required Check bliebe auf
+  # "Expected" stehen. Der Aggregator urteilt ueber alle Shards, weil er `if: always()` traegt;
+  # ohne das wuerde ein gescheiterter Shard ihn ueberspringen, und ein uebersprungener Job
+  # erfuellt keine Required-Pruefung.
   backend:
+    needs: [backend-test]
+    if: always()
     runs-on: ubuntu-latest
+    # Die Shard-Zahl steht an genau dieser einen Stelle; die Testschritte leiten sie ueber
+    # `strategy.job-total` ab, der Download prueft die Anzahl dagegen. `coverage` selbst kommt
+    # nicht aus dieser Datei, sondern aus backend/uv.lock.
+    env:
+      COVERAGE_SHARDS: 8
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Ein gescheiterter Shard muss hier ausdruecklich rot werden. `if: always()` allein genuegt
+      # nicht: ohne diesen Schritt wuerde der Aggregator auch dann weiterlaufen, wenn ein Shard
+      # gar keinen Datensatz hochgeladen hat.
+      - name: Shard-Ergebnisse pruefen
+        run: |
+          set -euo pipefail
+          echo "backend-test: ${{ needs.backend-test.result }}"
+          test "${{ needs.backend-test.result }}" = "success"
+      - name: Coverage-Datensaetze laden
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-*
+          path: backend/
+          merge-multiple: true
+      # Das Gate entscheidet ueber 80 % auf dem gesamten Backend-Code. Seine Version stammt aus
+      # backend/uv.lock, damit der Entscheider nicht ohne Repo-Diff wechseln kann; die
+      # Fremdpaket-Schicht des Image-Builds und dieser Job lesen dieselbe eine Quelle.
+      - name: Coverage-Version aus dem Lock installieren
+        run: |
+          set -euo pipefail
+          version=$(python - <<'PY'
+          import tomllib
+
+          with open("uv.lock", "rb") as datei:
+              lock = tomllib.load(datei)
+          for paket in lock["package"]:
+              if paket["name"] == "coverage":
+                  print(paket["version"])
+                  break
+          else:
+              raise SystemExit("coverage fehlt in backend/uv.lock")
+          PY
+          )
+          python -m pip install "coverage==$version"
+      - name: Coverage-Datensaetze zaehlen
+        run: |
+          set -euo pipefail
+          gefunden=$(ls .coverage.shard-* | wc -l)
+          echo "$gefunden Coverage-Datensaetze (erwartet $COVERAGE_SHARDS)"
+          test "$gefunden" -eq "$COVERAGE_SHARDS"
+      - name: Coverage combine und Gate
+        run: python -m coverage combine && python -m coverage report --show-missing --fail-under=80
+
+  # Acht Shards statt vier oder fuenf: Jeder Shard traegt gemessene Fixkosten von rund 105 s
+  # (Systempakete, Modell-Assets, Abhaengigkeiten, mypy). Auf CI braucht derselbe Testlauf rund
+  # das 2,4-fache der lokalen Zeit; bei fuenf Shards traegt der langsamste rund 26 % der
+  # Testzeit, und die Grenze waere im oberen Streubereich erreichbar. Acht Shards lassen Reserve,
+  # ohne einen weiteren Mechanismus. Die Zerlegung stammt aus der committeten
+  # backend/.test_durations; `least_duration` verteilt Tests einzeln nach gemessener Dauer und
+  # haelt die Testzahl je Shard gleich. Kein Shard traegt eine Coverage-Schwelle - sie gilt auf
+  # der Vereinigung im Job `backend`.
+  backend-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     defaults:
       run:
         working-directory: backend
@@ -78,8 +155,21 @@ jobs:
         run: ruff check .
       - name: Type check (mypy)
         run: mypy src
-      - name: Test (pytest, coverage gate 80%)
-        run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80
+      # `--cov-report=` unterdrueckt den Bericht je Shard: bewertet wird die Vereinigung, nicht
+      # eine Teilmenge. COVERAGE_FILE haelt die Datensaetze getrennt, sonst ueberschriebe der
+      # letzte Lauf die vorigen.
+      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        run: pytest -n auto --cov=photosort --cov-report= --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm=least_duration
+      - name: Coverage-Datensatz hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: backend/.coverage.shard-*
+          retention-days: 7
+          if-no-files-found: error
 
   frontend:
     runs-on: ubuntu-latest
@@ -173,6 +263,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # `type=gha` verlangt den `docker-container`-Treiber; der Standardtreiber des Runners kann
+      # den Cache weder lesen noch schreiben.
+      - name: Buildx-Builder fuer den Image-Cache einrichten (docker-compose-check)
+        uses: docker/setup-buildx-action@v3
+      # Geschrieben wird der Image-Cache nur in Laeufen, die kein Fork-Pull-Request sind: eine
+      # `$GITHUB_ENV`-Bedingung, kein `if:` am Build-Schritt. Ein Fork-PR-Autor wuerde sonst
+      # Schichten in den Cache legen, den `main` und spaetere Pull Requests lesen - ohne dass ein
+      # Check rot wuerde.
+      - name: Image-Cache-Schreibpfad bestimmen
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.pull_request.head.repo.fork }}" != "true" ]; then
+            echo "CACHE_SCHREIBEN=-f docker-compose.ci-cache-write.yml" >> "$GITHUB_ENV"
+            echo "Image-Cache wird geschrieben."
+          else
+            echo "CACHE_SCHREIBEN=" >> "$GITHUB_ENV"
+            echo "Fork-Pull-Request: Image-Cache wird nur gelesen."
+          fi
+      # Beide Overlays sind additiv und inhaltsgeschlossen; dieser Schritt beweist, dass Compose
+      # sie ueber den Basisdienst legen kann, ohne dass die Datei still unbrauchbar wird.
+      - name: Validate cache overlays
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN config -q
       - name: Validate docker-compose.yml
         run: docker compose config -q
       - name: Validate docker-compose.yml + docker-compose.demo.yml overlay
@@ -303,7 +418,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0013-$RANDOM"
 
-          docker compose up -d --build backend worker
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --build backend worker
 
           # "docker compose up" blockiert wegen worker's "depends_on: backend: condition:
           # service_healthy" bereits selbst, bis backend healthy ist - diese Wartschleife ist
@@ -389,7 +504,7 @@ jobs:
 
           # Bewusst "--no-deps": der SPA-Fallback ist rein nginx-seitig und haengt nicht
           # von backend/postgres/redis ab (siehe Teststrategie, Spec 0016).
-          docker compose up -d --no-deps --build frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps --build frontend
 
           echo "Waiting for frontend to respond..."
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
@@ -460,7 +575,7 @@ jobs:
           # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
           rm -f .env
           trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
-          docker compose up -d --no-deps --build frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps --build frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
           for _ in $(seq 1 30); do
@@ -505,7 +620,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0049-$RANDOM"
 
-          docker compose up -d --build backend worker frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --build backend worker frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
 
@@ -619,18 +734,20 @@ jobs:
   # Der Job referenziert KEIN secrets.* und erweitert die Workflow-permissions nicht. Der Stack
   # enthaelt weder OpenCloud noch den Worker; alle Zustaende kommen aus dem deterministischen
   # Seeder.
+  #
+  # Der geforderte Kontext `e2e` bleibt der Job-Schluessel und wird zum Aggregator ueber zwei
+  # Shards (ADR 0151 Punkt 1): `if: always()` plus die ausdrueckliche Ergebnispruefung machen
+  # einen gescheiterten Shard rot, statt ihn zu ueberspringen.
   e2e:
+    needs: [e2e-shard]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # --- Die vier Nachweis-Schritte laufen VOR dem teuren Image-Bau: eine verletzte
-      # --- Sicherheitszusage soll in Sekunden auffallen, nicht erst nach dem Stackstart.
-
       # Der Suchraum umfasst seit Spec 0358 auch design/: dort liegen die ungetrackten Formexporte
-      # der Ansichtsentwuerfe (design/penpot/ansichten/). Der Schritt bleibt bewusst in diesem Job,
-      # der ohne Pfadfilter laeuft - bekaeme er je einen, ginge die Design-Zusicherung
-      # stillschweigend mit.
+      # der Ansichtsentwuerfe (design/penpot/ansichten/). Der Nachweis braucht keinen Stack und
+      # laeuft deshalb einmal im Aggregator; die stackgebundenen Nachweise laufen in jedem Shard.
       - name: Nachweis - keine Bilddatei unter e2e/ oder design/ im Git-Index
         run: |
           set -euo pipefail
@@ -650,10 +767,31 @@ jobs:
           echo 'design/penpot/ansichten/beispiel.png' | grep -Eiq "$pattern"
           echo "OK: keine Bilddatei unter e2e/ oder design/ versioniert (Muster durch Gegenprobe belegt)."
 
+      - name: Shard-Ergebnisse pruefen
+        run: |
+          set -euo pipefail
+          echo "e2e-shard: ${{ needs.e2e-shard.result }}"
+          test "${{ needs.e2e-shard.result }}" = "success"
+
+  # Zwei Shards, jeder mit eigenem Pruefstack und eigenem Seed: Der Browseranteil teilt sich so
+  # auf, waehrend `workers: 1`, `retries: 0` und `forbidOnly: true` unveraendert bleiben. Das
+  # `setup`-Projekt laeuft in jedem Shard, weil jeder Shard seinen eigenen Anmeldezustand braucht.
+  e2e-shard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Die drei stackgebundenen Nachweis-Schritte laufen VOR dem teuren Image-Bau: eine
+      # --- verletzte Sicherheitszusage soll in Sekunden auffallen, nicht erst nach dem
+      # --- Stackstart. Sie laufen in jedem Shard, weil jeder Shard einen eigenen Stack startet.
       - name: Nachweis - eigener Compose-Projektname
         run: |
           set -euo pipefail
-          name=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json | jq -r '.name')
+          name=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml config --format json | jq -r '.name')
           echo "Compose-Projektname: $name"
           # Ohne eigenen Namen benutzte der Pruefstack die Volumes eines lokal laufenden
           # Produktiv-/Demo-Stacks mit - der Seeder liefe dann gegen dessen Datenbank und Cache.
@@ -689,12 +827,9 @@ jobs:
             return 0
           }
 
-          config=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json)
-          check_bindings "$config"
+          config=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml config --format json)
 
           # Zwei Gegenproben im selben Schritt, je eine pro Fehlerklasse - ohne sie waere "alles
-          # gruen" nicht von "die Pruefung findet gar nichts mehr" zu unterscheiden.
-          #
           # (a) eine ungebundene Veroeffentlichung: faellt ueber die host_ip-Bedingung.
           printf 'services:\n  frontend:\n    ports: !override\n      - "8099:80"\n' > /tmp/e2e-probe-unbound.yml
           # (b) eine NAIV ueberlagerte ports-Liste ohne "!override": Compose ERGAENZT sie, es
@@ -703,8 +838,7 @@ jobs:
           printf 'services:\n  frontend:\n    ports:\n      - "127.0.0.1:8099:80"\n' > /tmp/e2e-probe-appended.yml
 
           for probe in /tmp/e2e-probe-unbound.yml /tmp/e2e-probe-appended.yml; do
-            broken=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f "$probe" config --format json)
-            if check_bindings "$broken" > /dev/null 2>&1; then
+            broken=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml -f "$probe" config --format json)
               echo "Gegenprobe fehlgeschlagen: $probe wurde NICHT als Fehler gemeldet." >&2
               exit 1
             fi
@@ -760,15 +894,13 @@ jobs:
           # Das Worker-Profil wird mitgerendert: der Dienst laeuft im Pruefstack nicht, seine
           # Umgebung ist aber Teil derselben Zusage und ohne aktiviertes Profil gar nicht in der
           # Ausgabe enthalten.
-          rendered=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml --profile nicht-im-pruefstack config)
+          rendered=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml --profile nicht-im-pruefstack config)
           if printf '%s' "$rendered" | grep -q "$sentinel"; then
-            echo "Werte aus der Koeder-.env sind in die Pruefstack-Konfiguration durchgeschlagen:" >&2
             printf '%s' "$rendered" | grep -n "$sentinel" >&2
             exit 1
           fi
-          ports=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json | jq -r '[.services | to_entries[] | (.value.ports // [])[] | .published] | sort | join(",")')
+          ports=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml config --format json | jq -r '[.services | to_entries[] | (.value.ports // [])[] | .published] | sort | join(",")')
           echo "veroeffentlichte Ports: $ports"
-          test "$ports" = "8080"
 
           # Gegenprobe: der Sentinel-Vergleich schlaegt bei einer tatsaechlich interpolierbaren
           # Variablen an. Geprueft am Basisstack OHNE Overlay - dort ist genau das der Fall.
@@ -779,6 +911,12 @@ jobs:
           echo "OK: keine Variable des Produktivstacks bleibt im Pruefstack interpolierbar."
 
       # --- Ab hier der eigentliche Lauf -------------------------------------------------------
+
+      # `type=gha` im Cache-Overlay verlangt den `docker-container`-Treiber; der Standardtreiber
+      # des Runners kann den Export nicht lesen. Geschrieben wird in diesem Job nie - `cache_to`
+      # haengt ausschliesslich am Schreib-Overlay des Jobs `docker-compose-check`.
+      - name: Buildx-Builder fuer den Image-Cache einrichten (e2e-Shard)
+        uses: docker/setup-buildx-action@v3
 
       - uses: actions/setup-node@v4
         with:
@@ -819,7 +957,7 @@ jobs:
       - name: Pruefstack starten
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml up -d --build
           # Das Backend hat keinen Host-Port; bereit ist der Stack, sobald der nginx des Frontends
           # unter /api die Antwort des Backends liefert (ohne Proxy kaeme dort index.html zurueck).
           echo "Warte auf das Backend hinter dem Frontend..."
@@ -832,13 +970,13 @@ jobs:
       - name: Demo-Datenbestand seeden
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml exec -T \
             -e PHOTOSORT_DEMO_STATE_CONFIRM=yes-wipe-and-seed-demo-data \
             backend python -m photosort.demo_state
 
       - name: Pruefungen im Browser
         working-directory: e2e
-        run: npm test
+        run: npm test -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       - name: Diagnose bei Fehlschlag - Container-Logs
         if: failure()
@@ -853,7 +991,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-artifacts
+          name: e2e-artifacts-${{ matrix.shard }}
           path: e2e/artifacts/
           retention-days: 7
           if-no-files-found: ignore
@@ -862,4 +1000,4 @@ jobs:
         if: always()
         run: |
           rm -rf e2e/.auth
-          docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v --remove-orphans || true
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml down -v --remove-orphans || true

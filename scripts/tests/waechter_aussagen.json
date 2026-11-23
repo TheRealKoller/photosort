@@ -86,6 +86,21 @@
       "klasse": "A"
     },
     {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "testmenge-vollstaendig",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "required-kontext-stabil",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "cache-und-artefakte",
+      "klasse": "A"
+    },
+    {
       "modul": "scripts/tests/test_issue_befehle_in_skills.py",
       "invariante": "freitext-nur-als-datei",
       "klasse": "A"

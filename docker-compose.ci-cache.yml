@@ -1,0 +1,23 @@
+# Lesehaelfte des Image-Build-Caches (ADR 0151 Punkt 4): beide e2e-Shards und
+# `docker-compose-check` legen diese Datei ueber die Basis, damit `docker compose build` die
+# Schichten aus dem GitHub-Actions-Cache zieht.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build backend
+#
+# Rein additiv und inhaltsgeschlossen: ausschliesslich `build.cache_from`, nie `ports`,
+# `environment`, `env_file`, `volumes` oder `secrets`. Geschrieben wird hier nie - das leistet
+# `docker-compose.ci-cache-write.yml`, und zwar nur in Laeufen, die kein Fork-Pull-Request sind.
+# `type=gha` verlangt den `docker-container`-Treiber (`docker/setup-buildx-action`).
+services:
+  backend:
+    build:
+      cache_from:
+        - type=gha,scope=photosort-images
+  worker:
+    build:
+      cache_from:
+        - type=gha,scope=photosort-images
+  frontend:
+    build:
+      cache_from:
+        - type=gha,scope=photosort-images

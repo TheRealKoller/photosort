@@ -13,8 +13,9 @@ andere Art des Auseinanderlaufens:
    `photosort`-Eintrags nennen dieselbe Menge. Ohne diese zweite Zusicherung bliebe ein Lock
    inhaltlich falsch, waehrend die erste Zusicherung gruen meldet: ein nachgezogener
    `requires-dist` ueber veralteten Kanten.
-3. **Der CI-Verbraucher liest die Aufloesung.** Der `run:`-Rumpf von `Install dependencies` im Job
-   `backend` exportiert genau einmal mit `--locked` und `--extra dev` und installiert genau einmal
+3. **Der CI-Verbraucher liest die Aufloesung.** Der `run:`-Rumpf von `Install dependencies` im
+   Job, der diesen Schritt traegt (heute `backend-test`; der Schluessel wird abgeleitet),
+   exportiert genau einmal mit `--locked` und `--extra dev` und installiert genau einmal
    aus genau der Datei, die `-o` erzeugt, mit `--system` und `--no-deps`. Faengt: `--locked` zu
    `--frozen` abgeschwaecht, ein verlorenes `--no-deps` (`uv pip` loest dann wieder selbst auf),
    ein `-r` auf eine andere Datei.
@@ -438,12 +439,21 @@ _NAME = re.compile(r"^\s*name:\s*([^\n]+?)\s*$", re.MULTILINE)
 
 
 def backend_job(text: str) -> str:
-    treffer = re.search(r"^  backend:\n", text, re.MULTILINE)
-    if treffer is None:
-        raise ValueError("backend-Job nicht gefunden")
-    rest = text[treffer.end() :]
-    naechster = _TOP_KEY.search(rest)
-    return rest[: naechster.start()] if naechster else rest
+    """Der Job, der `Install dependencies` traegt - abgeleitet, nicht literal `backend`.
+
+    Mit der Shard-Matrix (ADR 0151) liegt der Installationsschritt in `backend-test`, waehrend
+    `backend` nur noch der Aggregator ist. Der Traeger wird ueber seinen Schritt gefunden, damit
+    eine erneute Umbenennung nicht wieder eine gepflegte Job-Liste verlangt.
+    """
+    for kopf in _TOP_KEY.finditer(text):
+        rest = text[kopf.end() :]
+        naechster = _TOP_KEY.search(rest)
+        block = rest[: naechster.start()] if naechster else rest
+        if "      - " not in block:
+            continue
+        if any(schritt_name(teil) == INSTALL_SCHRITT for teil in schritte(block)):
+            return block
+    raise ValueError(f"Kein Job traegt den Schritt {INSTALL_SCHRITT!r}")
 
 
 def schritte(job: str) -> list[str]:
@@ -474,11 +484,11 @@ def run_rumpf(block: str) -> str:
 
 
 def install_rumpf(ci: str) -> str:
-    """Der `run:`-Rumpf von `Install dependencies` im Job `backend`; laut, wenn er fehlt."""
+    """Der `run:`-Rumpf von `Install dependencies` im tragenden Job; laut, wenn er fehlt."""
     for block in schritte(backend_job(ci)):
         if schritt_name(block) == INSTALL_SCHRITT:
             return run_rumpf(block)
-    raise ValueError(f"Schritt {INSTALL_SCHRITT!r} im Job 'backend' nicht gefunden")
+    raise ValueError(f"Kein Job traegt den Schritt {INSTALL_SCHRITT!r}")
 
 
 # --- Die eigentlichen Zusicherungen --------------------------------------------------------
@@ -539,7 +549,7 @@ def test_der_ci_installationsschritt_liest_die_aufloesung() -> None:
     befunde = rumpf_befunde(install_rumpf(dateitext(CI_PFAD)))
 
     assert not befunde, (
-        "Der Schritt 'Install dependencies' im Job 'backend' zieht die Abhaengigkeiten nicht "
+        "Der Schritt 'Install dependencies' im Backend-Testjob zieht die Abhaengigkeiten nicht "
         "fail-closed aus dem Lock: " + "; ".join(befunde)
     )
 

@@ -23,21 +23,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgles2 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml alembic.ini ./
+# Schichtschluessel: `pyproject.toml` traegt die Abhaengigkeitsliste, `uv.lock` deren Aufloesung.
+# `uv.lock` ist NUR Schluessel, keine Installationsquelle - das Image loest weiterhin frisch aus
+# [project].dependencies auf. Ein Lock-Refresh verwirft damit die Fremdpaket-Schicht, ohne dass
+# die Installation an den Lock gekoppelt waere.
+COPY pyproject.toml uv.lock ./
+
+# Manifest, Fetch-Skript und Modell-Assets bekommen eine eigene Schicht vor den Fremdpaketen: der
+# Download haengt nicht an `src/` und bleibt im Cache, solange sich Manifest und Skript nicht
+# aendern. Das Skript liest das Manifest ueber seinen Dateipfad, nicht ueber das installierte
+# Paket; die Dateien werden per SHA256 geprueft und erst nach bestandener Pruefung geschrieben.
+COPY src/photosort/model_assets.py src/photosort/model_assets.py
+COPY scripts/fetch_model_assets.py scripts/fetch_model_assets.py
+RUN python scripts/fetch_model_assets.py
+
+# Fremdpakete aus [project].dependencies, per tomllib gelesen. Diese Schicht haengt nur an
+# pyproject.toml/uv.lock, nicht an src/ - eine Quellcode-Aenderung installiert sie nicht neu.
+RUN python -c "import pathlib, tomllib; data = tomllib.loads(pathlib.Path('pyproject.toml').read_text()); pathlib.Path('/tmp/requirements.txt').write_text('\n'.join(data['project']['dependencies']) + '\n')"
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Erst jetzt der Quellcode. Die bereits heruntergeladenen Assets bleiben beim Zusammenfuehren
+# erhalten und sind beim folgenden Projekt-Install Teil von [tool.setuptools.package-data].
 COPY src ./src
+COPY alembic.ini ./
 COPY alembic ./alembic
 COPY scripts ./scripts
-
-# Modelldateien aus dem Manifest src/photosort/model_assets.py, per SHA256 geprueft und erst nach
-# bestandener Pruefung am Zielpfad (scripts/fetch_model_assets.py). Muss vor "pip install ."
-# liegen, damit [tool.setuptools.package-data] sie ins installierte Paket nimmt.
-RUN python scripts/fetch_model_assets.py
 
 # Zweite Absicherung neben der Zuweisung in label_embedding.py: onnxruntime sendet sonst unter
 # Linux Telemetrie an Microsoft. Gilt fuer backend und worker, die beide dieses Image nutzen.
 ENV ORT_DISABLE_TELEMETRY=1
 
-RUN pip install --no-cache-dir .
+# --no-deps: die Fremdpakete liegen bereits aus der Schicht oben im Image. Der Projekt-Install
+# nimmt nur noch Paket und Asset-Daten aus dem Quellbaum.
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8000
 
