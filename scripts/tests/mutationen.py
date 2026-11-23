@@ -270,6 +270,21 @@ MUTATIONEN: tuple[Mutation, ...] = (
         invariante="cache-und-artefakte",
     ),
     Mutation(
+        name="cache-schreibliteral-am-build",
+        waechter="ci",
+        datei=CI,
+        alt=(
+            '          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \\\n'
+            "            --set '*.cache-from=type=gha,scope=photosort-images'\n"
+        ),
+        neu=(
+            '          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \\\n'
+            "            --set '*.cache-from=type=gha,scope=photosort-images' \\\n"
+            "            --set '*.cache-to=type=gha,scope=photosort-images,mode=min'\n"
+        ),
+        invariante="cache-und-artefakte",
+    ),
+    Mutation(
         name="download-mit-run-id",
         waechter="ci",
         datei=CI,

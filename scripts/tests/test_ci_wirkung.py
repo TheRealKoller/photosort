@@ -1107,6 +1107,40 @@ def _cache_und_artefakte(bestand: Bestand, work: tuple[Workflow, ...]) -> list[B
                     "`$GITHUB_ENV`-Bedingung.",
                 )
             )
+    # Das Schreib-Literal (`cache-to=type=gha…`) steht an genau einer Stelle, und zwar im
+    # Schreibpfad-Schritt hinter dem Fork-Ausschluss. Der Bake-Aufruf selbst darf es nicht
+    # tragen: ein Literal am Build-Schritt schriebe auch fuer Fork-Pull-Requests.
+    literale = [
+        (job, schritt, nummer)
+        for workflow in work
+        for job in workflow.jobs
+        for schritt in job.schritte
+        for nummer, zeile in enumerate(schritt.run.split("\n"), schritt.run_zeile + 1)
+        if "cache-to=type=gha" in zeile
+    ]
+    erlaubt = {(job.key, schritt.zeile) for job, schritt in schreib_stellen}
+    ausserhalb = [
+        (job, schritt, nummer)
+        for job, schritt, nummer in literale
+        if (job.key, schritt.zeile) not in erlaubt
+    ]
+    if len(literale) != 1 or ausserhalb:
+        if ausserhalb:
+            ort_job, ort_schritt, ort_nummer = ausserhalb[0]
+        elif literale:
+            ort_job, ort_schritt, ort_nummer = literale[0]
+        else:
+            ort_job, ort_schritt = schreib_stellen[0]
+            ort_nummer = ort_schritt.run_zeile
+        befunde.append(
+            befund(
+                ort_job.datei,
+                ort_nummer,
+                "cache-und-artefakte",
+                "Das Cache-Schreib-Literal (`cache-to=type=gha…`) steht nicht an genau einer "
+                "Stelle im Fork-geschuetzten Schreibpfad-Schritt.",
+            )
+        )
 
     for workflow in work:
         for job in workflow.jobs:

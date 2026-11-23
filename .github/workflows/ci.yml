@@ -281,9 +281,13 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event.pull_request.head.repo.fork }}" != "true" ]; then
             echo "CACHE_SCHREIBEN=-f docker-compose.ci-cache-write.yml" >> "$GITHUB_ENV"
+            # Der Bake-Aufruf schreibt den Cache nur ueber diese Variable; das Literal steht
+            # dadurch an genau einer Stelle, hinter dem Fork-Ausschluss.
+            echo "CACHE_BAKE_SCHREIBEN=*.cache-to=type=gha,scope=photosort-images,mode=min" >> "$GITHUB_ENV"
             echo "Image-Cache wird geschrieben."
           else
             echo "CACHE_SCHREIBEN=" >> "$GITHUB_ENV"
+            echo "CACHE_BAKE_SCHREIBEN=" >> "$GITHUB_ENV"
             echo "Fork-Pull-Request: Image-Cache wird nur gelesen."
           fi
       # Beide Overlays sind additiv und inhaltsgeschlossen; dieser Schritt beweist, dass Compose
@@ -292,6 +296,25 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN config -q
+      # Gebaut wird ueber den Bake-Weg, nicht ueber `up --build`: `docker compose build --print`
+      # liefert die Bau-Definition (Kontext, Dockerfile, Argumente, Tags) aus derselben
+      # Compose-Konfiguration, `docker buildx bake` baut sie mit dem GHA-Cache. Der direkte
+      # `up --build`-Weg hat die Cache-Attribute im Runner nicht an Buildx weitergegeben (belegt:
+      # keine `buildkit`-Eintraege im Actions-Cache, kein Cache-Import im Log) - und damit die
+      # beiden langen Jobs ohne Beschleunigung gelassen. Die `--set`-Angaben halten den Scope
+      # unabhaengig davon, ob die gedruckte Definition die Cache-Attribute enthaelt.
+      - name: Images bauen (Buildx-Bake, Image-Cache)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN \
+            build --print > "$RUNNER_TEMP/bake.json"
+          args=()
+          if [ -n "${CACHE_BAKE_SCHREIBEN:-}" ]; then
+            args=(--set "$CACHE_BAKE_SCHREIBEN")
+          fi
+          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \
+            --set '*.cache-from=type=gha,scope=photosort-images' \
+            "${args[@]}"
       - name: Validate docker-compose.yml
         run: docker compose config -q
       - name: Validate docker-compose.yml + docker-compose.demo.yml overlay
@@ -422,7 +445,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0013-$RANDOM"
 
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --build backend worker
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d backend worker
 
           # "docker compose up" blockiert wegen worker's "depends_on: backend: condition:
           # service_healthy" bereits selbst, bis backend healthy ist - diese Wartschleife ist
@@ -508,7 +531,7 @@ jobs:
 
           # Bewusst "--no-deps": der SPA-Fallback ist rein nginx-seitig und haengt nicht
           # von backend/postgres/redis ab (siehe Teststrategie, Spec 0016).
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps --build frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps frontend
 
           echo "Waiting for frontend to respond..."
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
@@ -579,7 +602,7 @@ jobs:
           # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
           rm -f .env
           trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps --build frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
           for _ in $(seq 1 30); do
@@ -624,7 +647,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0049-$RANDOM"
 
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --build backend worker frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d backend worker frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
 
@@ -961,10 +984,20 @@ jobs:
         # vorgesehen (docs/setup.md, .claude/skills/browse-app/SKILL.md).
         run: npx playwright install --with-deps chromium
 
+      # Bauen ueber den Bake-Weg wie im Job `docker-compose-check`; hier wird der GHA-Cache nur
+      # gelesen (geschrieben wird er nur in `docker-compose-check`, und nur in Nicht-Fork-Laeufen).
+      - name: Images bauen (Buildx-Bake, Image-Cache lesen)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml \
+            build --print > "$RUNNER_TEMP/bake.json"
+          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \
+            --set '*.cache-from=type=gha,scope=photosort-images'
+
       - name: Pruefstack starten
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml up -d
           # Das Backend hat keinen Host-Port; bereit ist der Stack, sobald der nginx des Frontends
           # unter /api die Antwort des Backends liefert (ohne Proxy kaeme dort index.html zurueck).
           echo "Warte auf das Backend hinter dem Frontend..."
