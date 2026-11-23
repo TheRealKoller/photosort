@@ -335,8 +335,12 @@ export function tsxFiles(): typeof sourceFiles {
  * Nur die Produktivdateien. Die Skalenregeln unten gelten fuer das MARKUP des Produkts, nicht fuer
  * Testdateien: dort stehen Klassennamen als Zeichenketten in Assertionen (z.B. `input.test.tsx`
  * haelt `focus:border-[1.5px]` fest), und eine Regel, die dort anschlaegt, zwingt dazu, genau die
- * Zusicherung zu loeschen, die sie absichern soll.
+ * Zusicherung zu loeschen, die sie absichern soll. Ebenfalls nicht dazu gehoeren die gemeinsamen
+ * Testbausteine unter `src/test/` (Spec 0651): sie sind Testcode, und die Menge der Produktivdateien
+ * bleibt damit dieselbe wie vor dem Umbau.
  */
 export function productionTsxFiles(): typeof sourceFiles {
-  return tsxFiles().filter((file) => !file.label.endsWith('.test.tsx'))
+  return tsxFiles().filter(
+    (file) => !file.label.endsWith('.test.tsx') && !file.label.startsWith('src/test/'),
+  )
 }
