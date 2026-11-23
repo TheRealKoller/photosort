@@ -22,7 +22,8 @@ from photosort.main import app
 from photosort.models import Project, ProjectOverviewSeen, User
 from photosort.security import create_access_token, hash_password
 from tests.project_graph import build_project_graph
-from tests.test_api_projects import FakeOpenCloudClient
+from tests.support import FakeOpenCloudClient, make_user
+from tests.support import make_project_id as _project
 
 
 def _url(project_id: int | str) -> str:
@@ -30,18 +31,7 @@ def _url(project_id: int | str) -> str:
 
 
 async def _user(session: AsyncSession, username: str) -> User:
-    user = User(username=username, password_hash=hash_password("irrelevant"))
-    session.add(user)
-    await session.flush()
-    await session.refresh(user)
-    return user
-
-
-async def _project(session: AsyncSession, name: str) -> int:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.commit()
-    return project.id
+    return await make_user(session, username, password_hash=hash_password("irrelevant"), flush=True)
 
 
 @asynccontextmanager

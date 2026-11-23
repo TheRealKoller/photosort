@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import select, update
@@ -35,14 +36,13 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
-    ScanStatus,
-    ScoringRun,
     User,
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.persons import delete_person
 from photosort.selection import DEFAULT_TARGET, MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
 from photosort.worker import rebuild_run_grouping, rebuild_run_selection
+from tests.support import add_photo, add_successful_run, make_project
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 _FULL = 1.0
@@ -50,41 +50,26 @@ _NONE = 0.0
 
 
 async def _project(
-    session: AsyncSession, name: str = "Reise", *, target: int | None = None
+    session: AsyncSession, name: str = "Reise", *, target: int | None = None, **kwargs: Any
 ) -> Project:
     """`target` steht in jedem Fall ausgeschrieben, der eine bestimmte Platzzahl braucht: die
     Vorbelegung ist fest 150 (ADR 0131), und ein Testaufbau mit drei Fotos bekaeme sonst
     jedes Foto."""
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        selection_target=target,
-    )
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, selection_target=target, flush=True, **kwargs)
 
 
 async def _successful_run(
-    session: AsyncSession, project: Project, *, started_at: datetime = _BASE
+    session: AsyncSession, project: Project, *, started_at: datetime = _BASE, **kwargs: Any
 ) -> CriterionScoringRun:
-    scoring_run = ScoringRun(
-        project_id=project.id, status=ScanStatus.SUCCESS, started_at=started_at
-    )
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project.id,
-        scoring_run_id=scoring_run.id,
-        status=ScanStatus.SUCCESS,
+    finished_at = started_at + timedelta(minutes=5)
+    return await add_successful_run(
+        session,
+        project,
         started_at=started_at,
-        finished_at=started_at + timedelta(minutes=5),
-        last_progress_at=started_at + timedelta(minutes=5),
+        finished_at=finished_at,
+        last_progress_at=finished_at,
+        **kwargs,
     )
-    session.add(run)
-    await session.flush()
-    return run
 
 
 async def _event_row(session: AsyncSession, run: CriterionScoringRun, position: int) -> Event:
@@ -102,19 +87,16 @@ async def _event_row(session: AsyncSession, run: CriterionScoringRun, position: 
 async def _photo(
     session: AsyncSession, project: Project, index: int, *, offset: timedelta = timedelta()
 ) -> Photo:
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"{project.name}/{index}.jpg",
+    return await add_photo(
+        session,
+        project,
+        f"{project.name}/{index}.jpg",
         etag=f"etag-{project.name}-{index}",
-        content_length=100,
         taken_at=_BASE + offset,
-        taken_at_original=_BASE + offset,
-        camera_probed=True,
         last_modified=_BASE,
+        camera_probed=True,
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _motifs(

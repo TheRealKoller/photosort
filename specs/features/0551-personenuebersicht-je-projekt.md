@@ -989,7 +989,7 @@ Grundlage ist das Testkonzept 0002 mit den Sektionen „Biometrische Merkmale oh
 
 **Import-Graph (`test_persons_import_graph.py`)** bleibt unverändert und deckt `_unnamed_on_photo` ab, weil er in `api/persons.py` liegt. Neu ist nur eine Gegenprobe: Die Funktion ist dort definiert und nicht in einem Modul außerhalb der Prüfmenge.
 
-**Demo-Zustand (`test_demo_state.py`)**
+**Demo-Zustand (`test_demo_state_*.py`)**
 
 - Es gibt eine Erkennung mit Box und eine Korrektur mit Box und synthetischer Referenz.
 - Die Referenz-`model_key` ist der aktuelle `MODEL_KEY`, sodass `face = "shown"` entsteht und nicht `"assigned"`.
@@ -1089,7 +1089,7 @@ Grundlage ist das Testkonzept 0002 mit den Sektionen „Biometrische Merkmale oh
   - Der Fall „Obergrenze als `409`“ entfällt.
 - **`PersonsPage`:** der neue Leertext.
 - **`ProjectNav`/`projectRoutes`:** Das Nebenziel „Personen“ steht hinter „Einstellungen“ und „Statistik“, in beiden Darstellungen (Muster 0298), mit `aria-current` auf der Route.
-- **Design-Vertrag:** Die Zuordnen-Schaltflächen stehen in der Freigabeliste des heißen Pfads (`designSystem.contract.test.ts`).
+- **Design-Vertrag:** Die Zuordnen-Schaltflächen stehen in der Freigabeliste des heißen Pfads (`designSystem.*.contract.test.ts`).
 
 ### E2E und Prüfstack
 

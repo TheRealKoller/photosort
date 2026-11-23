@@ -103,7 +103,7 @@ Vollständig in `specs/architecture/0002-testkonzept.md` als neue Sektion **"`cv
 
 - **`symmetrie`**: Unit-Tests mit synthetischen Pillow-Bildern, kein Test-Double nötig.
 - **`horizont`**: neue Datei `test_horizon.py`, **direkte Aufrufe von `cv2.Canny`/`cv2.HoughLinesP`** gegen mit `PIL.ImageDraw.line(...)` gezeichnete synthetische Bilder — kein Mocking von `cv2`, da beide Funktionen deterministisch und ohne trainierte Gewichte sind.
-- **`freiraum`**: neues `FaceLandmarkerLike`-Protocol-Trio + `FakeFaceLandmarker` (analog `FaceDetectorLike`), `build_face_landmarker()` nie in einem automatisierten Test; Rotationsmatrix-zu-Yaw-Extraktion isoliert mit synthetischen 4×4-`numpy`-Matrizen getestet (deckt die offene Achsen-/Vorzeichenkonvention ab); Integrationstest mit Aufrufzähler-Nachweis in `test_worker_criterion_scoring.py`.
+- **`freiraum`**: neues `FaceLandmarkerLike`-Protocol-Trio + `FakeFaceLandmarker` (analog `FaceDetectorLike`), `build_face_landmarker()` nie in einem automatisierten Test; Rotationsmatrix-zu-Yaw-Extraktion isoliert mit synthetischen 4×4-`numpy`-Matrizen getestet (deckt die offene Achsen-/Vorzeichenkonvention ab); Integrationstest mit Aufrufzähler-Nachweis in `test_worker_criterion_scoring_*.py`.
 - Registry-Invarianten-Test (`category_eligible == (threshold is not None)`) deckt die drei neuen Einträge automatisch mit ab, kein neuer Testfall nötig.
 
 **Relevante Edge Cases** (Details siehe Akzeptanzkriterien): einfarbiges Bild/ungerade Bildmaße (`symmetrie`); kantenloses Bild, Winkel-Grenzfälle, Tie-Break bei gleich langen Kandidatenlinien, Portrait-Nahaufnahme (`horizont`); mehrere Gesichter trotz `num_faces=1`, Yaw-Deadzone-Grenze, Gesicht am Bildrand (0-Division), Tier statt Person (`freiraum`).

@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +8,7 @@ import type { MotifAssessmentOut, MotifStrengthOut } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { MotifStrengthRow } from './MotifStrengthRow'
 import { MotifStrengthSection } from './MotifStrengthSection'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/motifs')
 
@@ -40,8 +40,8 @@ const MOTIFS: MotifStrengthOut[] = [
 ]
 
 function renderWithQuery(ui: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  const client = makeQueryClient()
+  return render(withQuery(ui, client))
 }
 
 describe('MotifStrengthRow', () => {

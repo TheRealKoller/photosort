@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration
 
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
 # fehler-persistierung.md Punkt 2: additive Migration - neue Tabelle photo_cloud_vision_errors,
@@ -22,32 +20,10 @@ _MIGRATION_PATH = (
 )
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("cloud_vision_errors_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration (Revision
     b3c4d5e6f7a8) - nur die von c2d3e4f5a6b7 tatsaechlich beruehrte Tabelle photos."""
     connection.execute(text("CREATE TABLE photos (id INTEGER PRIMARY KEY)"))
-
-
-def _apply_upgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.upgrade()
-
-
-def _apply_downgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.downgrade()
 
 
 def test_migration_creates_the_photo_cloud_vision_errors_table(tmp_path: Path) -> None:
@@ -55,7 +31,7 @@ def test_migration_creates_the_photo_cloud_vision_errors_table(tmp_path: Path) -
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
@@ -75,7 +51,7 @@ def test_migration_allows_inserting_a_row(tmp_path: Path) -> None:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             connection.execute(text("INSERT INTO photos (id) VALUES (1)"))
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(
                 text(
                     "INSERT INTO photo_cloud_vision_errors "
@@ -101,9 +77,9 @@ def test_downgrade_drops_the_table(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         with engine.begin() as connection:
-            _apply_downgrade(connection)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         table_names = set(inspect(engine).get_table_names())
     finally:

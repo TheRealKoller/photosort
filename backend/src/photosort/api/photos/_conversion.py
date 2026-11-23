@@ -238,7 +238,7 @@ class EventPlaceOut(BaseModel):
     Event ihn nur, wenn ihn mindestens ein Zehntel seiner Fotos bezeugt
     (`events.LANDMARK_MIN_SHARE`); ein zu schwach gestuetzter Name ist von "nie erkannt" NICHT zu
     unterscheiden und hat keinen eigenen Anzeigezustand. Bricht in
-    `frontend/src/pages/AlbumDraftPage.test.tsx`, Faelle
+    `frontend/src/pages/AlbumDraftPage.*.test.tsx`, Faelle
     `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup` und
     `rendert beide feindlichen Teile als Text, nicht als Markup`."""
 
@@ -272,7 +272,7 @@ class EventOut(BaseModel):
     `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in `href`/`src`/`style`, nie als
     React-`key`. Die Schluessel-Auflage ist hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der
     Normalfall, den diese Story eigens behandelt. Bricht in
-    `frontend/src/pages/AlbumDraftPage.test.tsx`, Fall
+    `frontend/src/pages/AlbumDraftPage.*.test.tsx`, Fall
     `rendert einen HTML-artigen Ortsnamen als Text, nicht als Markup`."""
 
     id: int

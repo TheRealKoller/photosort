@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from sqlalchemy import select, update
@@ -23,8 +24,6 @@ from photosort.models import (
     Photo,
     PhotoRanking,
     Project,
-    ScanStatus,
-    ScoringRun,
     User,
 )
 from photosort.opencloud.client import Drive, OpenCloudError, join_remote_path
@@ -34,6 +33,7 @@ from photosort.worker import (
     sanitize_project_name,
 )
 from tests.event_rows import event_id_of_run
+from tests.support import add_photo, add_successful_run, make_project, make_user
 
 DRIVE = Drive(
     id="drive-1",
@@ -81,47 +81,29 @@ class RecordingExportClient:
 
 
 async def _user(session: AsyncSession, username: str) -> User:
-    user = User(username=username, password_hash="irrelevant")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, username, password_hash="irrelevant", flush=True)
 
 
 async def _project(
-    session: AsyncSession, name: str = "Costa Rica", opencloud_path: str = "/a"
+    session: AsyncSession, name: str = "Costa Rica", opencloud_path: str = "/a", **kwargs: Any
 ) -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=opencloud_path)
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(
+        session, name, drive_id="drive-1", path=opencloud_path, flush=True, **kwargs
+    )
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
-    )
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_successful_run(session, project)
 
 
 async def _photo(session: AsyncSession, project: Project, path: str) -> Photo:
-    now = datetime.now(UTC).replace(tzinfo=None)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    return await add_photo(
+        session,
+        project,
+        path,
+        taken_at=datetime.now(UTC).replace(tzinfo=None),
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _propose(session: AsyncSession, run: CriterionScoringRun, photo: Photo) -> None:

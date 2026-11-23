@@ -204,9 +204,9 @@ Der Schwerpunkt liegt auf DB-freien Unit-Tests (`tests/test_selection.py`). Die 
 - `test_worker_persons.py::test_the_cloud_sees_the_same_requests_with_and_without_persons`, `::test_the_phase_runs_after_ranking_and_before_success`, `::test_the_phase_does_not_run_and_leaves_old_detections`;
 - `test_persons_import_graph.py`;
 - `test_models.py::test_exactly_the_one_known_module_writes_selection_position`;
-- `test_api_photos.py::TestTheDraft::test_only_untouched_places_follow_the_new_run`, der die Album-Entwurf-Entscheidungen unabhängig von der Ursache der Änderung prüft;
+- `test_api_photos_album_draft.py::TestTheDraft::test_only_untouched_places_follow_the_new_run`, der die Album-Entwurf-Entscheidungen unabhängig von der Ursache der Änderung prüft;
 - `test_worker_selection.py::TestTheDraftHasNoPhaseOfItsOwn::test_rebuilding_the_grouping_also_produces_the_draft`;
-- `test_worker_rebuild_run_grouping.py`, `test_api_feedback_weights.py`, die Vorschlagsfälle in `test_demo_state.py`.
+- `test_worker_rebuild_run_grouping.py`, `test_api_feedback_weights.py`, die Vorschlagsfälle in `test_demo_state_*.py`.
 
 ## Entscheidungen
 

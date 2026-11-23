@@ -233,7 +233,7 @@ Beim Öffnen trägt jede Aufnahme den Zustand aus `effective_decision`, ohne Än
   - Die Auszeichnung "beste je Messwert" wird über den **angezeigten** Werten gebildet: Schärfe = Maximum, Belichtung = Minimum.
   - Bei Gleichstand tragen alle gleichauf liegenden Aufnahmen die Auszeichnung. Keine trägt sie bei weniger als zwei Werten oder wenn alle gleich sind; `null` fällt aus der Wertung.
 - **`components/DuplicatePhotoTile.tsx`:**
-  - Bleibt ohne Dämpfung (A6); `designSystem.contract.test.ts::OPACITY_ALLOWLIST` bekommt keinen Eintrag.
+  - Bleibt ohne Dämpfung (A6); `designSystem.*.contract.test.ts::OPACITY_ALLOWLIST` bekommt keinen Eintrag.
   - Mit Bewertungszeile (A4, A7).
   - Die Props `enlarged`/`controls` entfallen.
 - **`components/DuplicateEnlargedView.tsx` (neu, A11):**
@@ -629,7 +629,7 @@ Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlegen kann. E2
 | A3 | – | Seite: beide Absätze in Raster **und** Großansicht, per `compareDocumentPosition` vor `group` „Ganze Gruppe“, kein Vorfahre `details`/`[role=alert]`. Wächter gegen eine falsche Zusage: `DUPLICATE_HINT_TEXT` passt auf `/angezeigt/i`, nicht auf `/nicht (angetippt\|markiert)\|unentschieden\|noch offen/i` | – |
 | A4 | – | `DuplicatePhotoTile.test.tsx`: alle fünf Teile je Karte, kein `[aria-expanded]` | – |
 | A5 | bestehend: `test_the_answer_never_says_whether_a_state_came_from_the_automaton_or_the_user` | bestehende Schlüsselmenge `DUPLICATE_ZUSTAENDE`. Seite: jedes `li[data-duplicate-decision]` ∈ {keep, discard}, genau ein `aria-pressed=true` je Wahlzeile | – |
-| A6 | – | Der Vertragswächter „Regel 5“ (abgeleitete Menge) erfasst `DuplicateEnlargedView` und `DuplicateStackTile` ohne Zutun; die Kernliste in `designSystem.contract.test.ts` bekommt beide Dateien dazu. Karte und Großansicht ohne `data-dimmed` | Bühne: Treffertest an den vier Ecken des Inhaltsrechtecks des `object-contain`-Bildes liefert das Bild selbst |
+| A6 | – | Der Vertragswächter „Regel 5“ (abgeleitete Menge) erfasst `DuplicateEnlargedView` und `DuplicateStackTile` ohne Zutun; die Kernliste in `designSystem.*.contract.test.ts` bekommt beide Dateien dazu. Karte und Großansicht ohne `data-dimmed` | Bühne: Treffertest an den vier Ecken des Inhaltsrechtecks des `object-contain`-Bildes liefert das Bild selbst |
 | A7 | `test_api_duplicate_groups.py`: `sharpness`/`exposure` aus `PhotoScore`, beide `None` ohne Zeile. **Tragender Fall:** Die Werte bleiben nach einer Entscheidung und nach eigener Albumbewertung (`suggestion` wird `null`) unverändert. | `duplicateMetrics.test.ts`: Formatierung und Auszeichnung (Tabelle unten). Seite: Fixture, in der `photo.suggestion` andere Werte trägt als das Item; angezeigt werden die des Items | – |
 | A8 | bestehend: `test_keep_possible_is_false_exactly_where_the_rejection_does_not_follow_from_the_duplicate` | Karte und Seitenspalte: **Anzahl** der Bedienelemente in beiden Datenlagen nebeneinander, kein `disabled` | – |
 | A9 | Abschluss-Suite in `test_api_duplicate_decisions.py` (siehe Randfälle) | Seite: Abschluss (Beschriftung ×3, Navigation ×3, Sperre, ein Aufruf bei Doppelklick, Fehler ohne Navigation, Meldung verschwindet beim Ankerwechsel). `useDuplicates.test.tsx`: Die Abschluss-Mutation schreibt die Antwort fort und invalidiert `['photos', projectId]`, also auch den Ausschuss. `api/duplicates.test.ts`: `POST` ohne Body | – |
@@ -826,7 +826,7 @@ Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlegen kann. E2
 - `frontend/src/api/ausschuss.test.ts` (`STAND`), `frontend/src/hooks/useDuplicates.test.tsx` (`GROUP`), `frontend/src/api/duplicates.test.ts` (`GROUP`), `frontend/src/pages/DuplicateComparePage.test.tsx` (`group()`) — Typnachzug `kind` bzw. `sharpness`/`exposure`/`span_seconds`.
 - `frontend/src/pages/DuplicateComparePage.test.tsx::tiles()` — auf `[data-duplicate-decision]` einengen, sonst zählt der Streifen mit.
 - `frontend/src/components/DuplicatePhotoTile.test.tsx` — `onToggle` wird durch den neuen Öffnen-Rückruf ersetzt (betrifft „ist ein natives button …“, „wirkt mit Enter und Leertaste …“, „nennt den Dateinamen in JEDEM zugaenglichen Namen der Kachel (%s)“).
-- `frontend/src/designSystem.contract.test.ts` — Kernliste in „daempft in keiner bildtragenden Datei …“ um `DuplicateEnlargedView` und `DuplicateStackTile` erweitern; `TALL_CONTROL_ALLOWLIST` um die drei `h-11 sm:h-8`-Stellen (Wahlzeile, Aufnahme- und Gruppennavigation).
+- `frontend/src/designSystem.*.contract.test.ts` — Kernliste in „daempft in keiner bildtragenden Datei …“ um `DuplicateEnlargedView` und `DuplicateStackTile` erweitern; `TALL_CONTROL_ALLOWLIST` um die drei `h-11 sm:h-8`-Stellen (Wahlzeile, Aufnahme- und Gruppennavigation).
 - `e2e/tests/no-horizontal-scroll.spec.ts` › „keine Route erzeugt horizontales Scrollen bei 360 px“ — neue Ausschuss-Route; Großansicht als eigene Messung.
 
 #### C. Bewusst unverändert — Regressionsnachweis für A5, A8, A12 und A14

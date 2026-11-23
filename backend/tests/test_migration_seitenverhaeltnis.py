@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0489-fotouebersicht-ohne-beschnitt.md, decisions/0110-seitenverhaeltnis-als-
 # serverdatum-und-rasterkachel-neben-der-fotokarte.md: EINE rein additive, NULLABLE Spalte an
@@ -25,14 +23,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "bcc517b1ab22_seitenverhaeltnis.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("seitenverhaeltnis_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -63,17 +53,10 @@ def _insert_legacy_row(connection: Connection, *, row_id: int) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head. Beide Kennungen
     kommen aus `scripts/nummern.py migration`, nie aus einem eigenen Blick ins Verzeichnis."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "bcc517b1ab22"
     assert module.down_revision == "a8b9c0d1e2f3"
@@ -84,7 +67,7 @@ def test_upgrade_adds_the_nullable_column(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"]: c for c in inspect(engine).get_columns("photos")}
     finally:
@@ -103,7 +86,7 @@ def test_an_existing_row_survives_with_null(tmp_path: Path) -> None:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             _insert_legacy_row(connection, row_id=1)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.connect() as connection:
             rows = connection.execute(text("SELECT id, aspect_ratio FROM photos")).all()
@@ -121,7 +104,7 @@ def test_the_column_holds_a_fractional_ratio(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             _insert_legacy_row(connection, row_id=1)
             connection.execute(text("UPDATE photos SET aspect_ratio = 0.6666666 WHERE id = 1"))
 
@@ -142,7 +125,7 @@ def test_after_the_upgrade_an_insert_without_a_ratio_still_works(tmp_path: Path)
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             _insert_legacy_row(connection, row_id=7)
 
         with engine.connect() as connection:
@@ -161,9 +144,9 @@ def test_downgrade_removes_the_column_and_keeps_the_row(tmp_path: Path) -> None:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             _insert_legacy_row(connection, row_id=1)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(text("UPDATE photos SET aspect_ratio = 1.5"))
-            _apply(connection, "downgrade")
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"] for c in inspect(engine).get_columns("photos")}
         with engine.connect() as connection:

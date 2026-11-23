@@ -31,11 +31,13 @@ function walk(dir: string): string[] {
   return found
 }
 
-/** Alle Produktivquellen - ohne Tests und ohne diese Datei selbst (Selbstausschluss). */
+/** Alle Produktivquellen - ohne Tests, ohne die gemeinsamen Testbausteine unter `src/test/` (Spec
+ * 0651: dort liegen Testobjekte, kein Produktivcode) und ohne diese Datei selbst (Selbstausschluss). */
 function productionSources(): { path: string; content: string }[] {
   return walk(SRC_DIR)
     .filter((path) => /\.tsx?$/.test(path))
     .filter((path) => !/\.test\.tsx?$/.test(path))
+    .filter((path) => !path.startsWith(join(SRC_DIR, 'test') + '/'))
     .map((path) => ({ path, content: readFileSync(path, 'utf8') }))
 }
 

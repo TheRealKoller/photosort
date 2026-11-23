@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # Die einzige Migration dieses Projekts, die DATEN LOESCHT: `photo_rankings` wird vollstaendig
 # geleert. Altlaeufe bekommen keine Events - die Kuratierung zeigt fuer sie nichts, bis sie neu
@@ -20,14 +18,6 @@ from sqlalchemy import Connection, create_engine, inspect, text
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / "f5a6b7c8d9e0_events.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("events_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -78,16 +68,9 @@ def _insert_legacy_run(connection: Connection, *, run_id: int, ranking_rows: int
         )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "d1e2f3a4b5c6"
 
@@ -96,7 +79,7 @@ def test_upgrade_creates_the_events_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -126,7 +109,7 @@ def test_upgrade_binds_events_to_their_run_with_a_real_foreign_key(tmp_path: Pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("events")
@@ -140,7 +123,7 @@ def test_upgrade_keeps_position_unique_per_run(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         constraints = inspect(connection).get_unique_constraints("events")
@@ -152,7 +135,7 @@ def test_upgrade_replaces_cluster_key_with_a_not_null_event_id(tmp_path: Path) -
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         columns = {c["name"]: c for c in inspect(connection).get_columns("photo_rankings")}
@@ -169,7 +152,7 @@ def test_upgrade_deletes_every_ranking_row_of_the_old_runs(tmp_path: Path) -> No
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=3)
         _insert_legacy_run(connection, run_id=2, ranking_rows=2)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         remaining = connection.execute(text("SELECT COUNT(*) FROM photo_rankings")).scalar_one()
@@ -184,7 +167,7 @@ def test_upgrade_leaves_the_run_rows_untouched(tmp_path: Path) -> None:
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=3)
         _insert_legacy_run(connection, run_id=2, ranking_rows=2)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -200,7 +183,7 @@ def test_upgrade_creates_no_events_for_the_old_runs(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=3)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT COUNT(*) FROM events")).scalar_one() == 0
@@ -212,7 +195,7 @@ def test_upgrade_leaves_no_orphaned_ranking_row(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=3)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         orphans = connection.execute(
@@ -229,8 +212,8 @@ def test_downgrade_restores_the_old_column_shape(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -275,9 +258,9 @@ def test_downgrade_survives_rows_written_after_the_upgrade(tmp_path: Path) -> No
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=2)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         _insert_post_upgrade_ranking(connection, run_id=1)
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT photo_id, cluster_key FROM photo_rankings")).all()
@@ -299,8 +282,8 @@ def test_downgrade_leaves_no_server_default_on_the_restored_column(tmp_path: Pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         columns = {c["name"]: c for c in inspect(connection).get_columns("photo_rankings")}
@@ -316,8 +299,8 @@ def test_downgrade_does_not_bring_the_deleted_rows_back(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_run(connection, run_id=1, ranking_rows=3)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT COUNT(*) FROM photo_rankings")).scalar_one() == 0

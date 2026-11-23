@@ -50,6 +50,7 @@ from photosort.models import (
 )
 from tests.event_rows import event_id_of_run, event_of_run
 from tests.import_closure import package_files
+from tests.support import add_photo, make_project
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -248,23 +249,18 @@ async def test_deleting_photo_cascades_to_ratings(db_session: AsyncSession) -> N
 
 async def _make_photo(db_session: AsyncSession, project: Project | None = None) -> Photo:
     if project is None:
-        project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
-        db_session.add(project)
-        await db_session.flush()
-
-    now = datetime.now(UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"img-{uuid4()}.jpg",
+        project = await make_project(
+            db_session, f"Project {uuid4()}", drive_id="d", path="/a", flush=True
+        )
+    return await add_photo(
+        db_session,
+        project,
+        f"img-{uuid4()}.jpg",
         etag="etag-1",
         content_length=123,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+        taken_at=datetime.now(UTC),
+        flush=True,
     )
-    db_session.add(photo)
-    await db_session.flush()
-    return photo
 
 
 async def test_scoring_run_defaults(db_session: AsyncSession) -> None:
@@ -994,7 +990,7 @@ async def test_create_photo_cloud_vision_error(db_session: AsyncSession) -> None
     assert stored.error_type == "LandmarkApiError"
     assert stored.error_message == "Anthropic Vision API nicht erreichbar: timeout"
     # SQLite (Testumgebung) speichert DateTime-Spalten tz-naiv - vergleicht denselben Zeitpunkt,
-    # nicht dieselbe tzinfo (analog test_worker_criterion_scoring.py-Konvention).
+    # nicht dieselbe tzinfo (analog der Konvention in test_worker_criterion_scoring_run.py).
     assert stored.attempted_at == now.replace(tzinfo=None)
 
 
@@ -1235,10 +1231,7 @@ async def test_remote_category_classification_run_cost_columns_stay_nullable(
 
 
 async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, drive_id="drive-1", path=f"/{name}", flush=True)
 
 
 async def test_a_new_project_camera_starts_without_an_offset(db_session: AsyncSession) -> None:

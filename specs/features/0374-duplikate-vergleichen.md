@@ -491,7 +491,7 @@ Antwortstruktur beider Wege in einem Fall. Eingabegrenzen: `photo_id` = 0, negat
 fällt die Zusage lautlos aus: `test_openapi_beschreibungen.py::DOCUMENTED_ROUTES`;
 `test_auth_guard.py` (S8); `projectRoutes.ts` (`PROJECT_ROUTE_PATHS` wächst von 9 auf 10, die Zahl
 steht literal im Test, und `resolveActiveNavTargetId` muss die Route dem Ziel "Fotos" zuordnen —
-eine unregistrierte Route markiert still *kein* Ziel aktiv); `designSystem.contract.test.ts`
+eine unregistrierte Route markiert still *kein* Ziel aktiv); `designSystem.*.contract.test.ts`
 (`OPACITY_ALLOWLIST` braucht eine fundstellengenaue Freigabe, die zeigt, dass die Dämpfung an der
 Bildfläche und nicht am Kachelkörper hängt); `frontend/penpot/payload.test.ts` an drei Stellen samt
 `views.json`; `test_postgres_ddl_compatibility.py` und `test_migration_chain.py` plus ein eigener

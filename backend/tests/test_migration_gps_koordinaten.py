@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0051-gps-landmark-cluster-bildung.md, decisions/0072-ortsbezogene-cluster-
 # anzeigeort-als-antwortableitung.md: zwei rein additive, NULLABLE Spalten an `photos`, KEIN
@@ -23,14 +21,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "d1e2f3a4b5c6_gps_koordinaten.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("gps_koordinaten_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -61,17 +51,10 @@ def _insert_legacy_row(connection: Connection, *, row_id: int) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head, nicht gegen den in
     der Spec genannten (Teststrategie der Spec)."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "c9d0e1f2a3b4"
 
@@ -81,7 +64,7 @@ def test_upgrade_adds_both_nullable_columns(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"]: c for c in inspect(engine).get_columns("photos")}
     finally:
@@ -101,7 +84,7 @@ def test_an_existing_row_survives_with_null_in_both_columns(tmp_path: Path) -> N
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             _insert_legacy_row(connection, row_id=1)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.connect() as connection:
             rows = connection.execute(text("SELECT id, gps_lat, gps_lon FROM photos")).all()
@@ -118,7 +101,7 @@ def test_after_the_upgrade_an_insert_without_coordinates_still_works(tmp_path: P
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             _insert_legacy_row(connection, row_id=7)
 
         with engine.connect() as connection:
@@ -136,7 +119,7 @@ def test_the_columns_hold_a_full_precision_coordinate(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             _insert_legacy_row(connection, row_id=1)
             connection.execute(
                 text("UPDATE photos SET gps_lat = 48.858093, gps_lon = 2.294694 WHERE id = 1")
@@ -159,9 +142,9 @@ def test_downgrade_removes_both_columns(tmp_path: Path) -> None:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             _insert_legacy_row(connection, row_id=1)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(text("UPDATE photos SET gps_lat = 48.85, gps_lon = 2.29"))
-            _apply(connection, "downgrade")
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"] for c in inspect(engine).get_columns("photos")}
         with engine.connect() as connection:

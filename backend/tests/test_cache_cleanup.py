@@ -25,8 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import cache_cleanup
 from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS, cleanup_orphaned_cache
-from photosort.models import Photo, Project
+from photosort.models import Photo
 from photosort.thumbnails import CacheSweepResult, display_path, thumbnail_path
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 
 # Optionale Anfuehrungszeichen und ein optionales Schema-Praefix: der Dialekt entscheidet, ob
 # `FROM photos`, `FROM "photos"` (Postgres/SQLite), `FROM \`photos\`` (MySQL) oder
@@ -52,31 +54,18 @@ def _now() -> float:
     return time.time()
 
 
-async def _make_project(session: AsyncSession, name: str) -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=name)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def _add_photo(
-    session: AsyncSession, project_id: int, relative_path: str, etag: str
+    session: AsyncSession, project_id: int, relative_path: str, etag: str, **kwargs: Any
 ) -> Photo:
-    moment = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
-    photo = Photo(
-        project_id=project_id,
-        relative_path=relative_path,
+    return await add_photo(
+        session,
+        project_id,
+        relative_path,
         etag=etag,
         content_length=10,
-        taken_at=moment,
-        taken_at_original=moment,
-        last_modified=moment,
+        taken_at=datetime(2023, 8, 15, 10, 0, tzinfo=UTC),
+        **kwargs,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 def _write_aged(path: Path, size: int, age_seconds: float) -> Path:

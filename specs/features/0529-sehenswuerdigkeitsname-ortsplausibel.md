@@ -152,7 +152,7 @@ zusammen, gäbe es die Regel nicht. Deshalb ist die Punktliste nicht nullbar, so
 
 `explain_events`/`build_events` bekommen einen **schlüsselwort-artigen Parameter**
 `landmark_points_by_name: Mapping[str, tuple[Cell, ...]] | None = None`. Die Vorgabe `None` hält alle
-34 bestehenden Aufrufe in `test_events.py`/`test_event_probe.py` gültig und heißt „keine Auskunft
+34 bestehenden Aufrufe in `test_events_*.py`/`test_event_probe.py` gültig und heißt „keine Auskunft
 vorhanden". `_built` prüft **nach `_name_of` und vor `_place_of`**:
 
 ```python
@@ -365,7 +365,7 @@ der zweite Zielname entsteht abgeleitet). Der Wächter
 - `LandmarkGazetteer` gegen eine im Test nach `tmp_path` geschriebene Mini-Auszugsdatei: Treffer über
   `name`, Treffer **nur** über ein Element von `alternatenames`, mehrere Fundorte zu einem Schlüssel,
   Unbekannter → leere Punktmenge (nicht „kein Eintrag"), leerer Kandidatensatz fragt die Datei nicht.
-- `_landmark_name_is_plausible` in `test_events.py`: die fünf Zweige in ihrer Reihenfolge. Die Grenze
+- `_landmark_name_is_plausible` in `test_events_*.py`: die fünf Zweige in ihrer Reihenfolge. Die Grenze
   wird **am Symbol** geprüft (Muster `_min_share()`) — je ein Fall knapp darunter, exakt darauf (muss
   **verwerfen**) und darüber. Kein Testfall nennt `50_000` als Zahl.
 - `write_extracts`/`extract_line` in `test_place_dataset.py`: Klassenfilter `S/T/L/H/V`,

@@ -84,7 +84,7 @@ Struktur analog Spec 0047. `specs/architecture/0002-testkonzept.md` wurde bereit
 **Testebenen:**
 - **Unit (`test_landmark.py`):** `MistralLandmarkClient` komplett über `httpx.MockTransport` (kein `unittest.mock.patch`), analog dem bestehenden Anthropic-Testblock. `_landmark_detection_from_json` zusätzlich direkt gegen ein bereits geparstes Dict getestet, ohne HTTP.
 - **Unit (`test_config.py`):** Default/Override/ungültiger-Wert für `landmark_provider`, Default für `mistral_api_key`.
-- **Integration (`test_worker_criterion_scoring.py`, In-Memory-DB, Fake-`LandmarkClientLike`):** `provider`-Wert wird korrekt persistiert; Umschalt-Regressionstest (altes `provider`-Feld bleibt bei Providerwechsel unverändert).
+- **Integration (`test_worker_criterion_scoring_*.py`, In-Memory-DB, Fake-`LandmarkClientLike`):** `provider`-Wert wird korrekt persistiert; Umschalt-Regressionstest (altes `provider`-Feld bleibt bei Providerwechsel unverändert).
 - **Migration (`test_models.py`):** neue Spalte per `inspect()` verifiziert.
 
 **Relevante Edge Cases:**

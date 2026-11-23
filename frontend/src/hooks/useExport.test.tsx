@@ -1,22 +1,19 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as exportApi from '../api/export'
 import { useExport } from './useExport'
 import * as useProjects from './useProjects'
 import * as useTriggerConfirmation from './useTriggerConfirmation'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/export')
 vi.mock('./useProjects')
 vi.mock('./useTriggerConfirmation')
 
 function makeWrapper() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return wrapper
 }
 

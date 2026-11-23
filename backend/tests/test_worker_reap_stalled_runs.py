@@ -24,6 +24,7 @@ from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs
 from photosort.worker import stall_reaper as worker_stall_reaper
 from tests.project_graph import get_or_create_user
+from tests.support import make_project as _make_project
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019),
 # Schicht 2: reap_stalled_runs braucht keinen echten arq-Scheduler/Redis - wird als gewoehnliche
@@ -37,14 +38,6 @@ _SENTINEL_NOW = datetime(2030, 1, 1, 12, 0, 0)
 @pytest.fixture(autouse=True)
 def _freeze_now(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worker_runs, "now_utc", lambda: _SENTINEL_NOW)
-
-
-async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _make_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:

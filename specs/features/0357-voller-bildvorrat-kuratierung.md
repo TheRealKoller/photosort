@@ -306,7 +306,7 @@ denselben, leeren Schnappschuss.
     Wiederverwendet unverändert `_photos_by_id`, `_rankings_by_photo_id`, `_partition_sizes`,
     `_to_photo_out`, `_get_project_or_404`. Kein erfolgreicher Lauf oder unbekannte Keys → leeres
     `PhotoListOut`, kein Fehler.
-- `backend/tests/test_api_photos.py` — die Bestandstests des alten Verhaltens werden zu
+- `backend/tests/test_api_photos_*.py` — die Bestandstests des alten Verhaltens werden zu
   Gegenteil-Tests umgeschrieben, nicht gelöscht (siehe Teststrategie); Tests für den neuen
   Endpunkt.
 
@@ -584,7 +584,7 @@ Testfall dafür in AK 16.
 
 ## Teststrategie
 
-**Ebenen.** Backend-Integration (`backend/tests/test_api_photos.py`, In-Memory-SQLite,
+**Ebenen.** Backend-Integration (`backend/tests/test_api_photos_*.py`, In-Memory-SQLite,
 `authenticated_api_client`): der neue Endpunkt vollständig (AK 28–33) und die Umkehrung der
 Auswahl-Query (AK 13/14). Frontend-Unit (`frontend/src/utils/curationTopN.test.ts`):
 tabellengetriebene Grenzfälle für `parseTopN()` (`null`, `''`, `'abc'`, `0`, `0.4`, `10.6`, `11`,

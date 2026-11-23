@@ -35,7 +35,7 @@ import { cn } from '../../lib/utils'
  * `accent` ist die Vorgabe und traegt FORTSCHRITT (die drei bestehenden Aufrufstellen bleiben
  * unveraendert). `neutral` traegt eine MESSGROESSE (`--text-h`, Spec 0427): acht Amber-Balken je
  * Foto stuenden in der Favoritenfarbe und laesen sich als Bewertung. Beide Paare
- * (Fuellung gegen Spur) stehen in der Kontrastmatrix von `designSystem.contract.test.ts`.
+ * (Fuellung gegen Spur) stehen in der Kontrastmatrix von `designSystem.*.contract.test.ts`.
  *
  * Der unbestimmte Zustand bleibt dem Akzent vorbehalten: eine Messgroesse ist entweder da oder
  * nicht, sie "laeuft" nicht.

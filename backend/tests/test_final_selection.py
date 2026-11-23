@@ -20,53 +20,32 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
-    ScanStatus,
-    ScoringRun,
     User,
 )
 from tests.event_rows import event_id_of_run
+from tests.support import add_photo, add_successful_run, make_project, make_user
 
 
 async def _user(session: AsyncSession, username: str) -> User:
-    user = User(username=username, password_hash="irrelevant")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, username, password_hash="irrelevant", flush=True)
 
 
 async def _project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="/a")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, drive_id="drive-1", path="/a", flush=True)
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
-    )
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_successful_run(session, project)
 
 
 async def _photo(session: AsyncSession, project: Project, path: str) -> Photo:
-    now = datetime.now(UTC).replace(tzinfo=None)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    return await add_photo(
+        session,
+        project,
+        path,
+        taken_at=datetime.now(UTC).replace(tzinfo=None),
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
-    return photo
 
 
 async def _propose(session: AsyncSession, run: CriterionScoringRun, photo: Photo) -> None:

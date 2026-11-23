@@ -37,7 +37,7 @@ Bewusst gegen die Empfehlung entschieden, je Ansicht einen eigenen PR zu schneid
 ### Keine funktionalen Verluste
 
 - [ ] Jede Ansicht bleibt funktional identisch: gleiche Inhalte, gleiche Anzahl Elemente, gleiche Interaktionen. Es wird nichts entfernt und nichts hinzugefügt — mit der einen benannten Ausnahme (Dateiname auf der Fotokachel). **Nachweis:** Der bestehende `vitest`-Satz läuft am Ende jedes Etappen-Teilschritts vollständig grün, **ohne dass eine bestehende Testdatei geändert wurde**. Jede dennoch geänderte Testdatei ist in der PR-Beschreibung mit Grund aufgeführt.
-- [ ] Die bestehenden Tastenkürzel bleiben unverändert belegt; sie werden lediglich sichtbar gemacht. Das sichtbare Kästchen eines Eintrags zeigt genau die Taste, die diese Bewertung tatsächlich auslöst (in `PhotoDetailPage.test.tsx` über alle drei Tasten geprüft); der zugängliche Name der Schaltfläche bleibt exakt `Favorit` / `Album-würdig` / `Verwerfen`.
+- [ ] Die bestehenden Tastenkürzel bleiben unverändert belegt; sie werden lediglich sichtbar gemacht. Das sichtbare Kästchen eines Eintrags zeigt genau die Taste, die diese Bewertung tatsächlich auslöst (in `PhotoDetailPage.*.test.tsx` über alle drei Tasten geprüft); der zugängliche Name der Schaltfläche bleibt exakt `Favorit` / `Album-würdig` / `Verwerfen`.
 - [ ] Alle Ansichten bleiben in Telefonbreite (360px) und Desktopbreite (1280px) vollständig bedienbar: kein horizontales Scrollen, nichts überlappt, nichts abgeschnitten. Für "kein horizontales Scrollen" ist `e2e/tests/no-horizontal-scroll.spec.ts` maßgeblich; Foto-Detail und Foto-Vergleich werden dort ergänzt. "Nichts überlappt, nichts abgeschnitten" bleibt Sichtprüfung.
 - [ ] Die Trefferflächen bleiben eingehalten, auf dem heißen Pfad am Telefon weiterhin sichtbar mindestens 44px. **Nachweis:** `e2e/tests/tap-targets.spec.ts` bleibt unverändert grün, `EXPECTED_CONTROL_COUNT` bleibt 6.
 
@@ -62,7 +62,7 @@ Keiner. Diese Spec ändert ausschließlich die Darstellung im Frontend — keine
 
 Die Formsprache wird **zentral** nachgezogen, nicht pro Ansicht. Stufe 1 hat die Token-Ebene bereits vollständig getauscht (`frontend/src/index.css`: vier Flächen, vier Akzente, vier Textstufen, Radienskala 4/6/8/12/16, Typoskala, 8-Punkt-Raster über Tailwinds Default-`--spacing`) — was in den Ansichten fehlt, ist nicht *ein weiterer Wertetausch*, sondern die **Verlagerung wiederholter Einzelentscheidungen in gemeinsame Bausteine plus ein statisches Netz, das ihre Rückkehr verhindert.** Drei Ebenen, in dieser Reihenfolge:
 
-1. **Ein Token und vier statische Prüfungen** (`index.css`, `designSystem.contract.test.ts`) — sie machen aus "einheitlich" eine prüfbare Eigenschaft statt einer Sichtprüfung, die beim nächsten Feature wieder auseinanderläuft.
+1. **Ein Token und vier statische Prüfungen** (`index.css`, `designSystem.*.contract.test.ts`) — sie machen aus "einheitlich" eine prüfbare Eigenschaft statt einer Sichtprüfung, die beim nächsten Feature wieder auseinanderläuft.
 2. **Neue/erweiterte Bausteine**, die eine Board-Form genau einmal tragen: `PhotoCard`, `RatingBar`, das Board-Navigationselement im `Stepper`, das Textkennzeichen im `RatingBadge`, der unbestimmte `Progress`, der Icon-Button als `Button`-Aufruf statt neunmal handgerollt.
 3. **Die Ansichten** greifen nur noch auf diese Bausteine zu und tragen selbst nur noch Layout (Raster, Abstände, Überschriftenstufen).
 
@@ -90,7 +90,7 @@ Das ist bewusst **kein Architekturumbau**: keine neue Abhängigkeit, kein neues 
 
 ### Die beiden Aufräumpunkte aus Stufe 1
 
-**Fundstellengenaue Prüfung vollrunder Formen.** Heute ist `ROUNDED_FULL_ALLOWLIST` in `frontend/src/designSystem.contract.test.ts` (Block "Design-Vertrag: Formsprache und Skalen") nach **Dateien** geschlüsselt: sobald eine Datei einmal drinsteht, ist jedes weitere `rounded-full` darin unsichtbar — `ui/button.tsx` ist wegen des Lade-Spinners freigegeben und dürfte damit unbemerkt wieder eine vollrunde Schaltfläche bekommen. Umbau auf einen **generischen Helfer**:
+**Fundstellengenaue Prüfung vollrunder Formen.** Heute ist `ROUNDED_FULL_ALLOWLIST` in `frontend/src/designSystem.*.contract.test.ts` (Block "Design-Vertrag: Formsprache und Skalen") nach **Dateien** geschlüsselt: sobald eine Datei einmal drinsteht, ist jedes weitere `rounded-full` darin unsichtbar — `ui/button.tsx` ist wegen des Lade-Spinners freigegeben und dürfte damit unbemerkt wieder eine vollrunde Schaltfläche bekommen. Umbau auf einen **generischen Helfer**:
 
 - `allowlistedOccurrences(needle, entries)` sammelt alle Fundstellen als `{ label, line, text }` und gleicht jede gegen die Einträge `{ file, snippet, reason }` ab.
 - Drei Fehlerklassen statt einer: (a) Fundstelle ohne passenden Eintrag, (b) Eintrag ohne Fundstelle (verwaiste Freigabe — der Grund, warum solche Listen verrotten), (c) `snippet`, das nur aus dem Suchbegriff selbst besteht (verhindert den stillen Rückfall auf Datei-Granularität).
@@ -102,7 +102,7 @@ Derselbe Helfer trägt die vier neuen Prüfungen dieser Stufe (siehe "Netz" unte
 
 ### Das Netz — vier neue statische Prüfungen
 
-Alle in `designSystem.contract.test.ts` (die einzige Ebene mit CSS-Assertions; Komponententests bekommen weiterhin **keine**), alle über den fundstellengenauen Helfer, alle mit Begründung je Eintrag:
+Alle in `designSystem.*.contract.test.ts` (die einzige Ebene mit CSS-Assertions; Komponententests bekommen weiterhin **keine**), alle über den fundstellengenauen Helfer, alle mit Begründung je Eintrag:
 
 1. **Abstandsskala.** `p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|gap|gap-x|gap-y|space-x|space-y` dürfen nur die acht Stufen `0/1/2/3/4/6/8/12/16` tragen. Heutige Verstöße u.a. `gap-1.5` (~14×), `gap-2.5`, `gap-3.5`, `py-3.5`, `px-5`, `mt-5`, `py-10`, `px-8/px-10`, `p-0.5`, `mb-7`. **Höhen/Breiten sind nicht betroffen** (`h-11`, `size-8`, `h-0.5` bleiben zulässig) — die Regel ist eine Abstands-, keine Größenregel.
 2. **Keine willkürlichen Werte** (`text-[…]`, `h-[…]`, `w-[…]`, `p*-[…]`, `gap-[…]`) außerhalb der Liste. Freigegeben bleiben `ui/popover.tsx` (`max-h-[60vh]`), `ui/checkbox.tsx` (`size-[18px]`, abgeleitetes Board-Maß) und `ui/dialog.tsx` (`w-[min(32rem,…)]`). Zu entfernen: `ProjectListPage.tsx` `text-[10.5px]`, `ProjectPipelineLayout.tsx` `text-[10px]`, `LoginPage.tsx` `h-[50px]`.
@@ -116,9 +116,9 @@ Zusätzlich wandert **`h-11`/`min-h-11` auf die Liste**: zulässig nur auf dem h
 
 Die Etappen sind so geschnitten, dass **jede für sich grün endet** (`npm run lint`, `npm run typecheck`, `npx vitest run`) und einen eigenen Commit trägt. Innerhalb einer Etappe gilt der normale Rot-Grün-Zyklus: erst die Prüfung/den Test, der die Lücke zeigt, dann die Umsetzung.
 
-**Etappe 1 — die beiden Aufräumpunkte** (keine sichtbare Änderung). `frontend/src/lib/scrollLock.ts` (neu) + `scrollLock.test.ts` (neu), `ui/dialog.tsx`, `ui/dialog.test.tsx` (zwei Dialoge, beide Schließreihenfolgen), `setupTests.ts`; `designSystem.contract.test.ts`: zeilentreues `stripComments`, generischer Helfer, `rounded-full` auf Fundstellen umgestellt.
+**Etappe 1 — die beiden Aufräumpunkte** (keine sichtbare Änderung). `frontend/src/lib/scrollLock.ts` (neu) + `scrollLock.test.ts` (neu), `ui/dialog.tsx`, `ui/dialog.test.tsx` (zwei Dialoge, beide Schließreihenfolgen), `setupTests.ts`; `designSystem.*.contract.test.ts`: zeilentreues `stripComments`, generischer Helfer, `rounded-full` auf Fundstellen umgestellt.
 
-**Etappe 2 — Token und Primitive.** `index.css` (`--separator` in `:root` + `@theme`), `designSystem.contract.test.ts` (Kontrastzeile), `ui/progress.tsx` (unbestimmter Zustand, Spur), `components/StatusDot.tsx`, `components/PhotoImage.tsx`; `components/RatingBadge.tsx` + `ui/badge.tsx` (sichtbares Textkennzeichen neben dem Symbol — `aria-label` bleibt wortgleich, sonst brechen `e2e/tests/tap-targets.spec.ts` und die Komponententests); die **neun** handgerollten Icon-Schaltflächen (`Stepper.tsx` ×2, `CriterionDetailsPopover.tsx` ×2, `ProjectSettingsPage.tsx` ×2, `ProjectStatsPage.tsx` ×2, `CurateCategoriesPage.tsx`) auf `<Button variant="ghost" size="icon">`.
+**Etappe 2 — Token und Primitive.** `index.css` (`--separator` in `:root` + `@theme`), `designSystem.*.contract.test.ts` (Kontrastzeile), `ui/progress.tsx` (unbestimmter Zustand, Spur), `components/StatusDot.tsx`, `components/PhotoImage.tsx`; `components/RatingBadge.tsx` + `ui/badge.tsx` (sichtbares Textkennzeichen neben dem Symbol — `aria-label` bleibt wortgleich, sonst brechen `e2e/tests/tap-targets.spec.ts` und die Komponententests); die **neun** handgerollten Icon-Schaltflächen (`Stepper.tsx` ×2, `CriterionDetailsPopover.tsx` ×2, `ProjectSettingsPage.tsx` ×2, `ProjectStatsPage.tsx` ×2, `CurateCategoriesPage.tsx`) auf `<Button variant="ghost" size="icon">`.
 
 **Etappe 3 — die drei zusammengesetzten Bausteine.** `components/PhotoCard.tsx` (neu) + Test: vier Zustände über `data`-Merkmale (`data-rating-status`, `data-struck`), Dateiname, Slots. Kein `data-selected` (Entscheidung 5). `components/RatingButtons.tsx` → Board-Bewertungsleiste inkl. Tasten-Kästchen (`aria-hidden`, sonst zerbricht der zugängliche Name "Favorit"), Datei-/Exportname bleibt, damit die Aufrufstelle unverändert bleibt. `components/Stepper.tsx` → Board-Navigationselement mit den drei Zuständen; das Schloss-Symbol bleibt Inline-SVG (der Zwölfer-Satz hat kein Schloss — dokumentierte Lücke, wird nicht stillschweigend mit einem beliebigen Lucide-Symbol gefüllt), der Haken wird `<Icon name="check">`.
 
@@ -425,7 +425,7 @@ Diese Spec ändert Darstellung, nicht Verhalten — und genau daraus folgt ihr T
 | Ebene | Trägt in dieser Spec | Trägt hier ausdrücklich **nicht** |
 |---|---|---|
 | `vitest` + Testing Library (jsdom) | DOM-Struktur, Rollen, zugängliche Namen, Elementanzahl, `data-*`-Zustände, Interaktion, Modul-Logik (`scrollLock`) | alles Gerechnete, alles Responsive, jede Farb-/Maßaussage |
-| `designSystem.contract.test.ts` (vitest, Umgebung `node`) | Kontrastzeile `--separator`, Abstandsskala, willkürliche Werte, Deckkraft-Modifikatoren, `rounded-full`, `opacity-*`, `h-11`, Behandlung des unbestimmten Fortschritts | Wirkung im Browser |
+| `designSystem.*.contract.test.ts` (vitest, Umgebung `node`) | Kontrastzeile `--separator`, Abstandsskala, willkürliche Werte, Deckkraft-Modifikatoren, `rounded-full`, `opacity-*`, `h-11`, Behandlung des unbestimmten Fortschritts | Wirkung im Browser |
 | Playwright (`e2e/`) | echte Geometrie bei 360px: kein waagerechtes Scrollen, Treffbarkeit 44px, Spaltenleiter, Sticky-Verhalten, Popover-Lage | Aussehen, Farbwerte, Graustufen |
 | Sicht-/Ad-hoc-Prüfung | Board-Treue, Graustufen-Abnahme, unbestimmter Fortschritt | nichts, was auf einer der drei Ebenen prüfbar wäre |
 
@@ -452,7 +452,7 @@ Der Helfer ist kein Beiwerk: Er trägt am Ende vier statische Regeln, und im gr�
 
 **Entwurfsvorgabe, ohne die es nicht geht:** Der Helfer nimmt die zu durchsuchenden Dateien als Parameter (`allowlistedOccurrences(needle, entries, files = sourceFiles)`). Getestet wird ausschließlich gegen **synthetische, im Test literal geschriebene** `files`-Listen — kein Dateisystem, keine Fixture-Dateien, keine temporären Verzeichnisse.
 
-**Ort:** derselbe `frontend/src/designSystem.contract.test.ts`, eigener `describe`-Block. Nicht in eine eigene Datei auslagern — jede Datei unter `src/**` außer `SELF_FILE` wird vom Vertragstest selbst gescannt, und ein Helfer, der die Suchmuster (`text-[`, `rounded-full`, `/60`) als Literale trägt, würde die Regeln auslösen, die er implementiert.
+**Ort:** derselbe `frontend/src/designSystem.*.contract.test.ts`, eigener `describe`-Block. Nicht in eine eigene Datei auslagern — jede Datei unter `src/**` außer `SELF_FILE` wird vom Vertragstest selbst gescannt, und ein Helfer, der die Suchmuster (`text-[`, `rounded-full`, `/60`) als Literale trägt, würde die Regeln auslösen, die er implementiert.
 
 Pflichtfälle (acht, mehr nicht):
 
@@ -509,7 +509,7 @@ Testdaten nach bestehender Konvention: kleine literale Objekte in der Testdatei,
 - Genau **drei** Schaltflächen in der Gruppe; das Kästchen ist kein Bedienelement.
 - Jeder Eintrag zeigt sichtbar seine Beschriftung.
 
-**Neue Fehlerklasse, die diese Spec erst erzeugt: ein Kästchen, das lügt.** Die Ziffer steht in `RatingButtons`, die Belegung in `PhotoDetailPage` — sie können auseinanderlaufen, ohne dass irgendein bestehender Test etwas merkt. Pflicht daher in `frontend/src/pages/PhotoDetailPage.test.tsx`: der heutige Einzelfall "sets a rating via keyboard shortcut '1'" wird zur **Tabelle über alle drei Tasten**, und je Zeile wird zusätzlich zugesichert, dass die Schaltfläche des ausgelösten Status genau diese Ziffer sichtbar trägt. Ein Test, der nur die Anwesenheit der Ziffern prüft, erfüllt das nicht.
+**Neue Fehlerklasse, die diese Spec erst erzeugt: ein Kästchen, das lügt.** Die Ziffer steht in `RatingButtons`, die Belegung in `PhotoDetailPage` — sie können auseinanderlaufen, ohne dass irgendein bestehender Test etwas merkt. Pflicht daher in `frontend/src/pages/PhotoDetailPage.*.test.tsx`: der heutige Einzelfall "sets a rating via keyboard shortcut '1'" wird zur **Tabelle über alle drei Tasten**, und je Zeile wird zusätzlich zugesichert, dass die Schaltfläche des ausgelösten Status genau diese Ziffer sichtbar trägt. Ein Test, der nur die Anwesenheit der Ziffern prüft, erfüllt das nicht.
 
 **`Stepper.test.tsx` (bestehend, erweitert).** Die beiden Zustandstests bleiben tragend (`data-step-state`, `aria-current`, `aria-disabled`, paarweise Verschiedenheit). Neu: die sichtbare Schrittbeschriftung zieht ins Nav-Element und bleibt `aria-hidden` — zugesichert wird, dass der zugängliche Name unverändert vollständig aus dem `aria-label` kommt (`Schritt N von 5: <Label>, <Status>`, wörtlich) und dass es weiterhin **genau fünf** Listeneinträge gibt. Der bestehende Test auf `size-8`/`tap-target-square` bleibt die einzige Klassen-Assertion dieser Datei — er sichert die Trefferfläche unterhalb `sm:`, die laut Entscheidung 6 unverändert bleibt, und wird nicht um weitere Klassennamen erweitert.
 

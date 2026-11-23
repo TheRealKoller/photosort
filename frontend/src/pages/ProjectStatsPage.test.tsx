@@ -1,7 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -9,6 +8,7 @@ import * as feedbackApi from '../api/feedback'
 import * as projectsApi from '../api/projects'
 import type { FeedbackDiagnosisOut, ProjectStatsOut } from '../api/types'
 import { ProjectStatsPage } from './ProjectStatsPage'
+import { makeQueryClient, withProviders } from '../test/render'
 
 vi.mock('../api/projects')
 // Die Rueckmeldung aus der Nacharbeit laedt ihre Zahlen SELBST und projektuebergreifend. Sie wird
@@ -155,17 +155,16 @@ function emptyDiagnosis(): FeedbackDiagnosisOut {
 
 function renderPage() {
   vi.mocked(feedbackApi.getFeedbackDiagnosis).mockResolvedValue(emptyDiagnosis())
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/1/stats']}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/projects/:projectId/stats" element={<ProjectStatsPage />} />
         </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: ['/projects/1/stats'] },
+    ),
   )
 }
 

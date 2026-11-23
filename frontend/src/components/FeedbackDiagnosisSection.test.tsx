@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +6,7 @@ import * as feedbackApi from '../api/feedback'
 import { ApiError } from '../api/client'
 import type { FeedbackDiagnosisOut } from '../api/types'
 import { FeedbackDiagnosisSection } from './FeedbackDiagnosisSection'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/feedback')
 
@@ -120,13 +120,14 @@ function adjusted(): FeedbackDiagnosisOut {
 }
 
 function renderSection() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const client = makeQueryClient()
   return render(
-    <QueryClientProvider client={client}>
-      <FeedbackDiagnosisSection />
-    </QueryClientProvider>,
+    withQuery(
+      <>
+        <FeedbackDiagnosisSection />
+      </>,
+      client,
+    ),
   )
 }
 

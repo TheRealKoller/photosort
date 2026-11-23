@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,7 +18,7 @@ from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS
 from photosort.cameras import MAX_TIME_OFFSET_MINUTES
 from photosort.db import make_session_factory
 from photosort.models import Photo, Project, ProjectCamera, ScanRun, ScanStatus
-from photosort.opencloud.client import Drive, OpenCloudError
+from photosort.opencloud.client import OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.thumbnails import (
     display_path,
@@ -29,25 +29,9 @@ from photosort.thumbnails import (
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scan
 from photosort.worker import scan as worker_scan
+from tests.support import FakeOpenCloudClient, scan_entry
+from tests.support import make_project as _make_project
 from tests.time_offset_invariant import assert_time_offset_invariant
-
-DRIVE = Drive(
-    id="drive-1",
-    name="Family",
-    drive_type="project",
-    webdav_url="https://cloud.example.com/dav/spaces/drive-1",
-)
-
-
-def _entry(name: str, etag: str, last_modified: datetime, content_length: int = 100) -> DavEntry:
-    return DavEntry(
-        href=f"/dav/spaces/drive-1/CostaRica/{name}",
-        name=name,
-        is_collection=False,
-        etag=etag,
-        last_modified=last_modified,
-        content_length=content_length,
-    )
 
 
 def _jpeg_bytes() -> bytes:
@@ -72,55 +56,6 @@ def _rotated_jpeg_bytes() -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", exif=exif)
     return buffer.getvalue()
-
-
-class FakeOpenCloudClient:
-    def __init__(
-        self,
-        entries: list[tuple[str, DavEntry]],
-        file_contents: dict[str, bytes] | None = None,
-        fail_with: OpenCloudError | None = None,
-        download_delay: float = 0.0,
-        on_download: Callable[[str], Awaitable[None]] | None = None,
-    ) -> None:
-        self._entries = entries
-        self._file_contents = file_contents or {}
-        self._fail_with = fail_with
-        self._download_delay = download_delay
-        self._on_download = on_download
-        self.range_requests: list[str] = []
-        self.download_requests: list[str] = []
-        # specs/features/0036-scan-performance-zweiphasig-parallel.md: Nachweis echter
-        # Nebenlaeufigkeit ohne Wall-Clock-Timing-Assertions (Teststrategie-Abschnitt der Spec) -
-        # zaehlt, wie viele download()-Aufrufe gleichzeitig "in Flight" waren.
-        self._active_downloads = 0
-        self.max_concurrent_downloads = 0
-
-    async def resolve_drive(self, name: str | None) -> Drive:
-        if self._fail_with:
-            raise self._fail_with
-        return DRIVE
-
-    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
-        for item in self._entries:
-            yield item
-
-    async def get_range(self, webdav_url: str, relative_path: str, length: int) -> bytes:
-        self.range_requests.append(relative_path)
-        return self._file_contents.get(relative_path, b"")
-
-    async def download(self, webdav_url: str, relative_path: str) -> bytes:
-        self.download_requests.append(relative_path)
-        self._active_downloads += 1
-        self.max_concurrent_downloads = max(self.max_concurrent_downloads, self._active_downloads)
-        try:
-            if self._download_delay:
-                await asyncio.sleep(self._download_delay)
-            if self._on_download is not None:
-                await self._on_download(relative_path)
-            return self._file_contents.get(relative_path, b"")
-        finally:
-            self._active_downloads -= 1
 
 
 class WalkFailsMidwayClient(FakeOpenCloudClient):
@@ -199,20 +134,12 @@ class DownloadRaisesCancelledErrorClient(FakeOpenCloudClient):
         return await super().download(webdav_url, relative_path)
 
 
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
-
-
 async def test_scan_adds_new_photos(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
         ]
     )
 
@@ -252,7 +179,7 @@ async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession, tmp_p
 
     new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.png", _entry("img001.png", "new-etag", new_modified))]
+        entries=[("CostaRica/img001.png", scan_entry("img001.png", "new-etag", new_modified))]
     )
 
     scan_run = await run_project_scan(
@@ -290,7 +217,7 @@ async def test_scan_skips_photo_with_unchanged_etag(
     await db_session.commit()
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))]
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "same-etag", modified))]
     )
 
     scan_run = await run_project_scan(
@@ -378,7 +305,7 @@ async def test_scan_skips_non_image_files(db_session: AsyncSession, tmp_path: Pa
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/notes.txt", _entry("notes.txt", "etag", modified))]
+        entries=[("CostaRica/notes.txt", scan_entry("notes.txt", "etag", modified))]
     )
 
     scan_run = await run_project_scan(
@@ -407,7 +334,7 @@ async def test_scan_extracts_exif_for_jpeg(db_session: AsyncSession, tmp_path: P
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": buffer.getvalue()},
     )
 
@@ -455,7 +382,7 @@ async def test_scan_reads_exif_from_a_heic_in_the_same_range_window(
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     relative_path = f"CostaRica/{dateiname}"
     client = FakeOpenCloudClient(
-        entries=[(relative_path, _entry(dateiname, "etag-heic", modified))],
+        entries=[(relative_path, scan_entry(dateiname, "etag-heic", modified))],
         file_contents={relative_path: _heic_with_exif()},
     )
 
@@ -477,7 +404,7 @@ async def test_scan_run_marked_failed_on_opencloud_error(
     je stattgefunden, also verwirft session.rollback() die gesamte (leere) Transaktion -
     photos == [] bleibt korrekt."""
     project = await _make_project(db_session)
-    client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Ordner nicht erreichbar"))
+    client = FakeOpenCloudClient(entries=[], fail=OpenCloudError("Ordner nicht erreichbar"))
 
     scan_run = await run_project_scan(
         db_session, client, project, drive_name=None, cache_dir=tmp_path
@@ -502,7 +429,7 @@ async def test_scan_run_marked_failed_on_unexpected_non_opencloud_error(
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = WalkFailsWithUnexpectedErrorClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
         ]
     )
 
@@ -525,7 +452,7 @@ async def test_scan_run_marked_failed_on_cancelled_error(
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = WalkFailsWithCancelledErrorClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
         ]
     )
 
@@ -565,8 +492,8 @@ async def test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_downloa
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = DownloadRaisesCancelledErrorClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
-            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", scan_entry("img002.png", "etag-2", modified)),
         ],
         cancel_path="CostaRica/img002.png",
     )
@@ -597,9 +524,9 @@ async def test_scan_phase_one_failure_leaves_total_files_unset_and_no_photos_pro
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = WalkFailsMidwayClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
-            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
-            ("CostaRica/img003.png", _entry("img003.png", "etag-3", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", scan_entry("img002.png", "etag-2", modified)),
+            ("CostaRica/img003.png", scan_entry("img003.png", "etag-3", modified)),
         ]
     )
 
@@ -648,9 +575,9 @@ async def test_scan_commits_files_found_progress_during_enumeration_at_productio
 
     client = ObservingClient(
         entries=[
-            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
-            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
-            ("CostaRica/img003.png", _entry("img003.png", "etag-3", modified)),
+            ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", scan_entry("img002.png", "etag-2", modified)),
+            ("CostaRica/img003.png", scan_entry("img003.png", "etag-3", modified)),
         ]
     )
 
@@ -675,7 +602,7 @@ async def test_scan_updates_last_progress_at_at_each_checkpoint(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.png", _entry("img001.png", "etag-1", modified))]
+        entries=[("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified))]
     )
 
     scan_run = await run_project_scan(
@@ -691,7 +618,7 @@ async def test_scan_generates_thumbnails_for_new_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -722,7 +649,7 @@ async def test_scan_regenerates_thumbnails_when_etag_changes(
     await db_session.commit()
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "new-etag", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -742,7 +669,7 @@ async def test_scan_survives_undecodable_image_without_failing(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        entries=[("CostaRica/broken.jpg", scan_entry("broken.jpg", "etag-broken", modified))],
         file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
     )
 
@@ -765,8 +692,8 @@ async def test_scan_of_a_broken_heic_still_reads_the_other_photos_completely(
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
         entries=[
-            ("CostaRica/broken.heic", _entry("broken.heic", "etag-broken", modified)),
-            ("CostaRica/good.heic", _entry("good.heic", "etag-good", modified)),
+            ("CostaRica/broken.heic", scan_entry("broken.heic", "etag-broken", modified)),
+            ("CostaRica/good.heic", scan_entry("good.heic", "etag-good", modified)),
         ],
         file_contents={
             "CostaRica/broken.heic": b"not a heic",
@@ -804,7 +731,7 @@ async def test_scan_stores_the_aspect_ratio_of_a_new_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -821,7 +748,7 @@ async def test_scan_stores_the_shown_aspect_ratio_of_an_exif_rotated_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/hoch.jpg", _entry("hoch.jpg", "etag-rot", modified))],
+        entries=[("CostaRica/hoch.jpg", scan_entry("hoch.jpg", "etag-rot", modified))],
         file_contents={"CostaRica/hoch.jpg": _rotated_jpeg_bytes()},
     )
 
@@ -839,7 +766,7 @@ async def test_a_photo_whose_image_cannot_be_decoded_keeps_a_null_aspect_ratio(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        entries=[("CostaRica/broken.jpg", scan_entry("broken.jpg", "etag-broken", modified))],
         file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
     )
 
@@ -875,7 +802,7 @@ async def test_the_aspect_ratio_is_rewritten_when_the_file_changes_its_shape(
     await db_session.commit()
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "new-etag", modified))],
         file_contents={"CostaRica/img.jpg": _rotated_jpeg_bytes()},
     )
 
@@ -895,7 +822,7 @@ async def test_a_probe_only_item_triggers_no_download(
     await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "same-etag", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
     )
 
@@ -918,7 +845,7 @@ async def test_scan_stores_the_resolution_of_a_new_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -937,7 +864,7 @@ async def test_scan_stores_the_shown_resolution_of_an_exif_rotated_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/hoch.jpg", _entry("hoch.jpg", "etag-rot", modified))],
+        entries=[("CostaRica/hoch.jpg", scan_entry("hoch.jpg", "etag-rot", modified))],
         file_contents={"CostaRica/hoch.jpg": _rotated_jpeg_bytes()},
     )
 
@@ -955,7 +882,7 @@ async def test_an_undecodable_photo_is_marked_as_probed_although_the_resolution_
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        entries=[("CostaRica/broken.jpg", scan_entry("broken.jpg", "etag-broken", modified))],
         file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
     )
 
@@ -1189,7 +1116,7 @@ async def test_scan_survives_thumbnail_download_failure_without_failing(
             raise OpenCloudError("Download fehlgeschlagen")
 
     client = FailingDownloadClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
     )
 
     scan_run = await run_project_scan(
@@ -1212,8 +1139,8 @@ class TestTotalFilesTracking:
         modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
         client = FakeOpenCloudClient(
             entries=[
-                ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
-                ("CostaRica/notes.txt", _entry("notes.txt", "etag-2", modified)),
+                ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
+                ("CostaRica/notes.txt", scan_entry("notes.txt", "etag-2", modified)),
             ]
         )
 
@@ -1266,7 +1193,7 @@ class TestTotalFilesTracking:
                 observed["files_found"] = committed.files_found
 
         client = FakeOpenCloudClient(
-            entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-1", modified))],
+            entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-1", modified))],
             on_download=_observe,
         )
 
@@ -1301,7 +1228,7 @@ class TestBlockOrchestration:
         project = await _make_project(db_session)
         modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
         entries = [
-            (f"CostaRica/img{i:03d}.png", _entry(f"img{i:03d}.png", f"etag-{i}", modified))
+            (f"CostaRica/img{i:03d}.png", scan_entry(f"img{i:03d}.png", f"etag-{i}", modified))
             for i in range(file_count)
         ]
         # Kuenstliche Verzoegerung (kein Wall-Clock-Assert, siehe Klassen-Docstring) - stellt
@@ -1325,8 +1252,8 @@ class TestBlockOrchestration:
         modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
         client = DownloadFailsOnceClient(
             entries=[
-                ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
-                ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+                ("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified)),
+                ("CostaRica/img002.png", scan_entry("img002.png", "etag-2", modified)),
             ],
             fail_path="CostaRica/img002.png",
         )
@@ -1356,9 +1283,9 @@ class TestResumeIdempotency:
         project = await _make_project(db_session)
         modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
         entries = [
-            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
-            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
-            ("CostaRica/img003.jpg", _entry("img003.jpg", "etag-3", modified)),
+            ("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", scan_entry("img002.jpg", "etag-2", modified)),
+            ("CostaRica/img003.jpg", scan_entry("img003.jpg", "etag-3", modified)),
         ]
         first_client = FakeOpenCloudClient(entries=entries)
         first_run = await run_project_scan(
@@ -1391,10 +1318,10 @@ class TestResumeIdempotency:
         project_id = project.id
         modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
         entries = [
-            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
-            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
-            ("CostaRica/img003.jpg", _entry("img003.jpg", "etag-3", modified)),
-            ("CostaRica/img004.jpg", _entry("img004.jpg", "etag-4", modified)),
+            ("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", scan_entry("img002.jpg", "etag-2", modified)),
+            ("CostaRica/img003.jpg", scan_entry("img003.jpg", "etag-3", modified)),
+            ("CostaRica/img004.jpg", scan_entry("img004.jpg", "etag-4", modified)),
         ]
         failing_client = DownloadFailsOnceClient(entries=entries, fail_path="CostaRica/img003.jpg")
 
@@ -1495,7 +1422,7 @@ async def test_scan_stores_the_gps_coordinate_of_a_jpeg(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_with_gps(*_EIFFEL_JPEG_ARGS)},
     )
 
@@ -1515,7 +1442,7 @@ async def test_scan_leaves_both_columns_null_for_a_jpeg_without_gps(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -1534,7 +1461,7 @@ async def test_scan_leaves_both_columns_null_for_a_non_jpeg(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.png", _entry("img001.png", "etag-1", modified))]
+        entries=[("CostaRica/img001.png", scan_entry("img001.png", "etag-1", modified))]
     )
 
     await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
@@ -1571,7 +1498,7 @@ async def test_scan_resets_a_stored_coordinate_when_the_changed_file_no_longer_c
 
     new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", new_modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "new-etag", new_modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
     )
 
@@ -1607,7 +1534,7 @@ async def test_scan_replaces_a_stored_coordinate_when_the_changed_file_carries_a
 
     new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", new_modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "new-etag", new_modified))],
         file_contents={"CostaRica/img.jpg": _jpeg_with_gps(*_EIFFEL_JPEG_ARGS)},
     )
 
@@ -1646,7 +1573,7 @@ async def test_an_unreadable_exif_window_does_not_abort_the_scan(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        entries=[("CostaRica/img.jpg", scan_entry("img.jpg", "etag-jpg", modified))],
         file_contents={"CostaRica/img.jpg": buffer.getvalue()},
     )
 
@@ -1672,8 +1599,8 @@ async def test_a_cancelled_error_from_a_parallel_worker_is_not_unpacked_into_the
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = DownloadRaisesCancelledErrorClient(
         entries=[
-            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
-            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
+            ("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", scan_entry("img002.jpg", "etag-2", modified)),
         ],
         cancel_path="CostaRica/img002.jpg",
     )
@@ -1747,7 +1674,7 @@ async def test_a_successful_scan_removes_an_aged_orphan_and_spares_foreign_valid
     foreign_valid = _write_orphan(tmp_path, foreign_photo.id, "etag-b", _GEALTERT)
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
     )
 
@@ -1824,7 +1751,7 @@ async def test_cache_files_under_the_previous_etag_go_after_an_etag_change(
     stale = _write_orphan(tmp_path, photo.id, "old-etag", _GEALTERT)
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "new-etag", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "new-etag", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
     )
 
@@ -1848,7 +1775,7 @@ async def test_a_freshly_written_orphan_survives_the_scan(
     fresh = _write_orphan(tmp_path, 9999, "etag-anderer-scan", age_seconds=0.0)
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
     )
 
@@ -1864,7 +1791,7 @@ async def test_a_failed_scan_does_not_clean_up(db_session: AsyncSession, tmp_pat
     """Akzeptanzkriterium 8: der Aufruf sitzt HINTER dem Fehler-Handler, nicht darin."""
     project = await _make_project(db_session)
     orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
-    client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Verbindung verweigert"))
+    client = FakeOpenCloudClient(entries=[], fail=OpenCloudError("Verbindung verweigert"))
 
     scan_run = await run_project_scan(
         db_session, client, project, drive_name=None, cache_dir=tmp_path
@@ -1882,7 +1809,7 @@ async def test_a_cancelled_scan_does_not_clean_up(db_session: AsyncSession, tmp_
     orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = WalkFailsWithCancelledErrorClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))]
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))]
     )
 
     with pytest.raises(asyncio.CancelledError):
@@ -1986,7 +1913,7 @@ async def test_the_directory_matches_the_reported_storage_after_a_scan(
     _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
 
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
     )
     await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
@@ -2040,7 +1967,7 @@ async def test_scan_writes_camera_recorded_time_and_corrected_time(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
     )
 
@@ -2068,7 +1995,7 @@ async def test_scan_applies_an_existing_offset_to_the_corrected_time(
     await db_session.commit()
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
     )
 
@@ -2091,7 +2018,7 @@ async def test_scan_leaves_a_photo_without_a_determinable_camera_unshifted(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
     )
 
@@ -2136,7 +2063,7 @@ async def test_scan_clears_the_camera_when_the_changed_file_no_longer_names_one(
 
     new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "new-etag", new_modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "new-etag", new_modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
     )
 
@@ -2162,7 +2089,7 @@ async def test_the_same_camera_in_two_projects_gets_two_rows(
 
     for project in (first, second):
         client = FakeOpenCloudClient(
-            entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+            entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
             file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
         )
         await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
@@ -2200,7 +2127,7 @@ async def test_scan_falls_back_to_the_unshifted_time_when_the_offset_overflows(
     await db_session.commit()
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "etag-1", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(taken_at="0001:01:02 00:00:00")},
     )
 
@@ -2221,7 +2148,10 @@ async def test_scan_asks_the_database_once_per_camera_not_once_per_photo(
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     entries = [
-        (f"CostaRica/img{index:03d}.jpg", _entry(f"img{index:03d}.jpg", f"etag-{index}", modified))
+        (
+            f"CostaRica/img{index:03d}.jpg",
+            scan_entry(f"img{index:03d}.jpg", f"etag-{index}", modified),
+        )
         for index in range(6)
     ]
     client = FakeOpenCloudClient(
@@ -2300,7 +2230,7 @@ async def test_the_catch_up_round_skips_heic_photos_with_an_unchanged_etag(
     await _existing_unprobed_photo(db_session, project, relative_path)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[(relative_path, _entry(dateiname, "same-etag", modified))],
+        entries=[(relative_path, scan_entry(dateiname, "same-etag", modified))],
         file_contents={relative_path: _heic_with_exif()},
     )
 
@@ -2329,7 +2259,7 @@ async def test_the_catch_up_round_reads_the_exif_window_without_making_thumbnail
     await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "same-etag", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
     )
 
@@ -2354,7 +2284,7 @@ async def test_the_catch_up_round_sets_the_marker_even_without_a_finding(
     await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
-        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        entries=[("CostaRica/img001.jpg", scan_entry("img001.jpg", "same-etag", modified))],
         file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
     )
 
@@ -2372,7 +2302,7 @@ async def test_a_second_run_right_after_the_catch_up_round_touches_the_network_n
     project = await _make_project(db_session)
     await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
-    entries = [("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))]
+    entries = [("CostaRica/img001.jpg", scan_entry("img001.jpg", "same-etag", modified))]
     contents = {"CostaRica/img001.jpg": _jpeg_with_camera()}
 
     await run_project_scan(
@@ -2402,7 +2332,7 @@ async def test_the_catch_up_round_leaves_the_marker_of_unprocessed_blocks_alone(
         await _existing_unprobed_photo(db_session, project, f"CostaRica/img{index:03d}.jpg")
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     entries = [
-        (f"CostaRica/img{index:03d}.jpg", _entry(f"img{index:03d}.jpg", "same-etag", modified))
+        (f"CostaRica/img{index:03d}.jpg", scan_entry(f"img{index:03d}.jpg", "same-etag", modified))
         for index in range(3)
     ]
     contents = {path: _jpeg_with_camera() for path, _value in entries}
@@ -2490,7 +2420,7 @@ def _write_thumbnail(cache_dir: Path, photo: Photo, width: int, height: int) -> 
 
 def _unchanged_entries(*paths: str) -> list[tuple[str, DavEntry]]:
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
-    return [(path, _entry(path.rsplit("/", 1)[-1], "same-etag", modified)) for path in paths]
+    return [(path, scan_entry(path.rsplit("/", 1)[-1], "same-etag", modified)) for path in paths]
 
 
 async def test_the_catch_up_round_fills_a_null_ratio_from_the_cached_thumbnail(

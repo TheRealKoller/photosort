@@ -16,13 +16,11 @@ Fremdschluesselmenge an der migrierten Tabelle.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "b1c2d3e4f5a6_feedback_events.py"
 _MIGRATION_PATH = (
@@ -70,14 +68,6 @@ _NULLABLE_COLUMNS = {
 }
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("feedback_events_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration - genau die vier
     Tabellen, auf die ein Fremdschluessel dieser Tabelle zeigt. `events` steht bewusst NICHT
@@ -105,13 +95,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
@@ -119,7 +102,7 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head (Spec 0431). Die
     Kette selbst prueft `test_migration_chain.py`."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "a1b2c3d4e5f6"
 
@@ -129,7 +112,7 @@ def test_the_upgrade_creates_the_table_with_exactly_the_expected_columns(tmp_pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -143,7 +126,7 @@ def test_exactly_the_expected_columns_are_nullable(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -158,7 +141,7 @@ def test_the_event_id_column_carries_no_foreign_key_while_the_others_do(tmp_path
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         foreign_keys = inspect(connection).get_foreign_keys(_TABLE)
 
@@ -179,7 +162,7 @@ def test_the_project_id_is_indexed(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         indexes = inspect(connection).get_indexes(_TABLE)
 
@@ -192,7 +175,7 @@ def test_the_kind_column_is_a_string_enum_without_a_native_type(tmp_path: Path) 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -206,7 +189,7 @@ def test_the_weight_column_defaults_to_one_on_the_server(tmp_path: Path) -> None
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 f"INSERT INTO {_TABLE} (project_id, photo_id, kind) "  # noqa: S608
@@ -225,14 +208,14 @@ def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 f"INSERT INTO {_TABLE} (project_id, photo_id, kind, occurred_at) "  # noqa: S608
                 "VALUES (1, 1, 'photo_included', '2026-09-13 10:00:00')"
             )
         )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         tables = set(inspect(connection).get_table_names())
 

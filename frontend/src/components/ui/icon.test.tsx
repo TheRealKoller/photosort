@@ -7,7 +7,7 @@ import { Icon, ICON_NAMES } from './icon'
  * specs/features/0320-dark-utility-register.md, Teststrategie "Komponentenebene, semantisch".
  * Der Symbolsatz des Boards ist die einzige Symbolquelle des Produkts; diese Datei ist die
  * einzige Stelle, an der `lucide-react` ueberhaupt importiert werden darf (statisch erzwungen in
- * src/designSystem.contract.test.ts).
+ * src/designSystem.*.contract.test.ts).
  */
 describe('Icon', () => {
   it('kennt genau die zweiundzwanzig Symbole des Boards', () => {

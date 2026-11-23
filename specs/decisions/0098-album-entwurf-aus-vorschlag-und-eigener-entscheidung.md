@@ -175,7 +175,7 @@ wäre ein zweiter Ort für eine Sache, von der die Story genau einen verlangt.
   Umgebungsvariable, kein neuer Setup-Schritt.
 - **Zwei e2e-Spezifikationen** (`no-horizontal-scroll`, `popover-position`) rufen `/curate` auf und
   ziehen auf die neue Route nach.
-- **Bestehende Tests kodieren die alte Bedeutung** (`test_api_ratings.py`, `test_api_photos.py`,
+- **Bestehende Tests kodieren die alte Bedeutung** (`test_api_ratings.py`, `test_api_photos_*.py`,
   `CuratePage.test.tsx`, `RatingButtons`/`RatingBadge`/`PhotoDetailPage`). Sie werden umgeschrieben,
   nicht gelöscht.
 - **Bewusst offen gelassen:** Der Vergleich der beiden Nutzer-Entwürfe (Story 7) und die Auswertung

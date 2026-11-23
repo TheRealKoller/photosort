@@ -607,7 +607,7 @@ Grundlage ist das Testkonzept 0002, Sektion „Biometrische Merkmale ohne echtes
 | Abnahme | Messkommando + manuell im Betrieb | `test_person_probe.py`, Abschnitt „Abnahme“ |
 | Anzeige, Ergänzen/Entfernen | API + vitest | `test_api_persons.py`, `PhotoPersonsSection.test.tsx` |
 | Vorrang, gemeinsam | Integration Worker + API | `test_worker_persons.py`, `test_api_persons.py` |
-| Finden, genau, blendet nur aus | API + vitest (+ e2e) | `test_api_photos.py`, `personFilter.test.ts`, Seiten-Tests |
+| Finden, genau, blendet nur aus | API + vitest (+ e2e) | `test_api_photos_*.py`, `personFilter.test.ts`, Seiten-Tests |
 | Telemetrie aus | Unterprozess + Struktur | `test_label_embedding.py` |
 
 ### Backend – Unit
@@ -704,7 +704,7 @@ Grundlage ist das Testkonzept 0002, Sektion „Biometrische Merkmale ohne echtes
 - **Obergrenze:** Das 20. gezeigte Gesicht des aktuellen Modells geht, das 21. wird abgewiesen, gleich wie viele Referenzen fremden `model_key` es gibt.
 - **Speicherstelle:** `PersonReference` wird genau an einer Stelle in `persons.py` geschrieben (Wächter).
 
-**API (`test_api_persons.py`, `test_api_photos.py`)**
+**API (`test_api_persons.py`, `test_api_photos_*.py`)**
 
 - **`POST /persons`:**
   - Person und erste Referenz entstehen atomar; nach einem abgewiesenen Gesicht bleibt keine Person übrig.
@@ -808,7 +808,7 @@ Grundlage ist das Testkonzept 0002, Sektion „Biometrische Merkmale ohne echtes
 - **Quote:** richtig ÷ (richtig + ergänzt), mit exaktem Erwartungswert. Bei Nenner 0 steht ein Platzhalter, kein Fehler.
 - **Ausgabe:** Gegen einprägsame Namen, Pfade und Ids: nur Anzahlen, „Person 1/2“, kein Schalter, der Namen ergänzt.
 
-**Demo-Zustand (`test_demo_state.py`)**
+**Demo-Zustand (`test_demo_state_*.py`)**
 
 - zwei erfundene Personen mit synthetischen Referenzen unter dem aktuellen `MODEL_KEY`;
 - Fotos in den Zuständen erkannt, von Hand zugeordnet, von Hand entfernt;

@@ -71,7 +71,7 @@ const NAV_LINK_RESTING_CLASSES =
 
 /*
  * AKTIVSTIL DES GESCHLOSSENEN AUSLÖSERS - ein DRITTES, absichtlich abweichendes Rezept, das der
- * Stepper-Bindung in designSystem.contract.test.ts bewusst NICHT hinzugefuegt wird: ein
+ * Stepper-Bindung in designSystem.*.contract.test.ts bewusst NICHT hinzugefuegt wird: ein
  * Symbol-Button ist kein Board-Navigationselement.
  *
  * NICHT FARBE ALLEIN: der ruhende Ghost-Button hat GAR KEINEN Rand - der Rand selbst ist damit der
@@ -94,7 +94,7 @@ const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
  * verdoppelte Abstand. Tragend ist die Zusicherung, dass `--separator` auf JEDER der vier
  * Flaechen sichtbarer bleibt als `--border`.
  *
- * EIGENES LITERAL statt inline im `className`: designSystem.contract.test.ts bindet die Zeile
+ * EIGENES LITERAL statt inline im `className`: designSystem.*.contract.test.ts bindet die Zeile
  * woertlich und sichert damit insbesondere die Token-Wahl `border-separator`.
  */
 const PANEL_PRIMARY_GROUP_CLASSES = 'mb-2 border-b border-separator pb-2 lg:hidden'

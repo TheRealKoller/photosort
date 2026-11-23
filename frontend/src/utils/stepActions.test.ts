@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ProjectOut, ScanStatus } from '../api/types'
-import {
-  criterionRunSummary,
-  projectFixture,
-  scanSummary,
-  scoringRunSummary,
-} from '../test/projectStateSpace'
+import { criterionRunSummary, scanSummary, scoringRunSummary } from '../test/projectStateSpace'
+import { makeProject } from '../test/fixtures'
 import { computeStepStates, PIPELINE_STEPS, type StepId } from './pipelineSteps'
 import { ausschussConfirmLabel, deriveStepAction, type StepActionKind } from './stepActions'
 import {
@@ -48,7 +44,7 @@ function enumerateCases(): Case[] {
           status,
           isTriggerPending,
           openCount: null,
-          project: projectFixture({
+          project: makeProject({
             last_scan: status === null ? null : scanSummary(status),
             category_selection_enabled: categoryEnabled,
           }),
@@ -60,7 +56,7 @@ function enumerateCases(): Case[] {
               status,
               isTriggerPending,
               openCount,
-              project: projectFixture({
+              project: makeProject({
                 last_scan: scanSummary('success'),
                 last_scoring_run:
                   status === null
@@ -76,7 +72,7 @@ function enumerateCases(): Case[] {
           status,
           isTriggerPending,
           openCount: null,
-          project: projectFixture({
+          project: makeProject({
             last_scan: scanSummary('success'),
             last_scoring_run: scoringRunSummary('success', GATE),
             last_criterion_scoring_run: status === null ? null : criterionRunSummary(status),
@@ -187,7 +183,7 @@ describe('deriveStepAction: Tabelle über den vollständigen Eingaberaum', () =>
   })
 
   it('wertet bei gesetztem Gate eine noch unbekannte Anzahl als Abschluss ohne Anzahl', () => {
-    const project = projectFixture({ last_scoring_run: scoringRunSummary('success', GATE) })
+    const project = makeProject({ last_scoring_run: scoringRunSummary('success', GATE) })
 
     expect(
       deriveStepAction('ausschuss', project, { openCount: null, isTriggerPending: false }).action,
@@ -201,14 +197,14 @@ describe('deriveStepAction: Tabelle über den vollständigen Eingaberaum', () =>
   it('bleibt beim Ausschuss "confirm", wenn nach der Bestätigung Vorschläge neu offen sind', () => {
     const { action } = deriveStepAction(
       'ausschuss',
-      projectFixture({ last_scoring_run: scoringRunSummary('success', GATE) }),
+      makeProject({ last_scoring_run: scoringRunSummary('success', GATE) }),
       { openCount: 3, isTriggerPending: false },
     )
     expect(action.kind).toBe('confirm')
   })
 
   it('führt die Kuratierung als Link in den Album-Entwurf, ohne "Erneut …"', () => {
-    const result = deriveStepAction('kuratierung', projectFixture({ id: 9 }), {
+    const result = deriveStepAction('kuratierung', makeProject({ id: 9 }), {
       openCount: null,
       isTriggerPending: false,
     })
@@ -221,7 +217,7 @@ describe('deriveStepAction: Tabelle über den vollständigen Eingaberaum', () =>
   it('nennt den neutralen Text, wenn die Klassifizierung abgeschaltet ist', () => {
     const { action } = deriveStepAction(
       'ausschuss',
-      projectFixture({
+      makeProject({
         category_selection_enabled: false,
         last_scoring_run: scoringRunSummary('success', GATE),
       }),

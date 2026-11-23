@@ -196,7 +196,7 @@ Aussage, `null` ihre Abwesenheit, und die Unterscheidung trägt bis in die Anzei
 Einzelabfrage `_project_photo_count` entfällt ersatzlos: Die Übersicht setzt danach eine Abfrage
 **weniger** je Projekt ab als vorher.
 
-**Mechanischer Nachweis gegen N+1** (Muster aus `test_api_photos.py`/`test_project_deletion.py`): Ein
+**Mechanischer Nachweis gegen N+1** (Muster aus `test_api_photos_*.py`/`test_project_deletion.py`): Ein
 `before_cursor_execute`-Listener zählt die Anweisungen, die `min(photos.taken_at)` enthalten — es muss
 genau **eine** sein, bei einem wie bei vier Projekten. Ein Test auf die Gesamtzahl wäre an die
 bestehenden, hier nicht angefassten Lauf-Abfragen gebunden und beim nächsten fremden Zusatz rot.

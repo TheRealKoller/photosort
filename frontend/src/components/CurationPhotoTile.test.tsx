@@ -16,6 +16,7 @@ import {
 } from '../utils/albumSuitability'
 import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { CurationPhotoTile } from './CurationPhotoTile'
+import { makePhoto } from '../test/fixtures'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
@@ -30,23 +31,8 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
 }
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
+  return makePhoto({
     ranking: ranking(),
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     motif_assessment: null,
     motifs: MOTIF_SET.items.map((item) => ({
       key: item.key,
@@ -56,7 +42,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     })),
     album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' },
     ...overrides,
-  }
+  })
 }
 
 function renderTile(

@@ -2,35 +2,15 @@ import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { AusschussGroupEntry, PhotoOut } from '../api/types'
+import type { AusschussGroupEntry } from '../api/types'
 import { DuplicateStackTile } from './DuplicateStackTile'
+import { makeSeriesPhoto as photo } from '../test/fixtures'
 
 vi.mock('./PhotoImage', () => ({
   PhotoImage: ({ alt, className }: { alt: string; className?: string }) => (
     <img alt={alt} className={className} />
   ),
 }))
-
-function photo(id: number): PhotoOut {
-  return {
-    id,
-    relative_path: `Reise/serie-${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
-}
 
 function stack(overrides: Partial<AusschussGroupEntry> = {}): AusschussGroupEntry {
   return {

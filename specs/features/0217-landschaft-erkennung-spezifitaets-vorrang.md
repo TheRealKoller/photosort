@@ -176,7 +176,7 @@ Kategorien (`PhotoRanking.category_key`, `PhotoScore.category_override`) sind pr
   - `is_landmark_candidate`: `landschaft` oder `gebaeude` an/über Schwelle → Kandidat; ein Foto mit nur hohem `content_landscape` → **kein** Kandidat mehr (Bestandstests werden umgestellt, nicht ergänzt).
 - **`test_category_diff.py`** (neu): reine Funktionen `diff_category_assignments` (unveränderte Zuordnung, Wechsel, Foto nur im Vorher- bzw. nur im Nachher-Lauf, leere Eingabe) und `render_report` (Übergangsmatrix + Einzelliste, deterministische Sortierung); `collect_assignments` gegen die `db_session`-Fixture (liest genau die Zeilen der beiden Läufe, verändert nichts); `main(argv)` argv-injizierbar — Default zwei jüngste Läufe, explizite Run-IDs, Exit-Code ≠ 0 bei unbekanntem Projekt und bei < 2 Läufen, Ausgabe über `capsys`.
 
-**Backend — Integration** (`test_worker_criterion_scoring.py`, In-Memory-DB)
+**Backend — Integration** (`test_worker_criterion_scoring_*.py`, In-Memory-DB)
 
 - **AK8, Pflichttest:** Spy auf dem Szenen-Klassifikator — `call_count == 1` pro Foto, während `gebaeude` **und** `landschaft` beide als `PhotoCriterionScore` geschrieben werden.
 - Best-effort in beide Richtungen: Fehler in `compute_landschaft_score` lässt `gebaeude` unberührt und umgekehrt; Fehler in `classify_scene` lässt beide fehlen, ohne den Lauf zu beenden; `landschaft` ist Teil von `_IMAGE_ANALYSIS_CRITERION_KEYS`.
@@ -187,7 +187,7 @@ Kategorien (`PhotoRanking.category_key`, `PhotoScore.category_override`) sind pr
 
 **Backend — API-Integration**
 
-- `test_api_photos.py`: `_cloud_vision_status_out` leitet `is_candidate` aus den gespeicherten Kriterien-Werten ab — Foto mit `landschaft`-Zeile → Kandidat, Foto mit ausschließlich `content_landscape`-Zeile (Altlauf) → kein Kandidat. `content_landscape` erscheint in den Bewertungsdetails mit `category_eligible=false` und "Flächigkeit".
+- `test_api_photos_*.py`: `_cloud_vision_status_out` leitet `is_candidate` aus den gespeicherten Kriterien-Werten ab — Foto mit `landschaft`-Zeile → Kandidat, Foto mit ausschließlich `content_landscape`-Zeile (Altlauf) → kein Kandidat. `content_landscape` erscheint in den Bewertungsdetails mit `category_eligible=false` und "Flächigkeit".
 - `test_api_category_override.py`: Rücknahme ohne erkannten Inhalt liefert `"unerkannt"`; ein verwaister Override (`"detail"`) bleibt bis zur Rücknahme bestehen.
 
 **Frontend — Unit + Komponente (`vitest`)**

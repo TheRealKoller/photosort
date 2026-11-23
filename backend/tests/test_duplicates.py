@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import fields
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,8 @@ from photosort.duplicates import (
     member_ids_of,
     representative_of,
 )
-from photosort.models import DuplicateDecision, Photo, PhotoScore, Project
+from photosort.models import DuplicateDecision, Photo, Project
+from tests.support import add_photo, make_project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0)
 
@@ -278,10 +280,7 @@ def test_previous_id_is_the_exact_inverse_of_next_id() -> None:
 
 
 async def _project(session: AsyncSession, name: str) -> Project:
-    project = Project(name=name, opencloud_drive_id="d", opencloud_path="/a")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, drive_id="d", path="/a", flush=True)
 
 
 async def _photo(
@@ -292,31 +291,22 @@ async def _photo(
     minutes: int = 0,
     duplicate_of: int | None = None,
     with_score: bool = True,
+    **kwargs: Any,
 ) -> Photo:
-    taken_at = _BASE + timedelta(minutes=minutes)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag="etag",
         content_length=1,
-        taken_at=taken_at,
-        taken_at_original=taken_at,
-        last_modified=taken_at,
+        taken_at=_BASE + timedelta(minutes=minutes),
+        with_score=with_score,
+        sharpness=0.5,
+        exposure=0.5,
+        duplicate_of=duplicate_of,
+        flush=True,
+        **kwargs,
     )
-    session.add(photo)
-    await session.flush()
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=0.5,
-                exposure=0.5,
-                duplicate_of=duplicate_of,
-                computed_at=taken_at,
-            )
-        )
-        await session.flush()
-    return photo
 
 
 async def test_the_loader_returns_only_photos_that_belong_to_a_star(

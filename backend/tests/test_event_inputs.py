@@ -9,6 +9,7 @@ waehrend beide fuer sich gruen blieben.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,23 +17,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.event_inputs import read_event_inputs
 from photosort.models import (
     MotifAssessmentSource,
-    Photo,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
-    Project,
     User,
 )
+from tests.support import add_photo, make_project_id
 
 NOW = datetime(2026, 7, 20, 10, 0, 0)
 
 
 async def _project(session: AsyncSession, name: str = "Reise") -> int:
-    project = Project(name=name, opencloud_drive_id="drive", opencloud_path=f"/Fotos/{name}")
-    session.add(project)
-    await session.flush()
-    return project.id
+    return await make_project_id(session, name, drive_id="drive", path=f"/Fotos/{name}", flush=True)
 
 
 async def _photo(
@@ -41,20 +38,20 @@ async def _photo(
     *,
     minutes: int,
     gps: tuple[float, float] | None = None,
+    **kwargs: Any,
 ) -> int:
-    photo = Photo(
-        project_id=project_id,
-        relative_path=f"img{minutes:03d}.jpg",
+    photo = await add_photo(
+        session,
+        project_id,
+        f"img{minutes:03d}.jpg",
         etag=f"etag-{project_id}-{minutes}",
         content_length=1000,
         taken_at=NOW + timedelta(minutes=minutes),
-        taken_at_original=NOW + timedelta(minutes=minutes),
         last_modified=NOW,
-        gps_lat=None if gps is None else gps[0],
-        gps_lon=None if gps is None else gps[1],
+        gps=gps,
+        flush=True,
+        **kwargs,
     )
-    session.add(photo)
-    await session.flush()
     return photo.id
 
 

@@ -503,7 +503,7 @@ den Syntaxbaum und ein Verhaltenstest über den Bestand.
   Anlegen inklusive Sperrgründe, Übersicht inklusive Zählungstabellen und Export-Sperren, Fallansicht
   inklusive Urteilsleiste, markiertem Fall und Tastatur); `App.test.tsx` und
   `utils/projectRoutes.test.ts` (vier Nebenziele, beide Routen real geroutet);
-  `designSystem.contract.test.ts` (A/B-Marke ohne Farbe, keine Hervorhebung im Urteilsblock).
+  `designSystem.*.contract.test.ts` (A/B-Marke ohne Farbe, keine Hervorhebung im Urteilsblock).
 - **E2E (`e2e/`):** ausschließlich Geometrie und CSS auf einer geseedeten, abgeschlossenen Prüfung —
   zwei Spalten ab `lg`, eine darunter, mitlaufende Kopfleiste ohne verdeckte Fotoüberschrift,
   `object-contain`-Inhaltsrechteck frei, 44-px-Treffer der vier Urteilsflächen bei 360 px, kein

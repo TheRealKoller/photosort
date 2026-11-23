@@ -1174,7 +1174,7 @@ Verarbeitungs-Cache (Thumbnails).
     `duplicatePlanningRatio`/`planningRatio` in eine gewöhnliche CSS-Eigenschaft — keine
     zusammengesetzte Zeichenkette, keine Custom-Property, kein `url()`-Kontext; feindlich belegte
     Werte fallen auf 3:2 zurück (Test beidseitig, siehe Sicherheitskonzept).
-  - **Prüfung:** `designSystem.contract.test.ts` hält `object-cover`, `aspect-square` und
+  - **Prüfung:** `designSystem.*.contract.test.ts` hält `object-cover`, `aspect-square` und
     `grid-cols-` aus den drei Dateien, `gap-3` an `GRID_GAP_PX` und den Kachelrand an seine
     Rechengröße. `grid-columns.spec.ts` misst im Browser gleiche Höhe und Oberkante je Zeile,
     bündige volle Reihen, eine nachweislich kürzere letzte, Kasten- gegen Bildverhältnis,

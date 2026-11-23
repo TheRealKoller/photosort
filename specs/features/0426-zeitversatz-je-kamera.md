@@ -463,7 +463,7 @@ Nachhol-Runde siehe „Edge Cases".
 
 **5. Extraktion `_build_grouping_and_rankings`** — kein neuer Test und **kein Testdiff**: Nachweis
 nach dem Verfahren „Nachweis ohne Rot-Grün" (identische Testknotenmenge mit identischem Ausgang,
-`Stmts` je Datei unverändert). Eine angepasste Erwartung in `test_worker_criterion_scoring.py` ist
+`Stmts` je Datei unverändert). Eine angepasste Erwartung in `test_worker_criterion_scoring_*.py` ist
 ein Befund, keine Nachpflege.
 
 **6. `rebuild_run_grouping`** — neu `tests/test_worker_rebuild_run_grouping.py`: kein erfolgreicher
@@ -485,14 +485,14 @@ Aufbau, nicht an der Neuheit der Event-Ids — siehe die Begründung unter „Ed
 beiden Zeitfeldern, `422` bei Kamerafoto ohne Kamera, bei gleicher Kamera auf beiden Seiten und bei
 Ergebnis jenseits der Grenzen, `404` bei fremdem Foto, und **nichts geschrieben**.
 `test_auth_guard.py` nimmt `cameras.router` in seine 401-Vollständigkeitsprüfung auf,
-`test_openapi_beschreibungen.py` die drei Routen in die eingefrorene Liste. `test_api_photos.py`:
+`test_openapi_beschreibungen.py` die drei Routen in die eingefrorene Liste. `test_api_photos_*.py`:
 die drei neuen `PhotoOut`-Felder, `time_offset_minutes = 0` heißt „nicht korrigiert", `taken_at`
 liefert die korrigierte Zeit, `camera_id`-Filter samt Grenzen, Abfragezahl unabhängig von der
 Fotoanzahl. `test_api_stats.py`: der Aufnahmezeitraum folgt dem Versatz ohne Codeänderung.
-`test_scoring.py`/`test_events.py`: je ein Fall, dessen Gruppierung mit gesetztem Versatz anders
+`test_scoring.py`/`test_events_*.py`: je ein Fall, dessen Gruppierung mit gesetztem Versatz anders
 ausfällt als mit dem rohen Wert.
 
-**8. Demo-Seed** — `test_demo_state.py`: alle Zustände, die die Oberfläche zeigen muss, entstehen
+**8. Demo-Seed** — `test_demo_state_*.py`: alle Zustände, die die Oberfläche zeigen muss, entstehen
 tatsächlich (Kamera ohne Versatz, Kamera mit Versatz, Foto ohne Kamera), und die Invariante hält
 über alle geseedeten Zeilen.
 
@@ -506,7 +506,7 @@ Mutation übergebenen Werts, Vorschau gegen die reine Funktion statt gegen einen
 String, `409`/`422` als Klartext samt Hinweis „nichts gespeichert", Speichern gesperrt bei
 ungültiger Eingabe, „Vorschlag übernehmen" schreibt nicht und lässt die Felder änderbar).
 Erweitert: `ProjectSettingsPage.test.tsx` (Liste, Ladezustand, leerer Zustand ohne Fehlerton) und
-`PhotoDetailPage.test.tsx` (wirksame Zeit, Marke nur bei Korrektur, aufgezeichnete Zeile nur im
+`PhotoDetailPage.*.test.tsx` (wirksame Zeit, Marke nur bei Korrektur, aufgezeichnete Zeile nur im
 Korrekturfall, ruhiger Satz ohne bestimmbare Kamera).
 
 **10. Doku** — kein Testgegenstand.

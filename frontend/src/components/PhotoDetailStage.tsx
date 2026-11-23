@@ -73,7 +73,7 @@ const SHORTCUT_VISIBILITY = 'hidden sm:block'
  * KEINE IN JAVASCRIPT GEMESSENE HÖHE und kein gerechneter Wert in einem Inline-Stil: Beide
  * Auswege - der Inline-Stil wie die CSS-Custom-Property als Träger eines gerechneten Wertes - sind
  * im Sicherheitskonzept untersagt. Der willkürliche Klassenwert ist stattdessen im Design-Vertrag
- * (`designSystem.contract.test.ts`) fundstellengenau freigegeben.
+ * (`designSystem.*.contract.test.ts`) fundstellengenau freigegeben.
  *
  * ALLE DREI ZUSTÄNDE TRAGEN DENSELBEN RAHMEN. `ladend` zeigt einen Platzhalter in der Fotofläche
  * statt eines vorgezogenen Satzes, `fehler` einen `Alert` darin; Bewertung und Navigation bleiben

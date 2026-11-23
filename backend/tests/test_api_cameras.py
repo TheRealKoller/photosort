@@ -36,17 +36,11 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from tests.support import add_photo
+from tests.support import make_project as _make_project
 from tests.time_offset_invariant import assert_time_offset_invariant
 
 _BASE = datetime(2026, 8, 12, 14, 32, 0)
-
-
-async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=name)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _add_camera(
@@ -73,23 +67,17 @@ async def _add_photo(
     taken_at_original: datetime,
     *,
     camera: ProjectCamera | None = None,
+    **kwargs: Any,
 ) -> Photo:
-    offset = 0 if camera is None else camera.offset_minutes
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=taken_at_original + timedelta(minutes=offset),
-        taken_at_original=taken_at_original,
-        camera_id=None if camera is None else camera.id,
-        camera_probed=True,
+    return await add_photo(
+        session,
+        project,
+        path,
+        taken_at=taken_at_original,
         last_modified=taken_at_original,
+        camera=camera,
+        **kwargs,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _add_successful_run(

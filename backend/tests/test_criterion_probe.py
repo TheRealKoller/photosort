@@ -16,6 +16,7 @@ import ast
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -39,16 +40,14 @@ from photosort.db import Base, make_engine, make_session_factory
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
-    Photo,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoScore,
-    Project,
     RatingStatus,
     ScanStatus,
-    ScoringRun,
 )
 from tests.import_closure import import_closure, module_file
+from tests.support import add_photo, add_successful_run, make_project_id
 from tests.write_guard import write_statements
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -141,26 +140,21 @@ class TestLandmarkCandidates:
 
 
 async def _project(session: AsyncSession, name: str = "Reise") -> int:
-    project = Project(name=name, opencloud_drive_id="drive", opencloud_path=f"/Fotos/{name}")
-    session.add(project)
-    await session.flush()
-    return project.id
+    return await make_project_id(session, name, drive_id="drive", path=f"/Fotos/{name}", flush=True)
 
 
 async def _photo(session: AsyncSession, project_id: int, *, index: int) -> int:
-    photo = Photo(
-        project_id=project_id,
-        relative_path=f"{MEASURED_PHOTO_FILE}-{index:03d}.jpg",
+    photo = await add_photo(
+        session,
+        project_id,
+        f"{MEASURED_PHOTO_FILE}-{index:03d}.jpg",
         etag=f"etag-{project_id}-{index}",
         content_length=1000,
         taken_at=MEASURED_TAKEN_AT + timedelta(minutes=index),
-        taken_at_original=MEASURED_TAKEN_AT + timedelta(minutes=index),
         last_modified=MEASURED_TAKEN_AT,
-        gps_lat=MEASURED_LAT,
-        gps_lon=MEASURED_LON,
+        gps=(MEASURED_LAT, MEASURED_LON),
+        flush=True,
     )
-    session.add(photo)
-    await session.flush()
     return photo.id
 
 
@@ -200,15 +194,13 @@ async def _photo_score(
 
 
 async def _successful_run(
-    session: AsyncSession, project_id: int, *, status: ScanStatus = ScanStatus.SUCCESS
+    session: AsyncSession,
+    project_id: int,
+    *,
+    status: ScanStatus = ScanStatus.SUCCESS,
+    **kwargs: Any,
 ) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(project_id=project_id, scoring_run_id=scoring_run.id, status=status)
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_successful_run(session, project_id, status=status, **kwargs)
 
 
 # Die gemessene Lage, in beiden Aufbauten dieselbe: fuenf Fotos, drei Kandidaten, davon zwei

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { EventOut, PhotoOut, RankingOut } from '../api/types'
 import { groupEventsByDay, groupPhotosByDay } from './eventGrouping'
+import { makePhoto } from '../test/fixtures'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
@@ -28,26 +29,11 @@ function event(overrides: Partial<EventOut> = {}): EventOut {
 }
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
+  return makePhoto({
     ranking: ranking(),
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     event: event(),
     ...overrides,
-  }
+  })
 }
 
 describe('groupPhotosByDay', () => {

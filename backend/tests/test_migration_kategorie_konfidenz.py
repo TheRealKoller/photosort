@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0299-kategorie-konfidenz-anzeigen.md, decisions/0067-modellkonfidenz-je-kategorie-
 # anzeige-und-auswertung.md Punkt 3/4: rein additive Migration - zwei nullable Spalten an
@@ -22,14 +20,6 @@ _MIGRATION_PATH = (
 )
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("kategorie_konfidenz_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration - nur die eine
     beruehrte Tabelle, reduziert auf die Spalten, die die Tests brauchen."""
@@ -43,15 +33,8 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "5ab22032843c"
 
@@ -61,7 +44,7 @@ def test_migration_adds_both_confidence_columns(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"] for c in inspect(engine).get_columns("photo_category_classifications")}
     finally:
@@ -78,7 +61,7 @@ def test_both_columns_are_nullable(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         nullable_by_name = {
             c["name"]: c["nullable"]
@@ -107,7 +90,7 @@ def test_existing_rows_keep_null_instead_of_a_zero_confidence(tmp_path: Path) ->
                     "VALUES (1, 'tier', '[\"tier\"]', 'anthropic', '2026-01-01 00:00:00')"
                 )
             )
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.connect() as connection:
             mapping, scalar = connection.execute(
@@ -128,8 +111,8 @@ def test_downgrade_removes_both_columns_again(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
-            _apply(connection, "downgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"] for c in inspect(engine).get_columns("photo_category_classifications")}
     finally:

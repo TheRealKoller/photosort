@@ -1,13 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as duplicatesApi from '../api/duplicates'
-import type { DuplicateDecision, DuplicateGroupOut, PhotoOut } from '../api/types'
+import type { DuplicateDecision, DuplicateGroupOut } from '../api/types'
 import { installResizeObserver } from '../test/observers'
 import { duplicateGridRows } from '../utils/duplicateLayout'
 import {
@@ -16,32 +14,13 @@ import {
   DUPLICATE_HINT_TEXT,
   DuplicateComparePage,
 } from './DuplicateComparePage'
+import { makeSeriesPhoto as photo } from '../test/fixtures'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/duplicates')
 vi.mock('../components/PhotoImage', () => ({
   PhotoImage: ({ alt }: { alt: string }) => <img alt={alt} />,
 }))
-
-function photo(id: number): PhotoOut {
-  return {
-    id,
-    relative_path: `Reise/serie-${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
-}
 
 function group(
   ids: number[],
@@ -82,10 +61,8 @@ function Pfadspiegel() {
 }
 
 function renderPage(url = '/projects/1/photos/10/duplicates') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   render(
     <MemoryRouter initialEntries={[url]}>
       <Pfadspiegel />

@@ -4,6 +4,7 @@ import asyncio
 import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PIL import Image, ImageDraw, ImageFilter
@@ -28,14 +29,8 @@ from photosort.thumbnails import display_path
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_project_scoring
 from photosort.worker import scoring as worker_scoring
-
-
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+from tests.support import add_photo, write_display_variant
+from tests.support import make_project as _make_project
 
 
 async def _add_photo(
@@ -46,29 +41,20 @@ async def _add_photo(
     taken_at: datetime,
     last_modified: datetime | None = None,
     pixel_count: int | None = None,
+    **kwargs: Any,
 ) -> Photo:
     # Der Versatz haelt `taken_at_original != last_modified`: die Zeit gilt als aus dem Bild
     # gelesen. Ein Negativfall setzt `last_modified=taken_at` - dann ist sie abgeleitet.
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag=etag,
-        content_length=100,
         taken_at=taken_at,
-        taken_at_original=taken_at,
         last_modified=taken_at + timedelta(hours=1) if last_modified is None else last_modified,
         pixel_count=pixel_count,
+        **kwargs,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
-
-
-def _write_display_variant(cache_dir: Path, photo: Photo, image: Image.Image) -> None:
-    path = display_path(cache_dir, photo.id, photo.etag)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(path, format="JPEG")
 
 
 def _sharp_photo_image(seed: int = 0, size: int = 200) -> Image.Image:
@@ -121,7 +107,7 @@ async def test_scoring_run_success_scores_photo(db_session: AsyncSession, tmp_pa
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -146,7 +132,7 @@ async def test_scoring_run_rejects_photo_below_sharpness_threshold(
     photo = await _add_photo(
         db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+    write_display_variant(tmp_path, photo, _blurry_photo_image())
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -172,8 +158,8 @@ async def test_scoring_run_marks_duplicate_cluster_loser_and_keeps_sharper_winne
     )
     # Winner bekommt das schaerfere Original, Loser eine leicht unschaerfere Variante desselben
     # Motivs (gleicher dHash-Cluster, siehe _slightly_blurred) - simuliert eine Burst-Aufnahme.
-    _write_display_variant(tmp_path, winner, base_image)
-    _write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
+    write_display_variant(tmp_path, winner, base_image)
+    write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -191,7 +177,7 @@ async def test_scoring_run_counts_no_suggestions_when_nothing_stands_out(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -205,7 +191,7 @@ async def test_scoring_run_counts_blurry_photo_as_suggestion(
     photo = await _add_photo(
         db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+    write_display_variant(tmp_path, photo, _blurry_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -223,8 +209,8 @@ async def test_scoring_run_counts_duplicate_cluster_loser_as_suggestion(
     loser = await _add_photo(
         db_session, project, "burst2.jpg", "etag-2", datetime(2023, 1, 1, 10, 0, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, winner, base_image)
-    _write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
+    write_display_variant(tmp_path, winner, base_image)
+    write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -245,9 +231,9 @@ async def test_scoring_run_counts_mix_of_blurry_and_duplicate_suggestions(
     blurry = await _add_photo(
         db_session, project, "blurry.jpg", "etag-3", datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, winner, base_image)
-    _write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
-    _write_display_variant(tmp_path, blurry, _blurry_photo_image())
+    write_display_variant(tmp_path, winner, base_image)
+    write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
+    write_display_variant(tmp_path, blurry, _blurry_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -269,7 +255,7 @@ async def test_scoring_run_marked_failed_keeps_suggestions_found_at_default(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -289,7 +275,7 @@ async def test_scoring_run_suggestions_found_not_persisted_when_final_commit_fai
     photo = await _add_photo(
         db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+    write_display_variant(tmp_path, photo, _blurry_photo_image())
 
     original_commit = db_session.commit
     call_count = {"n": 0}
@@ -364,7 +350,7 @@ async def test_scoring_run_commits_progress_periodically(
             f"etag-{i}",
             datetime(2023, 1, 1, 10, i, tzinfo=UTC),
         )
-        _write_display_variant(tmp_path, photo, _sharp_photo_image(seed=i))
+        write_display_variant(tmp_path, photo, _sharp_photo_image(seed=i))
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -387,7 +373,7 @@ async def test_rescoring_overwrites_existing_photo_scores_without_touching_ratin
     )
     await db_session.commit()
 
-    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+    write_display_variant(tmp_path, photo, _blurry_photo_image())
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
     first_score = (
         await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
@@ -397,7 +383,7 @@ async def test_rescoring_overwrites_existing_photo_scores_without_touching_ratin
     # Zweiter Lauf: Foto ist jetzt (neues, scharfes Bild unter derselber etag/Pfad) nicht mehr
     # unscharf -> die PhotoScore-Zeile wird vollstaendig ueberschrieben, nicht als zweite Zeile
     # angelegt.
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
     scores = (
@@ -429,7 +415,7 @@ async def test_scoring_run_marked_failed_leaves_committed_progress_untouched(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -468,7 +454,7 @@ async def test_scoring_run_marked_failed_on_cancelled_error(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     with pytest.raises(asyncio.CancelledError):
         await run_project_scoring(db_session, project, cache_dir=tmp_path)
@@ -495,7 +481,7 @@ async def test_scoring_updates_last_progress_at_at_each_checkpoint(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -516,7 +502,7 @@ async def test_time_clustering_groups_photos_within_gap(
         db_session, project, "c.jpg", "etag-c", datetime(2023, 1, 1, 20, 0, tzinfo=UTC)
     )
     for i, photo in enumerate([close_a, close_b, far]):
-        _write_display_variant(tmp_path, photo, _distinct_photo_image(i))
+        write_display_variant(tmp_path, photo, _distinct_photo_image(i))
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -544,7 +530,7 @@ async def test_a_location_jump_splits_a_cluster_without_any_time_gap(
     trocadero.taken_at = base.replace(tzinfo=None) + timedelta(minutes=5)
     await db_session.commit()
     for i, photo in enumerate([eiffel, trocadero]):
-        _write_display_variant(tmp_path, photo, _distinct_photo_image(i))
+        write_display_variant(tmp_path, photo, _distinct_photo_image(i))
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -562,7 +548,7 @@ async def test_gate_is_auto_confirmed_when_no_suggestions_are_found(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+    write_display_variant(tmp_path, photo, _sharp_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -577,7 +563,7 @@ async def test_gate_is_not_auto_confirmed_when_suggestions_are_found(
     photo = await _add_photo(
         db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+    write_display_variant(tmp_path, photo, _blurry_photo_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -619,8 +605,8 @@ async def test_scoring_run_groups_a_copy_across_hundreds_of_hours(
     late = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, early, image)
-    _write_display_variant(tmp_path, late, image)
+    write_display_variant(tmp_path, early, image)
+    write_display_variant(tmp_path, late, image)
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -642,8 +628,8 @@ async def test_scoring_run_does_not_group_similar_photos_outside_the_window(
     later = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 12, 0, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, earlier, image)
-    _write_display_variant(tmp_path, later, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
+    write_display_variant(tmp_path, earlier, image)
+    write_display_variant(tmp_path, later, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -662,8 +648,8 @@ async def test_scoring_run_does_not_group_similar_photos_without_a_trusted_time(
     # `taken_at_original == last_modified`: die Zeit stammt aus dem Dateidatum.
     first = await _add_photo(db_session, project, "a.jpg", "etag-a", moment, last_modified=moment)
     second = await _add_photo(db_session, project, "b.jpg", "etag-b", moment, last_modified=moment)
-    _write_display_variant(tmp_path, first, image)
-    _write_display_variant(tmp_path, second, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
+    write_display_variant(tmp_path, first, image)
+    write_display_variant(tmp_path, second, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -690,7 +676,7 @@ async def test_the_trigger_regression_yields_exactly_two_groups(
         for index, moment in enumerate(moments)
     ]
     for photo, image in zip(photos, images, strict=True):
-        _write_display_variant(tmp_path, photo, image)
+        write_display_variant(tmp_path, photo, image)
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
@@ -731,8 +717,8 @@ async def _scored_pair(
         base + timedelta(minutes=1),
         pixel_count=loser_pixel_count,
     )
-    _write_display_variant(tmp_path, winner, image)
-    _write_display_variant(
+    write_display_variant(tmp_path, winner, image)
+    write_display_variant(
         tmp_path,
         loser,
         image.resize((100, 100), Image.Resampling.LANCZOS) if loser_image is None else loser_image,

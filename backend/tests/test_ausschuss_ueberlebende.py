@@ -20,6 +20,7 @@ import ast
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -40,6 +41,7 @@ from photosort.models import (
     Project,
     RatingStatus,
 )
+from tests.support import add_photo, make_project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0)
 
@@ -76,10 +78,7 @@ def _ist_offener_vorschlag(
 
 
 async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="d", opencloud_path="/a")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, drive_id="d", path="/a", flush=True)
 
 
 async def _photo(
@@ -92,34 +91,24 @@ async def _photo(
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> Photo:
-    taken_at = _BASE + timedelta(minutes=minutes)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
+    return await add_photo(
+        session,
+        project,
+        path,
         etag="etag",
         content_length=1,
-        taken_at=taken_at,
-        taken_at_original=taken_at,
-        last_modified=taken_at,
+        taken_at=_BASE + timedelta(minutes=minutes),
+        with_score=with_score,
+        sharpness=0.5,
+        exposure=0.5,
+        suggested_status=suggested_status,
+        duplicate_of=duplicate_of,
+        decision=decision,
+        flush=True,
+        **kwargs,
     )
-    session.add(photo)
-    await session.flush()
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=0.5,
-                exposure=0.5,
-                suggested_status=suggested_status,
-                duplicate_of=duplicate_of,
-                computed_at=taken_at,
-            )
-        )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.flush()
-    return photo
 
 
 async def _loaded_photos(session: AsyncSession, project_id: int) -> list[Photo]:

@@ -1,7 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Location, NavigateFunction } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +12,8 @@ import type { PersonOut, PhotoListOut, PhotoOut, UnnamedFacesPageOut } from '../
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { ProjectPersonsPage } from './ProjectPersonsPage'
+import { makeQueryClient, withProviders } from '../test/render'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('../api/persons')
 vi.mock('../api/photos')
@@ -23,23 +24,12 @@ const BEN = { id: 8, name: 'Ben' } as PersonOut
 const CROP = btoa('\xff\xd8\xff\xe0einfarbig')
 
 function photo(id: number, personIds: number[]): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `reise/p${id}.jpg`,
     taken_at: '2024-07-20T10:00:00',
     taken_at_original: '2024-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
     aspect_ratio: 1.5,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
     persons: personIds.map((personId) => ({
       person_id: personId,
       origin: 'recognized',
@@ -49,7 +39,7 @@ function photo(id: number, personIds: number[]): PhotoOut {
     motif_assessment: null,
     motifs: [],
     album_suitability: null,
-  } as unknown as PhotoOut
+  })
 }
 /** Je Person die Fotos, die ihren Namen tragen - der Stub filtert wie die Personeneinschränkung. */
 function photosFor(byPerson: Record<number, PhotoOut[]>) {
@@ -83,19 +73,18 @@ function Probe() {
 }
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/stub', '/projects/3/persons']} initialIndex={1}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/stub" element={<p>Stub</p>} />
           <Route path="/projects/:projectId/persons" element={<ProjectPersonsPage />} />
         </Routes>
         <Probe />
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: ['/stub', '/projects/3/persons'], initialIndex: 1 },
+    ),
   )
   return { queryClient }
 }

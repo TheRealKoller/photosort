@@ -225,7 +225,7 @@ Motivkorrektur wirkt deshalb erst beim nächsten Neuaufbau.
 - Die Route `/projects/:id/curate?topN=N` verliert ihren Suchparameter; ein alter Link bleibt
   gültig, der Parameter wird ignoriert.
 - `ProjectOut` wächst um zwei Felder (additiv, nicht brechend).
-- Bestehende Tests kodieren die alte Regel (`backend/tests/test_api_photos.py`,
+- Bestehende Tests kodieren die alte Regel (`backend/tests/test_api_photos_*.py`,
   `frontend/src/pages/CuratePage.test.tsx`,
   `frontend/src/pages/pipeline/KuratierungStepPage.test.tsx`, `frontend/src/api/photos.test.ts`):
   umschreiben statt löschen — derselbe Aufbau prüft künftig die neue Aussage.
@@ -421,7 +421,7 @@ Funktion nicht kennt: Bildung der Kandidatenmenge (letzter erfolgreicher Lauf,
 `load_effective_strengths`), das Schreiben der Spalte, die Einbettung in
 `_build_grouping_and_rankings` innerhalb Phase `RANKING`, und `rebuild_run_selection`.
 
-**API — `test_api_projects.py` / `test_api_photos.py`.** Die zwei neuen `ProjectOut`-Felder, der
+**API — `test_api_projects.py` / `test_api_photos_*.py`.** Die zwei neuen `ProjectOut`-Felder, der
 `PUT`-Endpunkt samt Grenzen, der Lesepfad `selection=true` samt Sortierung und `curation_position`,
 das Wegfallen von `top_n_per_event`.
 
@@ -434,7 +434,7 @@ ist nicht erfüllt: Das Feld ist eine bestehende `Input`-Ausprägung im bestehen
 folgenlos**: Setzt `demo_state.py` den Vorschlag nicht, zeigt `/curate` auf der Demo-Instanz eine
 leere Liste, und die dortigen Specs bleiben grün — ihre Vorbedingungen hängen an Überschrift und
 Scrollhöhe, nicht an Kacheln. Der Nachweis dagegen ist ein Kardinalitätsfall in
-`test_demo_state.py`.
+`test_demo_state_*.py`.
 
 ### Zusicherungen, die ohne eigenen Fall still brechen
 
@@ -597,12 +597,12 @@ zählen nie) und eine Positiv-Gegenprobe gegen die leere Fundmenge.
 
 `demo_state.py` bezieht den Vorschlag folglich über dieselbe Worker-Funktion. Dass die
 Demo-Projekte danach einen **nicht leeren** Vorschlag tragen (Kardinalität > 0, jedes Event
-vertreten), ist ein eigener Fall in `test_demo_state.py` — er ist der einzige automatisierte Träger
+vertreten), ist ein eigener Fall in `test_demo_state_*.py` — er ist der einzige automatisierte Träger
 dieser Aussage.
 
 ### Bestehende Tests: umschreiben, nicht löschen
 
-- **`backend/tests/test_api_photos.py`** — jede Erwartung „die besten N je Event" wird zur Erwartung
+- **`backend/tests/test_api_photos_*.py`** — jede Erwartung „die besten N je Event" wird zur Erwartung
   „die Fotos mit `selection_position`". Zwei Fälle brauchen einen bewussten Nachfolger statt einer
   Umbenennung: `test_rejects_top_n_per_event_outside_valid_range` prüft künftig, dass der Parameter
   **gar nicht mehr existiert** (`top_n_per_event=2` ergibt `422`, nicht nur `=11`);
@@ -683,7 +683,7 @@ zu belegen wäre. Die Tests sichern das Verfahren, nicht sein Ergebnisurteil.
   auswahlfähigen Bestand. Die Schranke liegt stattdessen in der Komplexitätsklasse: Die
   Ähnlichkeitsabwertung wird je Kandidat fortgeschrieben (S5).
 - Ein neuer E2E-Spec entsteht nicht; das Aufnahmekriterium ist nicht erfüllt. Ersatz ist der
-  Kardinalitätsfall in `test_demo_state.py`.
+  Kardinalitätsfall in `test_demo_state_*.py`.
 - Der strukturelle Wächter zu ADR 0091 Punkt 8 („kein auswählender Codepfad liest die
   Anzeigebänder") existiert im Bestand nicht und entsteht in diesem Pull Request, weil
   `selection.py` die erste Datei ist, die ihn verletzen könnte.

@@ -16,17 +16,14 @@ Kanten in `Base.metadata`, eine bloss logische Spalte fiele still aus der Pruefu
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from photosort.db import Base
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "a1b2c3d4e5f6_endauswahl.py"
 _MIGRATION_PATH = (
@@ -34,14 +31,6 @@ _MIGRATION_PATH = (
 )
 
 _TABLE = "final_selection_decisions"
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("endauswahl_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -62,13 +51,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
@@ -76,7 +58,7 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head. Die Kette selbst
     prueft `test_migration_chain.py`."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "f6a7b8c9d0e1"
 
@@ -88,7 +70,7 @@ def test_the_upgrade_creates_the_table_with_exactly_three_columns(tmp_path: Path
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -105,7 +87,7 @@ def test_the_photo_id_is_primary_key_and_foreign_key_under_a_written_out_name(
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(connection)
         primary_key = inspector.get_pk_constraint(_TABLE)
@@ -125,7 +107,7 @@ def test_the_migrated_table_has_included_not_null_without_a_default(tmp_path: Pa
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -137,7 +119,7 @@ def test_the_updated_at_column_is_a_naive_timestamp_with_a_server_default(tmp_pa
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -199,14 +181,14 @@ def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 f"INSERT INTO {_TABLE} (photo_id, included, updated_at) "  # noqa: S608
                 "VALUES (1, 1, '2026-09-13 10:00:00')"
             )
         )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         tables = set(inspect(connection).get_table_names())
 

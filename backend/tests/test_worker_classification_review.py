@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,15 +36,12 @@ from photosort.models import (
     ClassificationReviewSideKind,
     DuplicateDecision,
     Photo,
-    PhotoDuplicateDecision,
-    PhotoScore,
     Project,
     ScanStatus,
     User,
 )
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
-from photosort.thumbnails import display_path
 from photosort.worker.classification_review import (
     ERROR_EYE_UNAVAILABLE,
     ERROR_GENERIC,
@@ -53,6 +49,8 @@ from photosort.worker.classification_review import (
     ERROR_NO_RESULTS,
     execute_classification_review,
 )
+from tests.support import add_photo, make_project, write_display_variant
+from tests.support import make_user as _make_user
 
 # ---------------------------------------------------------------------------------------------
 # Fixtures / Test-Doubles
@@ -61,27 +59,10 @@ from photosort.worker.classification_review import (
 _ALL_NULL_STRENGTHS = {motif_key: 0.0 for motif_key in MOTIF_REGISTRY}
 
 
-async def _make_user(session: AsyncSession, username: str = "anleger") -> User:
-    user = User(username=username, password_hash="x")
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
-
-
-async def _make_project(session: AsyncSession, *, consent: bool = True) -> Project:
-    project = Project(
-        name="Costa Rica",
-        opencloud_drive_id="drive",
-        opencloud_path="Costa Rica",
-        cloud_vision_detection_enabled=consent,
+async def _make_project(session: AsyncSession, *, consent: bool = True, **kwargs: Any) -> Project:
+    return await make_project(
+        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent, **kwargs
     )
-    if consent:
-        project.cloud_vision_consent_at = datetime.now(UTC).replace(tzinfo=None)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _add_photo(
@@ -95,37 +76,18 @@ async def _add_photo(
     decision: DuplicateDecision | None = None,
     with_score: bool = True,
 ) -> Photo:
-    now = datetime(2023, 1, 1, tzinfo=UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    photo = await add_photo(
+        session,
+        project,
+        path,
+        taken_at=datetime(2023, 1, 1, tzinfo=UTC),
+        with_score=with_score,
+        cluster_key_from_id=True,
+        suggested_status=suggested_status,  # type: ignore[arg-type]
+        decision=decision,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=100.0,
-                exposure=0.0,
-                cluster_key=f"cluster-{photo.id}",
-                suggested_status=suggested_status,
-                computed_at=now,
-            )
-        )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.commit()
     if readable:
-        variant = display_path(cache_dir, photo.id, photo.etag)
-        variant.parent.mkdir(parents=True, exist_ok=True)
-        Image.new("RGB", (80, 80), color=(90, 90, 90)).save(variant, format="JPEG")
+        write_display_variant(cache_dir, photo, size=(80, 80), color=(90, 90, 90))
     return photo
 
 

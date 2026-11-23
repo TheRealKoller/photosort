@@ -613,7 +613,7 @@ AK 2 über die fünf eingefrorenen Abweichungswerte, AK 7 über die Existenz von
 
 ### Der Kontrast-Vertragstest
 
-Der Test mit den Kontrastzusagen ist `frontend/src/designSystem.contract.test.ts`, Block
+Der Test mit den Kontrastzusagen ist `frontend/src/designSystem.*.contract.test.ts`, Block
 „Design-Vertrag: Kontrastmatrix". **Diese Spec berührt seine Zusagen nicht — und das gehört
 ausdrücklich in den PR-Text**, sonst liest ein Review „Design-System-Story ohne eine Zeile im
 Vertragstest" als Lücke. Drei Berührungen ohne Codeänderung: seine Rolle wächst (er ist ab ADR

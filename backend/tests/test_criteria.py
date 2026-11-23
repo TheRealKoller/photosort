@@ -760,7 +760,7 @@ class TestIsLandmarkCandidate:
 
 # Wiederverwendungsnachweis fuer detect_person/detect_animals im Goldener-Schnitt-Kontext
 # (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt Reimplementierung") lebt bewusst auf
-# Worker-Integrationsebene statt hier, siehe test_worker_criterion_scoring.py::
+# Worker-Integrationsebene statt hier, siehe test_worker_criterion_scoring_content.py::
 # test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo -
 # compute_golden_ratio_score selbst ist eine reine Funktion ohne eigenen detect()-Aufruf (siehe
 # Docstring in criteria.py), ein Spy-Test dagegen wuerde nur die Aufrufliste der Testfunktion

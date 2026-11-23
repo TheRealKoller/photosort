@@ -16,6 +16,7 @@ Eintrag noch als Anker erscheinen.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -26,24 +27,20 @@ from photosort.api.photos import MAX_QUERY_POSITION
 from photosort.models import (
     DuplicateDecision,
     Photo,
-    PhotoDuplicateDecision,
     PhotoScore,
     Project,
     Rating,
     RatingStatus,
-    ScanStatus,
     ScoringRun,
     User,
 )
+from tests.support import add_photo, add_scoring_run, make_project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
 
 
 async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=f"/{name}")
-    session.add(project)
-    await session.flush()
-    return project
+    return await make_project(session, name, flush=True)
 
 
 async def _photo(
@@ -56,41 +53,25 @@ async def _photo(
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> Photo:
-    moment = _BASE + timedelta(seconds=seconds)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
+    return await add_photo(
+        session,
+        project,
+        path,
         content_length=1,
-        taken_at=moment,
-        taken_at_original=moment,
-        last_modified=moment,
+        taken_at=_BASE + timedelta(seconds=seconds),
+        with_score=with_score,
+        suggested_status=suggested_status,
+        duplicate_of=duplicate_of,
+        decision=decision,
+        flush=True,
+        **kwargs,
     )
-    session.add(photo)
-    await session.flush()
-    if with_score:
-        session.add(
-            PhotoScore(
-                photo_id=photo.id,
-                sharpness=100.0,
-                exposure=0.0,
-                suggested_status=suggested_status,
-                duplicate_of=duplicate_of,
-                computed_at=moment,
-            )
-        )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.flush()
-    return photo
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS, started_at=_BASE)
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_scoring_run(session, project, started_at=_BASE, flush=True)
 
 
 def _url(project_id: int, **params: int) -> str:

@@ -320,10 +320,10 @@ die Lauf-Fassung — der Payload dieses Tests trägt dafür ein Signal, das v3 n
 entfallen, eine benannte Art oder `pets` zeigt dieselbe Aussage); Ausschluss weiter über die
 `kind`-Menge.
 
-**`test_demo_state.py`:** die Demo-Eye-Zeile trägt die Lauf-Fassung — über die Konstante, nicht über
+**`test_demo_state_*.py`:** die Demo-Eye-Zeile trägt die Lauf-Fassung — über die Konstante, nicht über
 ein zweites Literal.
 
-**Bewusst unverändert:** `test_api_photos.py` und `project_graph.py` (Literale sind gespeicherte
+**Bewusst unverändert:** `test_api_photos_*.py` und `project_graph.py` (Literale sind gespeicherte
 Alt-Ergebnisse), `test_migration_eye_mapping_version.py` (Migrationshistorie), die Auswahl-,
 Album- und Cloud-Kandidatentests (AK 8: unberührte Pfade behalten ihre Testknoten unverändert und
 grün), Frontend-Tests (Fixtures mit v1/v2; die Komponenten rendern jede gelieferte Option).

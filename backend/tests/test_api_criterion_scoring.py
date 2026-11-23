@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.api.projects as projects_api
-from photosort.api.deps import get_job_enqueuer, get_opencloud_client
+from photosort.api.deps import get_job_enqueuer
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
@@ -19,58 +19,24 @@ from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
     DuplicateDecision,
-    Photo,
     PhotoDuplicateDecision,
-    PhotoScore,
     Project,
     RatingStatus,
     ScanStatus,
     ScoringRun,
 )
-from photosort.opencloud.client import Drive, OpenCloudError
-from photosort.opencloud.webdav_xml import DavEntry
-
-
-class FakeOpenCloudClient:
-    def __init__(self, fail: OpenCloudError | None = None) -> None:
-        self._fail = fail
-
-    async def resolve_drive(self, name: str | None) -> Drive:
-        if self._fail:
-            raise self._fail
-        return Drive(
-            id="drive-1",
-            name="Family",
-            drive_type="project",
-            webdav_url="https://x/dav/spaces/drive-1",
-        )
-
-    async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
-        if self._fail:
-            raise self._fail
-        return []
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-        # Die Schluesselwort-Argumente getrennt: `mode` faehrt seit Spec 0609 als solches mit,
-        # und die bestehenden Zusagen ueber die Positionsargumente sollen dabei nicht umgeschrieben
-        # werden muessen.
-        self.keywords: list[dict[str, Any]] = []
-
-    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
-        self.calls.append((function, args))
-        self.keywords.append(kwargs)
+from tests.support import (
+    FakeEnqueuer,
+    add_photo,
+    add_scoring_run,
+    create_project_via_api,
+)
 
 
 async def _create_project(
-    client: httpx.AsyncClient, name: str = "Costa Rica", path: str = "A"
+    client: httpx.AsyncClient, name: str = "Costa Rica", path: str = "A", **kwargs: Any
 ) -> int:
-    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await client.post("/projects", json={"name": name, "opencloud_path": path})
-    result: int = created.json()["id"]
-    return result
+    return await create_project_via_api(client, name, path=path, **kwargs)
 
 
 async def _add_successful_scoring_run(
@@ -79,16 +45,11 @@ async def _add_successful_scoring_run(
     *,
     suggestions_found: int = 1,
     started_at: datetime | None = None,
+    **kwargs: Any,
 ) -> ScoringRun:
-    run = ScoringRun(
-        project_id=project_id, status=ScanStatus.SUCCESS, suggestions_found=suggestions_found
+    return await add_scoring_run(
+        session, project_id, suggestions_found=suggestions_found, started_at=started_at, **kwargs
     )
-    if started_at is not None:
-        run.started_at = started_at
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
 
 
 _PHOTO_MOMENT = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
@@ -102,35 +63,25 @@ async def _add_photo(
     open_suggestion: bool = False,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> int:
     """Ein Foto mit Bewertungszeile, wahlweise mit offenem Vorschlag und/oder Entscheidungszeile.
 
     Beide Ursachen sind EINZELN schaltbar, weil der Ausschuss-Bestand des Massenwegs (wie der
     Lesepfad) ihre VEREINIGUNG ist und `has_open_suggestion` nur die Aufnahmen OHNE Zeile trifft."""
-    photo = Photo(
-        project_id=project_id,
-        relative_path=path,
-        etag=f"etag-{path}",
+    photo = await add_photo(
+        session,
+        project_id,
+        path,
         content_length=1,
         taken_at=_PHOTO_MOMENT,
-        taken_at_original=_PHOTO_MOMENT,
-        last_modified=_PHOTO_MOMENT,
+        with_score=True,
+        suggested_status=RatingStatus.REJECTED if open_suggestion else None,
+        duplicate_of=duplicate_of,
+        decision=decision,
+        flush=True,
+        **kwargs,
     )
-    session.add(photo)
-    await session.flush()
-    session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=100.0,
-            exposure=0.0,
-            suggested_status=RatingStatus.REJECTED if open_suggestion else None,
-            duplicate_of=duplicate_of,
-            computed_at=_PHOTO_MOMENT,
-        )
-    )
-    if decision is not None:
-        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
-    await session.flush()
     return photo.id
 
 

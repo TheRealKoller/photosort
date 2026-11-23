@@ -287,7 +287,7 @@ angefasst werden, sonst schwächen sie sich still ab:
 - `renders no button at all when the list is read-only` wird **rot**, weil die acht Symbole selbst
   Schaltflächen sind; zu schärfen auf „keine **Korrektur**schaltfläche".
 - Jede Abwesenheitszusage über einen Korrekturschalter (`CriterionDetailsPopover.test.tsx`,
-  `PhotoDetailPage.test.tsx`) braucht den Klick auf ein Symbol **vor** der negativen Assertion.
+  `PhotoDetailPage.*.test.tsx`) braucht den Klick auf ein Symbol **vor** der negativen Assertion.
 - `shows no band word anywhere outside the statistics table` prüft nur `document.body.textContent`;
   die Werte wandern in `aria-label` und werden dort nicht erfasst. Muss die zugänglichen Namen
   einbeziehen.

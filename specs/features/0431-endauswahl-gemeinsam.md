@@ -375,7 +375,7 @@ nicht fest, welches Foto vorgeschlagen ist):
 4. ein einig-drinnes Foto mit `included=false` → „einig, aber herausgenommen".
 
 Ohne diesen Block zeigte die Arbeitssicht auf der Demo-Instanz dauerhaft „keine Unterschiede", und
-kein Test würde rot. Der Nachweis dagegen ist ein Kardinalitätsfall in `test_demo_state.py`.
+kein Test würde rot. Der Nachweis dagegen ist ein Kardinalitätsfall in `test_demo_state_*.py`.
 
 e2e: `no-horizontal-scroll.spec.ts` (Eintrag „Vergleich"/`/compare` → „Endauswahl"/`/selection`, mit
 mindestens einer Kachel als Vorbedingung, dazu beide Sichten bei 360 px), `project-nav.spec.ts`
@@ -400,7 +400,7 @@ dieselbe Gegenüberstellung.
 4. `api/photos.py`: die drei `PhotoOut`-Felder, `_to_photo_out`-Pflichtparameter, die zwei Helfer,
    Umbenennung `DraftContent` → `PlacedPhotos` und Extraktion `_place_in_events`, danach
    `GET /projects/{id}/album-selection`.
-5. `project_deletion.py`, `demo_state.py` (+ `test_demo_state.py`).
+5. `project_deletion.py`, `demo_state.py` (+ `test_demo_state_*.py`).
 6. `docs/architecture.md`: Eintrag `FinalSelectionDecision` im Datenmodell, die zwei Endpunkte in
    der Endpunktliste, die drei `PhotoOut`-Felder. `docs/setup.md` bleibt unberührt — keine neue
    Umgebungsvariable, kein neuer Setup-Schritt.
@@ -877,12 +877,12 @@ zonenloser Zeitstempel mit `server_default`; der `downgrade()` legt die Tabelle 
 benennt den Verlust aller gemeinsamen Entscheidungen. `test_postgres_ddl_compatibility.py` bekommt
 den Durchlauf für upgrade und downgrade.
 
-**PR 1 — Leseendpunkt** (`test_api_photos.py`): Punkte 1–3, 5, 6, 9–16, dazu die sieben Stellen des
+**PR 1 — Leseendpunkt** (`test_api_photos_*.py`): Punkte 1–3, 5, 6, 9–16, dazu die sieben Stellen des
 Nachweisblocks; `assert_selection_invariants` als Nachsatz jedes Falls beider neuer Blöcke; ein
 `project_id` eines fremden Projekts liefert `404`, ein Projekt ohne Lauf `200` mit leerer Liste und
 befüllten `participants`.
 
-**PR 1 — Löschzusage und Demo** (`test_project_deletion.py`, `test_demo_state.py`): der
+**PR 1 — Löschzusage und Demo** (`test_project_deletion.py`, `test_demo_state_*.py`): der
 Vollständigkeitswächter gegen `Base.metadata` greift über den echten Fremdschlüssel, dazu ein
 Zeilenfall im Muster `test_the_project_deletion_removes_the_motif_rows_too`. Punkt 21 als
 Kardinalitätsfall über die vier benannten Zustände;

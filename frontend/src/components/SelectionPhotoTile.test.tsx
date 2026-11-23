@@ -12,6 +12,7 @@ import {
 } from '../utils/albumSuitability'
 import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { SELECTION_DECIDED_BADGE_TEXT, SelectionPhotoTile } from './SelectionPhotoTile'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('./PhotoImage', () => ({
   PhotoImage: ({ alt }: { alt: string }) => <img alt={alt} />,
@@ -22,25 +23,10 @@ const NORA: AlbumParticipantOut = { user_id: 2, username: 'nora' }
 const PARTICIPANTS = [DANIEL, NORA]
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
+  return makePhoto({
     relative_path: 'reise/a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     ...overrides,
-  }
+  })
 }
 
 function renderTile(

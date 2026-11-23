@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as photosApi from '../api/photos'
@@ -18,6 +16,8 @@ import {
   SHOW_ALL_LABEL,
   SHOW_LESS_LABEL,
 } from './DraftAlternativesBand'
+import { makePhoto } from '../test/fixtures'
+import { FreshQueryWrapper as wrapper } from '../test/render'
 
 vi.mock('../api/photos')
 
@@ -33,15 +33,9 @@ const EVENT: EventOut = {
 }
 
 function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `dir/${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
     ranking: {
       event_id: EVENT.id,
       rank_score: 0.8,
@@ -50,16 +44,9 @@ function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
       partition_size: 5,
       curation_position: null,
     },
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     event: EVENT,
     ...overrides,
-  }
+  })
 }
 
 function answer(
@@ -83,11 +70,6 @@ function answer(
     reference_index: referenceIndex,
     series_rest: seriesRest,
   }
-}
-
-function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
 function renderBand(

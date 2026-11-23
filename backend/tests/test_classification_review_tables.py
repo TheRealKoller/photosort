@@ -28,6 +28,7 @@ from photosort.models import (
     ScanStatus,
     User,
 )
+from tests.support import add_photo, make_project, make_user
 
 REVIEW_TABLES = (
     "classification_reviews",
@@ -156,36 +157,22 @@ def test_the_closed_value_sets_match_the_spec() -> None:
 
 
 async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive", opencloud_path="Costa Rica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, drive_id="drive", path="Costa Rica")
 
 
 async def _make_user(session: AsyncSession) -> User:
-    user = User(username="anleger", password_hash="x")
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
+    return await make_user(session)
 
 
 async def _add_photo(session: AsyncSession, project: Project) -> Photo:
-    moment = datetime(2023, 6, 1, 12, 0)
-    photo = Photo(
-        project_id=project.id,
-        relative_path="keep.jpg",
+    return await add_photo(
+        session,
+        project,
+        "keep.jpg",
         etag="etag-keep",
         content_length=1_000,
-        taken_at=moment,
-        taken_at_original=moment,
-        last_modified=moment,
+        taken_at=datetime(2023, 6, 1, 12, 0),
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _make_review(session: AsyncSession, project: Project, user: User) -> ClassificationReview:

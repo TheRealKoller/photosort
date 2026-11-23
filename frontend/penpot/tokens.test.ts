@@ -269,7 +269,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   /*
    * FEHLSCHLAGEN STATT UEBERSPRINGEN. Eine stillschweigend uebersprungene Deklaration ist genau
    * die Fehlerklasse, gegen die dieser Erzeuger antritt: ein Token, das in Penpot fehlt, bei
-   * gruener CI. Dieselbe Regel setzt src/designSystem.contract.test.ts fuer die Kontrastmatrix
+   * gruener CI. Dieselbe Regel setzt src/designSystem.*.contract.test.ts fuer die Kontrastmatrix
    * durch.
    */
   it('scheitert an einer nicht verstandenen Deklaration statt sie zu ueberspringen', () => {

@@ -14,13 +14,11 @@ Aussage auch fuer eine Tabelle ganz ohne Fremdschluessel.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "c5d6e7f8a9b0_gewichtssaetze.py"
 _MIGRATION_PATH = (
@@ -48,14 +46,6 @@ _EXPECTED_ENTRY_COLUMNS = {"id", "set_id", "criterion_key", "weight"}
 _NULLABLE_SET_COLUMNS = {"based_on_event_id", "reverts_set_id"}
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("gewichtssaetze_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration: die Nutzertabelle
     (auf sie zeigt der Urheber der Fassung) und die Lauf-Tabelle, die die neue Spalte bekommt."""
@@ -71,19 +61,12 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _upgraded(tmp_path: Path) -> Connection:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     connection = engine.connect()
     transaction = connection.begin()
     _create_pre_migration_schema(connection)
-    _apply(connection, "upgrade")
+    apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
     transaction.commit()
     return connection
 
@@ -95,7 +78,7 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head - die Revision des
     Ereignis-Logs aus Teil 1 derselben Spec. Die Kette selbst prueft `test_migration_chain.py`."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "b1c2d3e4f5a6"
 
@@ -213,7 +196,7 @@ def test_the_downgrade_drops_both_tables_and_the_run_column(tmp_path: Path) -> N
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 f"INSERT INTO {_SETS} (created_by_user_id, origin) "  # noqa: S608
@@ -226,7 +209,7 @@ def test_the_downgrade_drops_both_tables_and_the_run_column(tmp_path: Path) -> N
                 "VALUES (1, 'sharpness', 1.2)"
             )
         )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         tables = set(inspect(connection).get_table_names())
         run_columns = set(_columns(connection, _RUNS))

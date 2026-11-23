@@ -412,7 +412,7 @@ bzw. aufgezeichneten Client; Komponente = vitest + Testing Library; E2E = Playwr
   Kurzfassung aus `model_choice`, Link, Sperre ohne Einwilligung).
 - **Wirkung.** Unit `build_landmark_client` (Anbieter aus dem Modell, unbekanntes Modell
   `ValueError`); Integration `test_worker_remote_category_classification.py`/
-  `test_worker_criterion_scoring.py` (zwei Anbieter mit je eigenem Schrittmacher und Preis, Eye
+  `test_worker_criterion_scoring_*.py` (zwei Anbieter mit je eigenem Schrittmacher und Preis, Eye
   ohne Cloud-Foto, Identität angezeigt = aufgerufen = abgerechnet, zwei Projekte gleichzeitig);
   Komponente `ClassificationEstimate.test.tsx`/`ClassificationBalance.test.tsx`.
 - **Einwilligung.** Integration `test_api_projects.py`, `test_worker_eye_phase.py` (Cloud ohne

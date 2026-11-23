@@ -7,10 +7,10 @@ import type { ProjectOut } from '../api/types'
 import {
   criterionRunSummary,
   enumerateProjects,
-  projectFixture,
   scanSummary,
   scoringRunSummary,
 } from '../test/projectStateSpace'
+import { makeProject } from '../test/fixtures'
 import { DRAFT_CLOUD_CONSENT_TEXT, SETTINGS_LINK_LABEL } from '../utils/albumDraftTexts'
 import {
   computeStepStates,
@@ -26,7 +26,7 @@ import { WorkflowOverviewDialog } from './WorkflowOverviewDialog'
 const GATE = '2026-08-12T09:30:00Z'
 
 /** Kuratierung erreichbar, alles davor erledigt - jeder Eintrag hat seine Öffnen-Schaltfläche. */
-const ALL_REACHABLE = projectFixture({
+const ALL_REACHABLE = makeProject({
   id: 9,
   last_scan: scanSummary('success'),
   last_scoring_run: scoringRunSummary('success', GATE),
@@ -118,7 +118,7 @@ describe('WorkflowOverviewDialog: Inhalt', () => {
 
   it('zeigt Hinweis und Weg zu den Einstellungen auch am gesperrten Album-Entwurf', () => {
     // Ein frisch angelegtes, ungescanntes Projekt - genau die Lage beim ersten Öffnen.
-    renderDialog(projectFixture({ id: 4 }))
+    renderDialog(makeProject({ id: 4 }))
 
     const album = entry('album')
     expect(within(album).getByText('gesperrt')).toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('WorkflowOverviewDialog: Inhalt', () => {
 
   it('lässt im gesperrten Eye-Projekt auch keine leere Schaltflächenzeile stehen', () => {
     renderDialog({
-      ...projectFixture({ id: 4 }),
+      ...makeProject({ id: 4 }),
       model_choice: { ...eyeReachable.model_choice },
     })
 
@@ -181,7 +181,7 @@ describe('WorkflowOverviewDialog: Bedienung', () => {
   })
 
   it('hebt nur die Schaltfläche des aktuellen Eintrags als primär hervor', () => {
-    const project = projectFixture({ last_scan: scanSummary('success') })
+    const project = makeProject({ last_scan: scanSummary('success') })
     renderDialog(project)
 
     // Primär ist die gefüllte Akzentfläche, sekundär der Umriss (ui/button.tsx).
@@ -191,7 +191,7 @@ describe('WorkflowOverviewDialog: Bedienung', () => {
   })
 
   it('gibt gesperrten Einträgen keine Öffnen-Schaltfläche, sondern den Sperrgrund als Text', () => {
-    const project = projectFixture({ last_scan: scanSummary('success') })
+    const project = makeProject({ last_scan: scanSummary('success') })
     renderDialog(project)
 
     for (const id of ['kriterien', 'kuratierung', 'album', 'selection']) {
@@ -238,7 +238,7 @@ describe('WorkflowOverviewDialog: Bedienung', () => {
 
   it('zeigt Lauf und Fehlschlag als Wort beim Schritt', () => {
     renderDialog(
-      projectFixture({
+      makeProject({
         last_scan: scanSummary('failed'),
         last_scoring_run: scoringRunSummary('running', null),
       }),

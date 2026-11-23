@@ -1,6 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import * as feedbackApi from '../api/feedback'
@@ -11,6 +10,7 @@ import {
   useFeedbackDiagnosisQuery,
   useRevertFeedbackWeightsMutation,
 } from './useFeedbackDiagnosis'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/feedback')
 
@@ -31,15 +31,11 @@ const DIAGNOSIS: FeedbackDiagnosisOut = {
 }
 
 function wrapper(client: QueryClient) {
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  )
+  return queryWrapper(client)
 }
 
 function freshClient() {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  return makeQueryClient()
 }
 
 describe('useFeedbackDiagnosisQuery', () => {

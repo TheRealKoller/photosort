@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
@@ -10,6 +9,8 @@ import * as photosApi from '../api/photos'
 import type { PhotoOut, ProjectCameraOut } from '../api/types'
 import { applyOffsetToIsoTime } from '../utils/timeOffset'
 import { CameraTimeOffsetDialog } from './CameraTimeOffsetDialog'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/cameras')
 vi.mock('../api/photos')
@@ -42,35 +43,21 @@ const REFERENCE_CAMERA: ProjectCameraOut = {
 const RECORDED = '2026-08-12T14:32:00'
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
+  return makePhoto({
     id: 11,
-    relative_path: 'a.jpg',
     taken_at: RECORDED,
     taken_at_original: RECORDED,
-    time_offset_minutes: 0,
     camera: { id: CAMERA.id, label: CAMERA.label },
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     ...overrides,
-  }
+  })
 }
 
 function renderDialog(camera: ProjectCameraOut = CAMERA) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   const onClose = vi.fn()
 
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    return withQuery(children, queryClient)
   }
 
   render(
@@ -341,19 +328,20 @@ describe('CameraTimeOffsetDialog', () => {
     })
 
     it('erklaert den fehlenden Vorschlag, wenn es keine zweite Kamera gibt', () => {
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-      })
+      const queryClient = makeQueryClient()
       render(
-        <QueryClientProvider client={queryClient}>
-          <CameraTimeOffsetDialog
-            open
-            onClose={vi.fn()}
-            projectId={3}
-            camera={CAMERA}
-            cameras={[CAMERA]}
-          />
-        </QueryClientProvider>,
+        withQuery(
+          <>
+            <CameraTimeOffsetDialog
+              open
+              onClose={vi.fn()}
+              projectId={3}
+              camera={CAMERA}
+              cameras={[CAMERA]}
+            />
+          </>,
+          queryClient,
+        ),
       )
 
       expect(screen.getByText(/braucht das Projekt eine zweite Kamera/)).toBeInTheDocument()

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 
@@ -7,6 +8,7 @@ from photosort.api.deps import get_opencloud_client
 from photosort.main import app
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
+from tests.support import opencloud_entry
 
 
 class FakeClient:
@@ -34,14 +36,11 @@ class FakeClient:
         return self._entries
 
 
-def _entry(name: str, is_collection: bool, last_modified: datetime | None = None) -> DavEntry:
-    return DavEntry(
-        href=f"/x/{name}",
-        name=name,
-        is_collection=is_collection,
-        etag="e",
-        last_modified=last_modified,
-        content_length=None,
+def _entry(
+    name: str, is_collection: bool, last_modified: datetime | None = None, **kwargs: Any
+) -> DavEntry:
+    return opencloud_entry(
+        name, is_collection=is_collection, etag="e", last_modified=last_modified, **kwargs
     )
 
 

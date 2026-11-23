@@ -290,7 +290,7 @@ zugeschlagen, zu dem es gehört:
 - **Injizierbar:** `build_events` nimmt `min_event_photos` und `merge_max_gap` injizierbar
   entgegen (`None` = Modulkonstante), und die sechs Konstanten werden im Code als **Modulattribut**
   gelesen, nie als Default-Parameterwert gebunden. Ohne das laufen 26 bestehende Fälle in
-  `test_events.py` still durch die neue Stufe, und Block D kann die beiden Werte nicht variieren —
+  `test_events_*.py` still durch die neue Stufe, und Block D kann die beiden Werte nicht variieren —
   sie sind keine Signale.
 - **Kein Handgriff:** Es gibt keine Bestätigung, keine Korrekturgeste, kein Feld. Das
   Zusammenlegen findet im Lauf statt; eine Änderung wirkt beim nächsten Lauf bzw. Neuaufbau.
@@ -772,11 +772,11 @@ allein tut, und Schritt 9 fügt nichts hinzu, was Schritt 8 verdecken könnte.
 
 **Bestehende Fälle, die das Gegenteil der neuen Zusage behaupten, werden ersetzt statt angepasst**
 — ein angepasster Fall behält seinen Namen und prüft danach etwas anderes, als er verspricht.
-Betroffen sind die Fälle in `test_events.py`, die einen bestätigten Motivwechsel **durch**
+Betroffen sind die Fälle in `test_events_*.py`, die einen bestätigten Motivwechsel **durch**
 `build_events`/`explain_events` hindurch als Trennung prüfen, sowie der Fall zur unantastbaren
 Grenze in Stufe 3. Die Fälle, die `motif_change_starts` **direkt** prüfen
-(`test_events.py:883` ff.), bleiben unverändert gültig: Der Begriff ändert sich nicht, nur seine
-Wirkung. Ebenfalls nachzuziehen: der Import von `UNBREAKABLE_CAUSES` in `test_events.py` und sein
+(`test_events_*.py:883` ff.), bleiben unverändert gültig: Der Begriff ändert sich nicht, nur seine
+Wirkung. Ebenfalls nachzuziehen: der Import von `UNBREAKABLE_CAUSES` in `test_events_*.py` und sein
 Eintrag in der Gegenprobe `test_event_probe.py::test_the_closed_vocabularies_are_not_mistaken_for_adjustable`
 samt der Aufzählung im Doku-Block von `_adjustable_constants_of_events` — ein Name, den es nicht
 mehr gibt, macht die Gegenprobe an dieser Stelle still vakuum-grün.
@@ -1258,7 +1258,7 @@ mehr als ein Viertel der Kandidaten reicht oder große Events mehrere Ortszellen
 
 ## Teststrategie
 
-**Schwerpunkt Unit, DB-frei** (`backend/tests/test_events.py`). **Kein Test pinnt einen Zahlwert
+**Schwerpunkt Unit, DB-frei** (`backend/tests/test_events_*.py`). **Kein Test pinnt einen Zahlwert
 der sechs Konstanten**; geprüft wird „unter/über der Schwelle → erwartetes Verhalten" über
 injizierte Signale, `>` gegen `>=` über einen injizierten, vorher gemessenen Wert. Eine
 `autouse`-Fixture setzt die sechs Konstanten per `monkeypatch.setattr` auf mehrere Werte und
@@ -1302,7 +1302,7 @@ vakuum-grün.
 ein Datensatz, `event_inputs` einmal über den Worker-Pfad und einmal über den Probe-Pfad, die
 beiden `EventCandidate`-Mengen feldgleich.
 
-**Integration** (`test_worker_criterion_scoring.py`, `test_worker_rebuild_run_grouping.py`) prüft
+**Integration** (`test_worker_criterion_scoring_*.py`, `test_worker_rebuild_run_grouping.py`) prüft
 nur noch das Verdrahten und die eine Bindung beider Aufrufer. Keine Migration, kein E2E-Bezug —
 `demo_state.py` schreibt `Event`-Zeilen direkt.
 
@@ -1315,9 +1315,9 @@ Möglichkeit heute nicht.
 **Vor Schritt 6 der Umsetzungsreihenfolge** laufen die Konstanten einmal probeweise verschoben
 durch den ganzen Prüfsatz. Bereits gemessen (`EVENT_TIME_GAP` 3 h, Schritt 1500 m, Ausdehnung
 4000 m): sieben Fälle bauen ihre Testlage aus Zahlen, die nur gegen die heutigen Werte aufgehen,
-und müssen vorher umgebaut werden — `test_events.py:495`, `:508`, `:639`, `:652`, `:674`,
-`test_worker_criterion_scoring.py:4601`, `test_worker_rebuild_run_grouping.py:181`. Vier weitere
-behaupten das Gegenteil der neuen Zusage und werden ersetzt statt angepasst: `test_events.py:379`
+und müssen vorher umgebaut werden — `test_events_*.py:495`, `:508`, `:639`, `:652`, `:674`,
+`test_worker_criterion_scoring_*.py:4601`, `test_worker_rebuild_run_grouping.py:181`. Vier weitere
+behaupten das Gegenteil der neuen Zusage und werden ersetzt statt angepasst: `test_events_*.py:379`
 (`TestDayBoundarySignal`), `:1013` (prüft `started_at.date() == ended_at.date()` je Event),
 `:1119`/`:1130` samt der Referenz in `:1095`, `:1234`.
 

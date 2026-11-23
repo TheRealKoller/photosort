@@ -15,13 +15,11 @@ mehr tut als die Spaltenform zu pruefen:
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
@@ -35,14 +33,6 @@ _EXISTING_PHOTOS = (
     (1, "2026-07-20 10:00:00"),
     (2, "2026-08-01 18:45:12"),
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("kamera_zeitversatz_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -92,16 +82,9 @@ def _insert_legacy_photos(connection: Connection) -> None:
         )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "f5a6b7c8d9e0"
 
@@ -110,7 +93,7 @@ def test_upgrade_creates_the_project_cameras_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -128,7 +111,7 @@ def test_upgrade_binds_a_camera_to_its_project_with_a_real_foreign_key(tmp_path:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("project_cameras")
@@ -142,7 +125,7 @@ def test_upgrade_keeps_make_and_model_unique_per_project(tmp_path: Path) -> None
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         constraints = inspect(connection).get_unique_constraints("project_cameras")
@@ -154,7 +137,7 @@ def test_upgrade_adds_the_three_photo_columns(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         columns = {c["name"]: c for c in inspect(connection).get_columns("photos")}
@@ -168,7 +151,7 @@ def test_upgrade_binds_a_photo_to_its_camera_with_a_real_foreign_key(tmp_path: P
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("photos")
@@ -186,7 +169,7 @@ def test_upgrade_copies_every_existing_row_from_its_own_taken_at(tmp_path: Path)
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -204,7 +187,7 @@ def test_upgrade_marks_existing_rows_as_not_yet_probed(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         probed = connection.execute(text("SELECT camera_probed FROM photos ORDER BY id")).all()
@@ -218,7 +201,7 @@ def test_upgrade_leaves_the_camera_of_existing_rows_unset(tmp_path: Path) -> Non
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         assert (
@@ -237,7 +220,7 @@ def test_an_insert_without_the_probed_column_succeeds(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 "INSERT INTO photos (id, project_id, relative_path, etag, content_length, "
@@ -262,7 +245,7 @@ def test_an_insert_without_the_offset_column_succeeds(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 "INSERT INTO project_cameras (id, project_id, make, model) "
@@ -286,7 +269,7 @@ def test_downgrade_writes_the_recorded_times_back_into_taken_at(tmp_path: Path) 
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         # Ein gesetzter Versatz, wie ihn der Endpunkt schreibt: `taken_at` traegt ab jetzt die
         # KORRIGIERTE Zeit, `taken_at_original` unveraendert die aufgezeichnete.
         connection.execute(
@@ -301,7 +284,7 @@ def test_downgrade_writes_the_recorded_times_back_into_taken_at(tmp_path: Path) 
                 "taken_at = datetime(taken_at_original, '-120 minutes')"
             )
         )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT id, taken_at FROM photos ORDER BY id")).all()
@@ -314,8 +297,8 @@ def test_downgrade_restores_the_old_column_shape(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -335,15 +318,15 @@ def test_downgrade_does_not_bring_the_offsets_back(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_photos(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(
                 "INSERT INTO project_cameras (id, project_id, make, model, offset_minutes) "
                 "VALUES (1, 1, 'Canon', 'EOS 5D', -120)"
             )
         )
-        _apply(connection, "downgrade")
-        _apply(connection, "upgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT COUNT(*) FROM project_cameras")).scalar_one() == 0

@@ -7,7 +7,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import numpy as np
 import pytest
@@ -43,12 +43,13 @@ from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs, run_classification
 from photosort.worker._criterion import ranking as worker_ranking
 from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
+from tests.support import add_scoring_run, make_project
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
 # klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md: EIN verketteter Lauf statt zweier
 # getrennt ausgeloester Laeufe, mit laufbezogener Cloud-Freigabe.
 #
-# Die Tests der beiden EINZELNEN Phasen leben unveraendert in test_worker_criterion_scoring.py und
+# Die Tests der beiden EINZELNEN Phasen leben unveraendert in den test_worker_criterion_scoring_*.py und
 # test_worker_remote_category_classification.py - hier geht es ausschliesslich um das Zusammen-
 # spiel: Reihenfolge, Cloud-Gate, Fehlerweitergabe, Phasen-/Lauf-Zustand.
 
@@ -59,28 +60,13 @@ from tests.phase_binding import assert_phase_binding, assert_phase_starts_strict
 
 
 async def _make_project(
-    session: AsyncSession, *, name: str = "Costa Rica", cloud_consent: bool = False
+    session: AsyncSession, *, name: str = "Costa Rica", cloud_consent: bool = False, **kwargs: Any
 ) -> Project:
-    project = Project(
-        name=name,
-        opencloud_drive_id=f"drive-{name}",
-        opencloud_path=name,
-        cloud_vision_detection_enabled=cloud_consent,
-    )
-    if cloud_consent:
-        project.cloud_vision_consent_at = datetime.now(UTC).replace(tzinfo=None)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+    return await make_project(session, name, cloud_vision_consent=cloud_consent, **kwargs)
 
 
 async def _add_successful_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
+    return await add_scoring_run(session, project)
 
 
 async def _add_candidate_photo(

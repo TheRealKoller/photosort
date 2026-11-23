@@ -10,14 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import Photo, Project, ScanRun, ScanStatus
 from photosort.worker import _runs as worker_runs
-
-
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
+from tests.support import make_project as _make_project
 
 
 async def test_fail_run_result_is_immediately_readable_without_a_fresh_query(

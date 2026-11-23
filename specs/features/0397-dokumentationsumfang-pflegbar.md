@@ -159,7 +159,7 @@ tragen **gemessene Kontrastwerte, Trefferflächenregeln und eine Kollisionsregel
 `--danger` mit Radius 6 px ist formgleich mit dem „Aussortiert"-Kennzeichen, deshalb darf ein
 `destructive`-Button nicht auf Seiten stehen, die Bewertungs-Kennzeichen zeigen). Das sind
 Zusicherungen im Sinne der Regel und bleiben in ihrer Aussage stehen. Sie sind durch keinen Test
-gedeckt: `designSystem.contract.test.ts` bindet die *Klassenzeile*, nicht ihre Begründung — das
+gedeckt: `designSystem.*.contract.test.ts` bindet die *Klassenzeile*, nicht ihre Begründung — das
 zugesagte Verhalten überlebt eine Kürzung also, sein Warum nicht.
 
 ## Security
@@ -226,7 +226,7 @@ Längen-Zurückweisung, gegen das fünfte Akzeptanzkriterium.
 `CriterionScoringGuardError`), behält ihn — Entfernen ergäbe `SyntaxError`. `# type: ignore`,
 `# noqa`, `# pragma: no cover` und `@ts-expect-error` sind Code, kein Doku-Block. Die erste
 Docstring-Zeile jeder Route bleibt. Im Frontend wird keine `className`-Zeile umbrochen:
-`designSystem.contract.test.ts` blendet Kommentare vor dem Scan aus, bindet aber Code-Zeilen
+`designSystem.*.contract.test.ts` blendet Kommentare vor dem Scan aus, bindet aber Code-Zeilen
 wörtlich — und eine Freigabe, deren Ausschnitt nicht mehr gefunden wird, ist selbst ein
 Fehlschlag.
 

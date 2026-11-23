@@ -9,17 +9,14 @@ Spaltensaetze der beiden Foto-Tabellen ohne jeden Wert, jede Box und jedes Merkm
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from photosort.db import enable_sqlite_foreign_keys
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / "1f4027405ea5_personen.py"
@@ -30,14 +27,6 @@ _NEW_TABLES = (
     "photo_person_detections",
     "photo_person_corrections",
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("personen_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -57,19 +46,12 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     connection.execute(text("INSERT INTO criterion_scoring_runs (id, photos_total) VALUES (1, 7)"))
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 @pytest.fixture
 def upgraded(tmp_path: Path) -> Engine:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
     # Erst NACH dem Upgrade: die Durchsetzung soll die neuen Fremdschluessel pruefen, nicht den
     # Tabellenumbau der Migration selbst.
     event.listen(engine, "connect", enable_sqlite_foreign_keys)
@@ -78,7 +60,7 @@ def upgraded(tmp_path: Path) -> Engine:
 
 
 def test_the_revision_chains_onto_the_current_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "1f4027405ea5"
     assert module.down_revision == "2c5472d41548"
@@ -195,8 +177,8 @@ def test_downgrade_removes_tables_and_columns(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)

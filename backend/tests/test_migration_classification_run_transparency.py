@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration
 
 # specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
 # teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/3/5: rein additive Migration - fuenf neue
@@ -31,16 +29,6 @@ _NEW_CRITERION_SCORING_RUN_COLUMNS = {
 }
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "classification_run_transparency_migration", _MIGRATION_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration (Revision
     a3b4c5d6e7f8) - nur die beiden tatsaechlich beruehrten Tabellen, reduziert auf die Spalten,
@@ -61,20 +49,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply_upgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.upgrade()
-
-
-def _apply_downgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.downgrade()
-
-
 def test_upgrade_adds_the_five_columns_and_the_foreign_key_to_criterion_scoring_runs(
     tmp_path: Path,
 ) -> None:
@@ -82,7 +56,7 @@ def test_upgrade_adds_the_five_columns_and_the_foreign_key_to_criterion_scoring_
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {col["name"] for col in inspect(engine).get_columns("criterion_scoring_runs")}
     finally:
@@ -96,7 +70,7 @@ def test_upgrade_adds_failed_calls_to_remote_category_classification_runs(tmp_pa
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {
             col["name"]
@@ -119,7 +93,7 @@ def test_no_new_column_has_a_server_default(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         defaults = {
@@ -161,7 +135,7 @@ def test_existing_rows_keep_null_in_every_new_column(tmp_path: Path) -> None:
                     "VALUES (1, 1, 'success')"
                 )
             )
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.begin() as connection:
             criterion_row = connection.execute(
@@ -190,7 +164,7 @@ def test_the_foreign_key_targets_remote_category_classification_runs(tmp_path: P
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         foreign_keys = inspect(engine).get_foreign_keys("criterion_scoring_runs")
     finally:
@@ -214,8 +188,8 @@ def test_downgrade_removes_every_new_column_and_the_foreign_key(tmp_path: Path) 
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
-            _apply_downgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         criterion_columns = {col["name"] for col in inspector.get_columns("criterion_scoring_runs")}

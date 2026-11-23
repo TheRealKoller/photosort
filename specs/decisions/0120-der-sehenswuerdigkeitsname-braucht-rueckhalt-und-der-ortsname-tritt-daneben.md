@@ -114,7 +114,7 @@ oder ersetzt** — im Muster von `_usable_name` und `MAX_LANDMARK_NAME_LENGTH`.
 - **Tests, die die alte Zusage behaupten, werden ersetzt statt angepasst** — das sind Aussagen über
   eine abgelöste Regel, und ein grüner Fall über `Eiffelturm` nach einem verdrängten `Paris` wäre die
   falsche Aussage über das laufende System. Betroffen sind die Namens- und Ortsnamensfälle in
-  `backend/tests/test_events.py`, `backend/tests/test_worker_place_names.py` und
+  `backend/tests/test_events_*.py`, `backend/tests/test_worker_place_names.py` und
   `frontend/src/utils/timeOfDay.test.ts`. Der bestehende 1:1-Fall bleibt im Ergebnis gleich und wird
   zum Gleichstandsfall (beide Namen ein Trägerfoto → der frühere gewinnt).
 - **Die Gliederung bleibt, wie sie ist.** Der Name bewegt seit ADR 0118/0119 keine Kante und keinen

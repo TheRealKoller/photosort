@@ -360,7 +360,7 @@ Assertion bei einem Client, der die Modulkonstante hartkodiert, tautologisch gr�
 Client-Tests (Fehlerfälle, Header, Timeout, `aclose`, Secret-Freiheit) bleiben ohne
 Assertion-Anpassung grün.
 
-**Worker** (`test_worker_criterion_scoring.py`, `test_worker_remote_category_classification.py`),
+**Worker** (`test_worker_criterion_scoring_*.py`, `test_worker_remote_category_classification.py`),
 alle mit einem **nicht voreingestellten** Modell — bei der Voreinstellung stimmten alle drei
 Stellen auch dann überein, wenn drei getrennte Lesevorgänge stattfänden: die Factory bekommt das
 eingestellte Modell; Client-Bau, eingefrorener Betrag und Modellspalte sind **ein und derselbe

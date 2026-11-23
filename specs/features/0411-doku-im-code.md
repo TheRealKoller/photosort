@@ -177,7 +177,7 @@ bestünde aus dem, was die Regel verbietet.
   `**Shell ist die bessere Wahl bei:**`, `**Bündelung:**`, `**Vorrang:**`,
   `**Hintergrund-Läufe:**`, `**Unberührt:**`). Die Zeile `- **Commits:** …` bleibt unangetastet
   (`test_pr_titel_pruefung.py` leitet daraus die zehn Typen ab).
-- **`frontend/src/designSystem.contract.test.ts`:** Die Freigabeliste trifft über
+- **`frontend/src/designSystem.*.contract.test.ts`:** Die Freigabeliste trifft über
   `file` + `snippet`-Teilzeichenkette, nicht über Zeilennummern — eine Kommentarlöschung verwaist
   also keinen Eintrag. Die eine Ausnahme: `stripComments` entfernt `//`-Kommentare nur am
   Zeilenanfang. Vor dem Entfernen eines **nachgestellten** Kommentars in einer `.tsx` gegen die

@@ -1,17 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as opencloudApi from '../api/opencloud'
 import { useOpenCloudFolderCountsQuery } from './useOpenCloudFolderCounts'
+import { makeQueryClient, queryWrapper, FreshQueryWrapper as wrapper } from '../test/render'
 
 vi.mock('../api/opencloud')
-
-function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-}
 
 describe('useOpenCloudFolderCountsQuery', () => {
   beforeEach(() => {
@@ -45,10 +39,8 @@ describe('useOpenCloudFolderCountsQuery', () => {
 
   it('does not refetch counts for an already-loaded path (staleTime: Infinity, identisch zu useOpenCloudBrowseQuery)', async () => {
     vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([])
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const localWrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const localWrapper = queryWrapper(queryClient)
 
     const { rerender } = renderHook(
       ({ path }: { path: string }) => useOpenCloudFolderCountsQuery(path),

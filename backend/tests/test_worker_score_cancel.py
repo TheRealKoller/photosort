@@ -19,11 +19,11 @@ from photosort.db import make_session_factory
 from photosort.models import PhotoScore, Project, ScanRun, ScanStatus, ScoringRun
 from photosort.worker import _runs as worker_runs
 from photosort.worker import scoring as worker_scoring
+from tests.support import write_display_variant
 from tests.test_worker_score_project import (
     _add_photo,
     _blurry_photo_image,
     _make_project,
-    _write_display_variant,
 )
 
 
@@ -32,7 +32,7 @@ async def _blurry_photos(session: AsyncSession, project: Project, cache: Path, c
         photo = await _add_photo(
             session, project, f"{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
         )
-        _write_display_variant(cache, photo, _blurry_photo_image())
+        write_display_variant(cache, photo, _blurry_photo_image())
 
 
 def _cancel_after(

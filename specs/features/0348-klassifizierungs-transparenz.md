@@ -356,13 +356,13 @@ Keine neue Testebene. Der Eingriff ist überwiegend additiv und trifft vier bere
 | Gegenstand | Ebene | Ort |
 |---|---|---|
 | Migration (6 Spalten + FK), Enum-Werte | Unit, isolierte Revision | `backend/tests/test_migration_classification_run_transparency.py` (neu), `test_postgres_ddl_compatibility.py`, `test_models.py` |
-| Phasenfolge, Live-Zähler, `last_progress_at`, Modell-Frühschreibung, Invariante | Integration gegen `db_session` | `test_worker_criterion_scoring.py`, `test_worker_remote_category_classification.py` |
+| Phasenfolge, Live-Zähler, `last_progress_at`, Modell-Frühschreibung, Invariante | Integration gegen `db_session` | `test_worker_criterion_scoring_*.py`, `test_worker_remote_category_classification.py` |
 | Remote-Run-Anlage, FK, `estimated_cost_usd` | Integration gegen `db_session` | `test_worker_classification.py` |
 | `provider_for_vision_model` | Unit, reine Funktion | `test_cloud_vision.py` |
 | Estimate-Umbau, `cloud_phases`, Bilanz-Felder, Job-Argument | API-Test (`authenticated_api_client`) | `test_api_classification_estimate.py`, `test_api_projects.py` |
 | Negativ-Zusage Statistikseite | API-Test | `test_api_stats.py` |
 | Löschreihenfolge des neuen FK | Integration | `test_project_deletion.py` |
-| Demo-Zustand | Integration | `test_demo_state.py` |
+| Demo-Zustand | Integration | `test_demo_state_*.py` |
 | `deriveClassificationSteps` | Unit, reine Funktion | `frontend/src/utils/classificationSteps.test.ts` (neu) |
 | Die drei neuen Blöcke | Komponententest ohne Provider/Router | `ClassificationEstimate.test.tsx`, `ClassificationProgress.test.tsx`, `ClassificationBalance.test.tsx` (alle neu) |
 | Container-Verdrahtung, Zustandsauswahl | Integration (`QueryClientProvider` + `MemoryRouter`, `vi.mock` auf `api/projects.ts`) | `ClassificationSection.test.tsx` |
@@ -390,7 +390,7 @@ Keine neue Testebene. Der Eingriff ist überwiegend additiv und trifft vier bere
 - `test_a_failed_run_leaves_no_phase_behind` — `_fail_run` nullt `phase`; hält fest, dass auch der neue Ranking-Zweig darüber läuft.
 - Regression: `ranking` existiert genau deshalb, weil `phase` sonst auf `landmark` bei 100 % Fortschritt stünde — ein Testfall assertiert, dass während des `rank_photos`-Aufrufs `phase != 'landmark'` ist.
 
-**B3 — Live-Zähler, Commit-Punkte, Modell-Frühschreibung** (`test_worker_criterion_scoring.py`, neue Klasse `TestLandmarkPhaseLiveCounters`; `test_worker_remote_category_classification.py` analog)
+**B3 — Live-Zähler, Commit-Punkte, Modell-Frühschreibung** (`test_worker_criterion_scoring_landmark_cost.py`, neue Klasse `TestLandmarkPhaseLiveCounters`; `test_worker_remote_category_classification.py` analog)
 
 Grundmuster: der Landmark-Client schnappschüsst bei **jedem** Aufruf `(run.landmark_photos_total, run.landmark_photos_processed, run.landmark_failed_calls, run.landmark_api_calls, run.landmark_model, run.landmark_cost_usd)`; assertiert wird über die Schnappschussliste, nicht über den Endzustand.
 
@@ -405,7 +405,7 @@ Grundmuster: der Landmark-Client schnappschüsst bei **jedem** Aufruf `(run.land
 - Der Fall „Client nicht konstruierbar" ist zugleich der bestehende Regressionsschutz „kein Cloud-Client-Bau bei abgewählter Checkbox" — die vorhandenen Tests (`test_consent_disabled_by_default_never_calls_landmark_client_builder`, `test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_anymore`) bleiben **unverändert** grün; jede Anpassung dort ist ein Review-Befund.
 - Remote-Seite: `test_failed_calls_are_written_at_the_existing_block_commit_point`, `test_the_model_is_written_before_the_first_classification_call`.
 
-**B4 — Die Bindungs-Invariante** (`test_worker_criterion_scoring.py` / `test_worker_remote_category_classification.py`)
+**B4 — Die Bindungs-Invariante** (`test_worker_criterion_scoring_*.py` / `test_worker_remote_category_classification.py`)
 
 - Gemeinsamer Testhelfer `assert_call_bookkeeping_invariant(run)`: prüft `photos_processed == api_calls + failed_calls`, **übersprungen, solange die Phase nicht betreten wurde** (`failed_calls is None`) — sonst liefe der Vergleich für einen Lauf ohne Cloud-Phase in ein `0 == 0 + None`.
 - Angewendet in mindestens vier Läufen: alle Aufrufe erfolgreich; gemischt (2 Erfolge, 1 Fehlschlag); alle Aufrufe fehlgeschlagen; ein Lauf, der **nach** der Cloud-Phase scheitert (Erweiterung von `test_costs_survive_a_run_that_fails_after_the_landmark_block`).
@@ -457,7 +457,7 @@ Grundmuster: der Landmark-Client schnappschüsst bei **jedem** Aufruf `(run.land
 - Alle übrigen Tests in `test_api_stats.py` und in `ProjectStatsPage.test.tsx` bleiben **unverändert**; jede angepasste Erwartung dort ist ein Review-Befund, kein Nachzug.
 - `caplog`-Nachweis (Security-Muss): das Zählen der Fehlschläge führt keine Logzeile mit `repr(exc)`, `response.text`, `response.json()`, `response.headers` oder `exc_info=True` ein.
 
-**B10 — Demo-Zustand** (`test_demo_state.py`)
+**B10 — Demo-Zustand** (`test_demo_state_*.py`)
 
 - `test_the_rated_project_has_a_run_with_a_cloud_balance` — verknüpfter Remote-Lauf, `landmark_photos_total is not None`, `estimated_cost_usd is not None`; abgeleitet assertiert (`any(...)`), nie über einen festen Index.
 - `test_at_least_one_project_still_has_a_run_without_any_cloud_phase` — das „ohne Cloud"-Szenario bleibt erhalten, sonst verliert die Bilanz-Variante (B) ihren Prüfstack-Fall.
@@ -510,7 +510,7 @@ Literale Fixture-Tabelle aus `CriterionScoringRunSummary`-Objekten; beide `cloud
 - **Test-Migrationskarte:** der Block `describe('Teilschritt-Fortschritt')` (heute Zeilen 309–372) wandert nach `ClassificationProgress.test.tsx`; im Container bleibt je ein schlanker Wiring-Nachweis. Die Blöcke „ein Auslöser", „Cloud-Nutzung pro Durchlauf", „Fehlerverhalten und Herkunft des Ergebnisses" und „Feinlabel-Häufigkeiten" bleiben **unverändert** im Container — sie prüfen den Auslöser, der sich laut Spec nicht ändert.
 - `hooks/useProjects.test.tsx`: `keeps polling while the last remote category classification run is running` entfällt mit dem Feld. Nachfolger im selben Commit: `test_keeps_polling_during_the_remote_phase_of_a_classification_run` (`last_criterion_scoring_run.status === 'running'`, `phase === 'remote_categories'`) — die Frage bleibt gestellt, nur an der Zeile, die sie ab jetzt beantwortet.
 - `api/types.ts`: das Feld wird **zuerst** im Typ gelöscht; die `tsc`-Fehlerliste ist die vollständige Fundstellenliste der ~15 Testfabriken. Alle neuen Felder werden pflichtig (`| null`, kein `?`) typisiert, damit eine Auslassung ein Typfehler ist.
-- `designSystem.contract.test.ts` läuft automatisch über die drei neuen Dateien; braucht eine Regel eine Freigabe, ist sie **fundstellengenau** einzutragen, nie dateiweise.
+- `designSystem.*.contract.test.ts` läuft automatisch über die drei neuen Dateien; braucht eine Regel eine Freigabe, ist sie **fundstellengenau** einzutragen, nie dateiweise.
 
 **F6 — E2E**
 

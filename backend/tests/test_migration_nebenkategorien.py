@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError, OperationalError
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0300-nebenkategorien.md, decisions/0069-nebenkategorien-mehrfachzugehoerigkeit-
 # und-konfidenzgewichtete-rangfolge.md Punkt 9: eine additive Spalte, ein GETAUSCHTER Constraint,
@@ -21,14 +19,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "c9d0e1f2a3b4_nebenkategorien.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("nebenkategorien_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -62,13 +52,6 @@ def _insert_legacy_row(connection: Connection, *, row_id: int, category_key: str
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _unique_constraint_names(engine_url_target: object) -> set[str]:
     return {
         constraint["name"]
@@ -82,7 +65,7 @@ def _unique_constraint_names(engine_url_target: object) -> set[str]:
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head, nicht gegen den in
     der Spec genannten (Teststrategie der Spec)."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "b8c9d0e1f2a3"
 
@@ -92,7 +75,7 @@ def test_upgrade_adds_the_is_primary_column(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"]: c for c in inspect(engine).get_columns("photo_rankings")}
     finally:
@@ -110,7 +93,7 @@ def test_an_existing_row_becomes_the_primary_row_of_its_photo(tmp_path: Path) ->
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
             _insert_legacy_row(connection, row_id=1, category_key="tier")
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.connect() as connection:
             rows = connection.execute(text("SELECT id, is_primary FROM photo_rankings")).all()
@@ -129,7 +112,7 @@ def test_after_the_upgrade_an_insert_without_is_primary_fails(tmp_path: Path) ->
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with pytest.raises((IntegrityError, OperationalError)):
             with engine.begin() as connection:
@@ -148,7 +131,7 @@ def test_after_the_upgrade_the_same_photo_may_appear_in_a_second_category(
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(
                 text(
                     "INSERT INTO photo_rankings (id, criterion_scoring_run_id, photo_id, "
@@ -181,7 +164,7 @@ def test_after_the_upgrade_the_same_photo_may_not_appear_twice_in_one_category(
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(
                 text(
                     "INSERT INTO photo_rankings (id, criterion_scoring_run_id, photo_id, "
@@ -211,7 +194,7 @@ def test_upgrade_swaps_the_named_constraints(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         names = _unique_constraint_names(engine)
     finally:
@@ -231,7 +214,7 @@ def test_downgrade_removes_the_secondary_rows_and_restores_the_old_constraint(
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             connection.execute(
                 text(
                     "INSERT INTO photo_rankings (id, criterion_scoring_run_id, photo_id, "
@@ -240,7 +223,7 @@ def test_downgrade_removes_the_secondary_rows_and_restores_the_old_constraint(
                     "(2, 1, 1, 'cluster-0', 'tier', 0.9, 2, 0)"
                 )
             )
-            _apply(connection, "downgrade")
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = {c["name"] for c in inspect(engine).get_columns("photo_rankings")}
         names = _unique_constraint_names(engine)

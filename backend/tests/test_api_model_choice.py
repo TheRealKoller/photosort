@@ -18,7 +18,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.deps import get_opencloud_client
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     ANTHROPIC_VISION_MODEL_SONNET,
@@ -26,7 +25,6 @@ from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
 )
 from photosort.config import settings
-from photosort.main import app
 from photosort.models import (
     CategoryMethod,
     CriterionScoringRun,
@@ -35,29 +33,13 @@ from photosort.models import (
     ScoringRun,
     User,
 )
-from photosort.opencloud.client import Drive
 from photosort.pricing import MODEL_PRICING, estimate_usd_per_image
 from photosort.security import create_access_token, hash_password
-
-
-class FakeOpenCloudClient:
-    async def resolve_drive(self, name: str | None) -> Drive:
-        return Drive(
-            id="drive-1",
-            name="Family",
-            drive_type="project",
-            webdav_url="https://x/dav/spaces/drive-1",
-        )
-
-    async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[object]:
-        return []
+from tests.support import create_project_via_api
 
 
 async def _create_project(client: httpx.AsyncClient) -> int:
-    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
-    result: int = created.json()["id"]
-    return result
+    return await create_project_via_api(client, path="A")
 
 
 async def _stored_project(session: AsyncSession, project_id: int) -> Project:

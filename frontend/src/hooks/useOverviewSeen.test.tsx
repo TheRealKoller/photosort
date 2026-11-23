@@ -1,11 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import * as overviewApi from '../api/projectOverview'
 import { clearToken, setToken } from '../auth/token'
 import { overviewSeenQueryKey, useMarkOverviewSeen, useOverviewSeen } from './useOverviewSeen'
+import { queryWrapper } from '../test/render'
 
 vi.mock('../api/projectOverview')
 
@@ -20,9 +20,7 @@ function tokenFor(username: string): string {
 function makeWrapper(queryClient = new QueryClient()) {
   return {
     queryClient,
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    ),
+    wrapper: queryWrapper(queryClient),
   }
 }
 

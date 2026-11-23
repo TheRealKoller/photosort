@@ -29,10 +29,9 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.opencloud.client import Drive, OpenCloudError
-from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import estimate_usd_per_image
 from photosort.worker import select_remote_category_candidates
+from tests.support import FakeOpenCloudClient, create_project_via_api
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Kostenschätzung", fortgeschrieben von specs/features/0296-klassifizierung-ein-ausloeser-cloud-
@@ -64,31 +63,8 @@ def _album_suitability(photo: Photo) -> PhotoAlbumSuitability:
     )
 
 
-class FakeOpenCloudClient:
-    def __init__(self, fail: OpenCloudError | None = None) -> None:
-        self._fail = fail
-
-    async def resolve_drive(self, name: str | None) -> Drive:
-        if self._fail:
-            raise self._fail
-        return Drive(
-            id="drive-1",
-            name="Family",
-            drive_type="project",
-            webdav_url="https://x/dav/spaces/drive-1",
-        )
-
-    async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
-        if self._fail:
-            raise self._fail
-        return []
-
-
 async def _create_project(client: httpx.AsyncClient) -> int:
-    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
-    result: int = created.json()["id"]
-    return result
+    return await create_project_via_api(client, path="A")
 
 
 async def _add_photo_candidate(

@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
@@ -10,6 +9,8 @@ import * as photosApi from '../api/photos'
 import type { PersonFace, PersonOrigin, PhotoListOut, PhotoOut } from '../api/types'
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
 import { PersonPhotoGroup } from './PersonPhotoGroup'
+import { makeQueryClient, withQuery } from '../test/render'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('../api/persons')
 vi.mock('../api/photos')
@@ -17,11 +18,11 @@ vi.mock('../api/photos')
 const ANNA = { id: 7, name: 'Anna' } as const
 
 function photo(id: number, origin: PersonOrigin = 'recognized', face: PersonFace = null): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `reise/p${id}.jpg`,
     persons: [{ person_id: ANNA.id, origin, face }],
-  } as unknown as PhotoOut
+  })
 }
 
 function listOf(items: PhotoOut[], total = items.length): PhotoListOut {
@@ -29,9 +30,7 @@ function listOf(items: PhotoOut[], total = items.length): PhotoListOut {
 }
 
 function renderGroup() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   const props = {
     onOpenLarge: vi.fn(),
     onPhotosChange: vi.fn(),
@@ -40,16 +39,19 @@ function renderGroup() {
   }
   const headingRef = createRef<HTMLHeadingElement>()
   render(
-    <QueryClientProvider client={queryClient}>
-      <PersonPhotoGroup
-        projectId={3}
-        person={{ ...ANNA, reference_count: 1 } as never}
-        headingId="gruppe-7"
-        headingRef={headingRef}
-        largeTriggerRef={() => () => {}}
-        {...props}
-      />
-    </QueryClientProvider>,
+    withQuery(
+      <>
+        <PersonPhotoGroup
+          projectId={3}
+          person={{ ...ANNA, reference_count: 1 } as never}
+          headingId="gruppe-7"
+          headingRef={headingRef}
+          largeTriggerRef={() => () => {}}
+          {...props}
+        />
+      </>,
+      queryClient,
+    ),
   )
   return { ...props, queryClient }
 }

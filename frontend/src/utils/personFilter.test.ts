@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { PhotoOut } from '../api/types'
 import { carriesPersons, filterByPersons, parsePersonIds, withPersonIds } from './personFilter'
+import { makePhoto } from '../test/fixtures'
 
 function params(...values: string[]): URLSearchParams {
   const result = new URLSearchParams()
@@ -12,10 +13,14 @@ function params(...values: string[]): URLSearchParams {
 }
 
 function photo(id: number, persons: number[]): PhotoOut {
-  return {
+  return makePhoto({
     id,
-    persons: persons.map((personId) => ({ person_id: personId, origin: 'recognized' as const })),
-  } as PhotoOut
+    persons: persons.map((personId) => ({
+      person_id: personId,
+      origin: 'recognized' as const,
+      face: null,
+    })),
+  })
 }
 
 describe('parsePersonIds', () => {

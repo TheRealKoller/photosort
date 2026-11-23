@@ -114,7 +114,7 @@ async def filtered_photo_ids(
         # aus der Zaehlung des Ausschuss-Gates, die denselben Filter benutzt. Die Bedingung steht
         # deshalb an EINER Stelle (`duplicates.py::has_open_suggestion`); die Objektfassung
         # daneben bleibt ueber
-        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`
+        # `tests/test_api_photos_list.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`
         # an sie gebunden.
         base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
             or_(own_rating.id.is_(None), own_rating.status.is_(None)),

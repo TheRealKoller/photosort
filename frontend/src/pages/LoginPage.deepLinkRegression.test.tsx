@@ -1,13 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getToken } from '../auth/token'
 import { useUnauthorizedRedirect } from '../auth/useUnauthorizedRedirect'
 import { LoginPage } from './LoginPage'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 // Regressionstest fuer einen im Review gefundenen Bug: api/client.ts::apiFetch behandelte
 // JEDEN 401 generisch (Token loeschen + globales photosort:unauthorized-Event), auch den 401
@@ -39,12 +38,8 @@ function LoginRoute() {
 }
 
 function renderWithDeepLinkState() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
 
   return render(
     <MemoryRouter

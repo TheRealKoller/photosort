@@ -1,13 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
+import { Route, Routes, useLocation } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DeleteProjectDialog, isExactProjectNameMatch } from './DeleteProjectDialog'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
+import { makeQueryClient, withProviders } from '../test/render'
 
 vi.mock('../api/projects')
 
@@ -28,22 +28,19 @@ function LocationProbe() {
 }
 
 function renderDialog(props: { projectId?: number; projectName?: string } = {}) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   const onClose = vi.fn()
 
   function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/projects/1/settings']}>
-          <LocationProbe />
-          <Routes>
-            <Route path="/projects/1/settings" element={<>{children}</>} />
-            <Route path="/projects" element={<span>Projektliste</span>} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>
+    return withProviders(
+      <>
+        <LocationProbe />
+        <Routes>
+          <Route path="/projects/1/settings" element={<>{children}</>} />
+          <Route path="/projects" element={<span>Projektliste</span>} />
+        </Routes>
+      </>,
+      { queryClient, initialEntries: ['/projects/1/settings'] },
     )
   }
 

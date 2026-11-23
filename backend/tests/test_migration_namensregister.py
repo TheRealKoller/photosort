@@ -10,15 +10,13 @@ Richtungen unveraendert. Die bereits erteilten Cloud-Einwilligungen bleiben eben
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
@@ -26,14 +24,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "a8b9c0d1e2f3_namensregister.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("namensregister_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -91,16 +81,9 @@ def _insert_project(connection: Connection, *, project_id: int, consent: int) ->
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "e3f4a5b6c7d8"
 
@@ -109,7 +92,7 @@ def test_upgrade_creates_the_landmark_names_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -138,7 +121,7 @@ def test_upgrade_binds_the_register_to_its_project_with_a_real_foreign_key(tmp_p
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("landmark_names")
@@ -152,7 +135,7 @@ def test_upgrade_keeps_one_entry_per_project_and_normalised_name(tmp_path: Path)
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         constraints = inspect(connection).get_unique_constraints("landmark_names")
@@ -170,7 +153,7 @@ def test_the_same_name_in_two_projects_is_two_rows_but_twice_in_one_is_rejected(
         _create_pre_migration_schema(connection)
         _insert_project(connection, project_id=1, consent=1)
         _insert_project(connection, project_id=2, consent=0)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     insert = text(
         "INSERT INTO landmark_names (project_id, normalized_name, display_name, embedding) "
@@ -188,7 +171,7 @@ def test_upgrade_adds_a_nullable_canonical_name_to_the_detections(tmp_path: Path
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         columns = {
@@ -208,7 +191,7 @@ def test_upgrade_leaves_canonical_name_null_for_every_existing_row(tmp_path: Pat
         _create_pre_migration_schema(connection)
         _insert_legacy_detection(connection, photo_id=1, name="Eiffelturm", confidence=0.95)
         _insert_legacy_detection(connection, photo_id=2, name="Vermutung", confidence=0.2)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -226,7 +209,7 @@ def test_upgrade_keeps_every_existing_detection_row(tmp_path: Path) -> None:
         _create_pre_migration_schema(connection)
         _insert_legacy_detection(connection, photo_id=1, name="Eiffelturm", confidence=0.95)
         _insert_legacy_detection(connection, photo_id=2, name="Vermutung", confidence=0.2)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -247,7 +230,7 @@ def test_an_already_granted_cloud_consent_is_never_reset(tmp_path: Path) -> None
         _create_pre_migration_schema(connection)
         _insert_project(connection, project_id=1, consent=1)
         _insert_project(connection, project_id=2, consent=0)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -261,8 +244,8 @@ def test_downgrade_removes_both_the_table_and_the_column(tmp_path: Path) -> None
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -277,8 +260,8 @@ def test_the_existing_detection_rows_survive_the_downgrade_too(tmp_path: Path) -
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_detection(connection, photo_id=1, name="Eiffelturm", confidence=0.95)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(

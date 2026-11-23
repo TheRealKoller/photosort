@@ -135,11 +135,11 @@ Heute stehen beide Leisten auf `sticky top-0 z-10` (`frontend/src/App.tsx`,
   eingerechnet; Inhalt sind `h-8`-Bedienelemente, die mittig stehen). `px-4 sm:px-6` bleibt.
 - Die Schrittleiste tauscht `top-0` gegen `top-header`. Alles andere an ihr (`z-10`, `bg-bg/95`,
   `backdrop-blur-sm`, `border-b`) bleibt unverändert — auch, damit die begründete Freigabe für
-  `bg-bg/95` in `designSystem.contract.test.ts` an ihrer Fundstelle gültig bleibt.
+  `bg-bg/95` in `designSystem.*.contract.test.ts` an ihrer Fundstelle gültig bleibt.
 
 **Absicherung gegen den stillen Fehlschlag:** Eine unbekannte Utility ist in Tailwind kein
 Buildfehler; `top-header` würde wirkungslos bleiben und die Leiste wäre gar nicht mehr haftend.
-Deshalb im Vertragstest (`frontend/src/designSystem.contract.test.ts`) der dort bereits
+Deshalb im Vertragstest (`frontend/src/designSystem.*.contract.test.ts`) der dort bereits
 vorhandene `producesRule`-Mechanismus (echter Tailwind-Lauf) für `h-header` und `top-header`
 **plus Gegenprobe** mit einem erfundenen Namen. Erzeugt der `--spacing-*`-Namensraum wider
 Erwarten keine `top-`-Utility, ist der Rückfallweg **gleichwertig und ebenfalls einquellig**:
@@ -359,7 +359,7 @@ Tests
 - `frontend/src/components/Stepper.test.tsx` — Umbau (fünf fokussierbare Elemente, kein eigener
   Info-Auslöser mehr, Tastaturweg zum Grund, `aria-describedby`, Balkenwert je aktivem Schritt)
 - `frontend/src/utils/pipelineSteps.test.ts` — `stepProgress`
-- `frontend/src/designSystem.contract.test.ts` — `h-header`/`top-header` erzeugen tatsächlich
+- `frontend/src/designSystem.*.contract.test.ts` — `h-header`/`top-header` erzeugen tatsächlich
   Regeln (mit Gegenprobe)
 - `frontend/src/App.test.tsx` — Kopfzeile, soweit betroffen
 - `frontend/penpot/payload.test.ts` — nur, falls die Quellenzuordnung explizit erwähnt ist
@@ -419,7 +419,7 @@ Die Schrittleiste wird aus zwei voneinander unabhängigen Problemen des bisherig
 
 ### Layout und Fixierung
 
-Beide Leisten (Kopfzeile + Schrittleiste) bleiben in beiden Breiten fixiert oben, ohne sich zu überlagern — ihre Verteilung nutzt ein gemeinsames Höhen-Token `--spacing-header: 3.5rem` (56px) im `@theme`-Block von `index.css`. **Kopfzeile** setzt `h-header`, **Schrittleiste** rückt via `top-header` ab; damit ist ein Wert die Quelle für beide Entfernungen. Dieser Zusammenhang wird im Vertragstest (`designSystem.contract.test.ts`) mit echtem Tailwind-Durchlauf gegen einen erfundenen Namen geprüft (Absicherung gegen stillen Fehlschlag von `top-header`).
+Beide Leisten (Kopfzeile + Schrittleiste) bleiben in beiden Breiten fixiert oben, ohne sich zu überlagern — ihre Verteilung nutzt ein gemeinsames Höhen-Token `--spacing-header: 3.5rem` (56px) im `@theme`-Block von `index.css`. **Kopfzeile** setzt `h-header`, **Schrittleiste** rückt via `top-header` ab; damit ist ein Wert die Quelle für beide Entfernungen. Dieser Zusammenhang wird im Vertragstest (`designSystem.*.contract.test.ts`) mit echtem Tailwind-Durchlauf gegen einen erfundenen Namen geprüft (Absicherung gegen stillen Fehlschlag von `top-header`).
 
 Auf **schmalen Geräten** fixiert bleibt allein die Kopfzeile und die Schrittmarken-Reihe mit Fortschrittsbalken (~120px insgesamt); die darunter liegende Orientierungszeile „Schritt 3 von 5: Kriterien-Bewertung" wird zum nicht-haftenden Absatz und scrollt weg. Sie steht weiterhin als ausgeschriebener Name des aktuellen Schritts zur Verfügung, auch nach dem Scrolling — der aktive Schritt ist in der Leiste durch Akzentrand, fetten Schnitt und `aria-current="step"` dauermarkiert. Die Reduktion von ~145px auf ~120px fixierter Höhe schlankt den genutzten Platz spürbar, besonders bei dem breite-beschränkten Inhaltsbereich der Seite.
 
@@ -477,7 +477,7 @@ jsdom-Zusicherung nachbaut, ist ein Muss-Fix-Finding.
 | Vier Ausprägungen, Glyphenwahl, `data-step-state`, keine Zustandsachse `aria-disabled` | Komponente | `frontend/src/components/StepMarker.test.tsx` (neu) |
 | Genau fünf fokussierbare Elemente, Sperrgrund per Tastatur/Zeiger, `aria-describedby`, Balkenwert je aktivem Schritt, Orientierungszeile außerhalb des `<nav>`, Beschriftung außerhalb der Umrandung | Komponente | `frontend/src/components/Stepper.test.tsx` |
 | Kopfzeile ohne Umbruch, Nutzername gekürzt statt umbrechend | Komponente | `frontend/src/App.test.tsx` |
-| `h-header`/`top-header` erzeugen echte Regeln; kein zweiter Pixelwert; kein `top-0` mehr an der Leiste | Vertrag (echter Tailwind-Lauf) | `frontend/src/designSystem.contract.test.ts` |
+| `h-header`/`top-header` erzeugen echte Regeln; kein zweiter Pixelwert; kein `top-0` mehr an der Leiste | Vertrag (echter Tailwind-Lauf) | `frontend/src/designSystem.*.contract.test.ts` |
 | Quellenzuordnung des Bausteins `step-marker` zeigt auf die neue Datei | Nutzlast | `frontend/penpot/payload.test.ts` |
 | Disjunkte, fugenlose y-Bereiche beider fixierter Leisten; Bedienbarkeit im gescrollten Zustand | e2e (360 **und** 1280) | `e2e/tests/sticky-header.spec.ts` |
 | Gleich breite, abstandslose Spalten; rechte Kante der Balkenfüllung auf der Spaltenmitte des aktiven Schritts | e2e (360 **und** 1280) | `e2e/tests/stepper-progress.spec.ts` (neu) |
@@ -763,7 +763,7 @@ ist der Grund, warum das Hinzufügen nicht still leerlaufen kann.
 
 ### Vertrag und Nutzlast
 
-**`designSystem.contract.test.ts`** (die einzige Frontend-Ebene mit CSS-Assertions):
+**`designSystem.*.contract.test.ts`** (die einzige Frontend-Ebene mit CSS-Assertions):
 
 - `producesRule('h-header')` und `producesRule('top-header')` sind `true`, mit **Gegenprobe** auf
   einen erfundenen Namen (etwa `top-headr`), die `false` sein muss. Jede Utility bekommt einen

@@ -6,6 +6,7 @@ import {
   type ProjectStand,
   type StepId,
 } from '../utils/pipelineSteps'
+import { makeProject } from './fixtures'
 
 /*
  * Der vollständig aufgezählte Eingaberaum der Schrittzustände und die Rückabbildung der
@@ -13,39 +14,6 @@ import {
  * (`pipelineSteps.test.ts`) und der Ablaufübersicht, damit beide über DENSELBEN Lagen geprüft
  * werden. Zwei getrennte Aufzählungen liefen beim nächsten neuen Feld still auseinander.
  */
-
-/** Literale Fixture-Fabrik - deckt genau die Feldkombination ab, aus der `computeStepStates`
- * ableitet. */
-export function projectFixture(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
 
 const RUN_STATES: readonly (ScanStatus | null)[] = [
   null,
@@ -90,7 +58,7 @@ export function enumerateProjects(): ProjectOut[] {
         for (const criterion of RUN_STATES) {
           for (const categoryEnabled of [false, true]) {
             projects.push(
-              projectFixture({
+              makeProject({
                 last_scan: scan === null ? null : scanSummary(scan),
                 last_scoring_run:
                   scoring === null

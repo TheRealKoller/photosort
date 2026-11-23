@@ -35,7 +35,6 @@ from photosort.models import (
     PhotoMotifCorrection,
     PhotoMotifStrength,
     PhotoRanking,
-    Project,
     ScanStatus,
     ScoringRun,
     User,
@@ -43,6 +42,7 @@ from photosort.models import (
 from photosort.motif_strengths import load_effective_strengths, upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, hash_password
+from tests.support import add_photo, make_project
 
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"
 
@@ -54,25 +54,17 @@ def _url(photo_id: int, motif_key: str) -> str:
 
 
 async def _make_photo(session: AsyncSession, *, name: str = "Costa Rica") -> Photo:
-    project = Project(
-        name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name.replace(' ', '')}"
+    project = await make_project(
+        session, name, drive_id="drive-1", path=f"/{name.replace(' ', '')}", flush=True
     )
-    session.add(project)
-    await session.flush()
-    now = datetime(2023, 1, 1, tzinfo=UTC).replace(tzinfo=None)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=f"{name}/img001.jpg",
+    return await add_photo(
+        session,
+        project,
+        f"{name}/img001.jpg",
         etag=f"etag-{name}",
         content_length=1,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+        taken_at=datetime(2023, 1, 1, tzinfo=UTC).replace(tzinfo=None),
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    return photo
 
 
 async def _assess(session: AsyncSession, photo: Photo, **overrides: float) -> None:

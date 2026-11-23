@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +8,8 @@ import * as photosApi from '../api/photos'
 import type { PhotoOut } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { CurationLightbox } from './CurationLightbox'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/photos')
 vi.mock('../api/motifs')
@@ -22,7 +23,7 @@ vi.mock('../api/motifs')
  */
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
+  return makePhoto({
     id: 42,
     relative_path: '2024/07/IMG_0042.jpg',
     taken_at: '2024-07-20T10:00:00',
@@ -30,9 +31,6 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     time_offset_minutes: 60,
     camera: { id: 1, label: 'Pixel 8' },
     aspect_ratio: 1.5,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
     criterion_scores: [
       {
         criterion_key: 'schaerfe',
@@ -50,11 +48,6 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
         provider: 'anthropic',
       },
     ],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     event: {
       id: 3,
       position: 1,
@@ -72,16 +65,19 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     motifs: [],
     album_suitability: null,
     ...overrides,
-  }
+  })
 }
 
 function renderLightbox(overrides: Partial<PhotoOut> = {}) {
   const onClose = vi.fn()
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = makeQueryClient()
   const view = render(
-    <QueryClientProvider client={client}>
-      <CurationLightbox photo={photo(overrides)} onClose={onClose} />
-    </QueryClientProvider>,
+    withQuery(
+      <>
+        <CurationLightbox photo={photo(overrides)} onClose={onClose} />
+      </>,
+      client,
+    ),
   )
   return { ...view, onClose }
 }

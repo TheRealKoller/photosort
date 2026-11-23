@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -17,7 +15,6 @@ import type {
   AusschussReason,
   DuplicateDecision,
   DuplicateGroupOut,
-  PhotoOut,
   ProjectOut,
   ScoringRunSummary,
 } from '../../api/types'
@@ -34,6 +31,8 @@ import {
   NEXT_UNAVAILABLE_TEXT,
   RUN_STEP_TEXTS,
 } from '../../utils/stepActionTexts'
+import { makeProject as project, makeSeriesPhoto as photo } from '../../test/fixtures'
+import { makeQueryClient, queryWrapper, withProviders } from '../../test/render'
 
 const START = RUN_STEP_TEXTS.ausschuss.start
 const RERUN = RUN_STEP_TEXTS.ausschuss.rerun
@@ -55,27 +54,6 @@ vi.mock('../../api/operations')
 vi.mock('../../components/PhotoImage', () => ({
   PhotoImage: ({ alt }: { alt: string }) => <img alt={alt} />,
 }))
-
-function photo(id: number): PhotoOut {
-  return {
-    id,
-    relative_path: `Reise/serie-${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
-}
 
 function entry(
   id: number,
@@ -157,37 +135,6 @@ function group(ids: number[], decisions: DuplicateDecision[] = []): DuplicateGro
   }
 }
 
-function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
-
 function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSummary {
   return {
     id: 1,
@@ -244,12 +191,8 @@ function renderPage(
     .fn()
     .mockResolvedValue({ data: undefined }),
 ) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return {
     ...render(
       <MemoryRouter initialEntries={[initialEntry]}>
@@ -1200,20 +1143,19 @@ describe('AusschussStepPage - Abschluss und Weiterführung', () => {
 
   it('wechselt nach einem erfolgreichen Hintergrundlauf nicht, sondern zeigt den Weiter-Link', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = makeQueryClient()
     const refetchProject = vi.fn().mockResolvedValue({ data: undefined })
     function Host({ value }: { value: ProjectOut }) {
-      return (
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/projects/1/pipeline/ausschuss']}>
-            <Adressspiegel />
-            <Routes>
-              <Route element={<OutletHost project={value} refetchProject={refetchProject} />}>
-                <Route path="/projects/1/pipeline/ausschuss" element={<AusschussStepPage />} />
-              </Route>
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>
+      return withProviders(
+        <>
+          <Adressspiegel />
+          <Routes>
+            <Route element={<OutletHost project={value} refetchProject={refetchProject} />}>
+              <Route path="/projects/1/pipeline/ausschuss" element={<AusschussStepPage />} />
+            </Route>
+          </Routes>
+        </>,
+        { queryClient, initialEntries: ['/projects/1/pipeline/ausschuss'] },
       )
     }
     const { rerender } = render(<Host value={project({ last_scoring_run: scoringRun() })} />)

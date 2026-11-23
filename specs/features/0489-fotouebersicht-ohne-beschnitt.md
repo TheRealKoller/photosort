@@ -115,7 +115,7 @@ Abhängigkeit **nicht** — das justierte Raster ist eine reine Funktion im Fron
 | `frontend/src/components/PhotoGridTile.tsx` | **neu.** Die Rasterkachel: Bildfläche im eigenen Verhältnis, Zeichenplättchen in der oberen Ecke, eingeblendete Zeile über dem unteren Bildrand. Benutzt `PhotoCard` **nicht**. |
 | `frontend/src/api/types.ts` | `PhotoOut.aspect_ratio: number \| null`. |
 | `frontend/src/pages/PhotoGridPage.tsx` | Spaltenraster → justiertes Zeilenraster, Nachladen am Sichtbarkeitsanker statt an der Schaltfläche, Zählzeile „x von y geladen", Info-Auslöser und Motiv-Marker entfallen, Gate-Aktionen nur noch bei `gate=1`. |
-| `frontend/src/designSystem.contract.test.ts` | Je ein fundstellengenauer Eintrag in der `opacity-*`- und der `rounded-full`-Freigabe für die neue Kachel. |
+| `frontend/src/designSystem.*.contract.test.ts` | Je ein fundstellengenauer Eintrag in der `opacity-*`- und der `rounded-full`-Freigabe für die neue Kachel. |
 | `frontend/src/components/PhotoCard.tsx` und die drei `*PhotoTile` | **unverändert.** |
 
 **Prüfstack und Doku**

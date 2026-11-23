@@ -1,18 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import { useMotifCorrectionControls } from './useMotifCorrection'
+import { FreshQueryWrapper as wrapper } from '../test/render'
 
 vi.mock('../api/photos')
-
-function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-}
 
 // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt: "Laufende Korrektur -> nur die
 // Schaltflaechen DIESER ZEILE disabled + busy, die uebrige Liste bleibt bedienbar". Der Nachweis

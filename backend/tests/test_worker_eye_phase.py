@@ -20,7 +20,6 @@ from typing import Any, NoReturn
 
 import numpy as np
 import pytest
-from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,85 +41,49 @@ from photosort.models import (
     PhotoLocalMotifSnapshot,
     PhotoMotifAssessment,
     PhotoMotifStrength,
-    PhotoScore,
     Project,
     ScanStatus,
     ScoringRun,
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
-from photosort.thumbnails import display_path
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_classification
+from tests.support import add_photo, add_scoring_run, make_project, write_display_variant
 
 # ---------------------------------------------------------------------------------------------
 # Fixtures / Test-Doubles
 # ---------------------------------------------------------------------------------------------
 
 
-async def _make_project(session: AsyncSession, *, consent: bool = False) -> Project:
-    project = Project(
-        name="Costa Rica",
-        opencloud_drive_id="drive",
-        opencloud_path="Costa Rica",
-        cloud_vision_detection_enabled=consent,
+async def _make_project(session: AsyncSession, *, consent: bool = False, **kwargs: Any) -> Project:
+    return await make_project(
+        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent, **kwargs
     )
-    if consent:
-        project.cloud_vision_consent_at = datetime.now(UTC).replace(tzinfo=None)
-    session.add(project)
-    await session.commit()
-    await session.refresh(project)
-    return project
 
 
 async def _add_run(
-    session: AsyncSession, project: Project, *, started_at: datetime | None = None
+    session: AsyncSession, project: Project, *, started_at: datetime | None = None, **kwargs: Any
 ) -> ScoringRun:
     """`started_at` ist ausdruecklich zu setzen, sobald ein Test ZWEI Laeufe braucht: unter SQLite
     hat `CURRENT_TIMESTAMP` Sekundenaufloesung, und zwei Laeufe derselben Sekunde liessen "der
     neueste" unbestimmt - der Lauf braeche dann an seiner eigenen Bindung ab."""
-    scoring_run = ScoringRun(
-        project_id=project.id,
-        status=ScanStatus.SUCCESS,
-        **({} if started_at is None else {"started_at": started_at}),
-    )
-    session.add(scoring_run)
-    await session.commit()
-    await session.refresh(scoring_run)
-    return scoring_run
+    return await add_scoring_run(session, project, started_at=started_at, **kwargs)
 
 
 async def _add_photo(
     session: AsyncSession, project: Project, path: str, cache_dir: Path, *, readable: bool = True
 ) -> Photo:
-    now = datetime(2023, 1, 1, tzinfo=UTC)
-    photo = Photo(
-        project_id=project.id,
-        relative_path=path,
-        etag=f"etag-{path}",
-        content_length=100,
-        taken_at=now,
-        taken_at_original=now,
-        last_modified=now,
+    photo = await add_photo(
+        session,
+        project,
+        path,
+        taken_at=datetime(2023, 1, 1, tzinfo=UTC),
+        with_score=True,
+        cluster_key_from_id=True,
     )
-    session.add(photo)
-    await session.commit()
-    await session.refresh(photo)
-    session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=100.0,
-            exposure=0.0,
-            cluster_key=f"cluster-{photo.id}",
-            suggested_status=None,
-            computed_at=now,
-        )
-    )
-    await session.commit()
     if readable:
-        variant = display_path(cache_dir, photo.id, photo.etag)
-        variant.parent.mkdir(parents=True, exist_ok=True)
-        Image.new("RGB", (160, 160), color=(100, 100, 100)).save(variant, format="JPEG")
+        write_display_variant(cache_dir, photo)
     return photo
 
 

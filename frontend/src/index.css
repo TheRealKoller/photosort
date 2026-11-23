@@ -27,7 +27,7 @@
  * Umfeld ist fuer die Kernaufgabe die sachlich bessere Wahl, nicht eine gleichwertige Alternative.
  *
  * JEDES Token traegt hier einen ausgeschriebenen 6-stelligen Hexwert, nie var() oder color-mix().
- * Das ist keine Stilfrage: src/designSystem.contract.test.ts rechnet die vollstaendige
+ * Das ist keine Stilfrage: src/designSystem.*.contract.test.ts rechnet die vollstaendige
  * Kontrastmatrix aus genau diesen Werten nach. Ein indirekter oder deckkraftbasierter Wert waere
  * statisch nicht rechenbar und damit dauerhaft ungeprueft.
  */

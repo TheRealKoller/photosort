@@ -77,7 +77,7 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
    - Die Motivstufe entfällt ersatzlos, ebenso der Docstring-Satz „KEINE `taken_at`“.
    - Neue reine Funktion für das Band-Fenster (`nearest_window_offset(reference_index, total, n)`).
 2. `backend/src/photosort/api/photos.py::draft_alternatives`: Abfragen, Parameter `nearest`, Antwortmodell `DraftAlternativesOut`, Docstring (Reihenfolge, S3-Satz zur Sortierung).
-3. `backend/tests/test_selection*.py` und `test_api_photos.py` (Alternativen-Tests): Erwartungen zur Motivreihenfolge werden durch zeitliche Erwartungen ersetzt.
+3. `backend/tests/test_selection*.py` und `test_api_photos_*.py` (Alternativen-Tests): Erwartungen zur Motivreihenfolge werden durch zeitliche Erwartungen ersetzt.
 4. Frontend:
    - `frontend/src/api/types.ts` (neuer Typ), `frontend/src/api/photos.ts::listDraftAlternatives` (Parameter `nearest`, Rückgabetyp).
    - `frontend/src/hooks/usePhotos.ts::useDraftAlternativesQuery`: Band ohne Folgeseiten.
@@ -199,7 +199,7 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
   - `nearest_window_offset` deckt AK3 ab.
   - `order_by_quality` deckt AK11 ab; die Fälle ohne Bezugsbild werden übernommen.
   - AK2 wird hier strukturell gezeigt: Die Kandidaten tragen nur `(photo_id, taken_at)`, Motiv und Qualität sind also gar nicht als Eingabe vorhanden.
-- **API, pytest mit DB (`test_api_photos.py`):**
+- **API, pytest mit DB (`test_api_photos_*.py`):**
   - AK1: Folge über zwei Seiten.
   - AK2: Motiv- und Qualitäts-Gegenprobe am Endpunkt.
   - AK3: `nearest`-Fenster.
@@ -212,8 +212,8 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - **vitest:**
   - `api/photos.test.ts`: Der Parameter `nearest` wird gesendet bzw. weggelassen, der Rückgabetyp stimmt.
   - `usePhotos.test.tsx`: Das Band holt eine einzige Seite mit `nearest`, es gibt kein `fetchNextPage`. Band, Dialog und Panel behalten getrennte Schlüssel.
-  - `DraftAlternativesDialog.test.tsx` und die Band-Tests: Markierung an `reference_index − offset`, Wortlaut (AK5), Albumtauglichkeit getrennt von „Album-würdig“ (AK10), keine zweite Sortierung im Frontend. Die Band-Tests laufen über `AlbumDraftPage.test.tsx` oder eine neue `DraftAlternativesBand.test.tsx`.
-- **Bestehende Strukturwächter** (`designSystem.contract.test.ts`, `albumSelection.structure.test.ts`) bleiben unverändert grün.
+  - `DraftAlternativesDialog.test.tsx` und die Band-Tests: Markierung an `reference_index − offset`, Wortlaut (AK5), Albumtauglichkeit getrennt von „Album-würdig“ (AK10), keine zweite Sortierung im Frontend. Die Band-Tests laufen über `AlbumDraftPage.*.test.tsx` oder eine neue `DraftAlternativesBand.test.tsx`.
+- **Bestehende Strukturwächter** (`designSystem.*.contract.test.ts`, `albumSelection.structure.test.ts`) bleiben unverändert grün.
 
 **Wichtigste Edge Cases**
 - **Gleichstand:**
@@ -244,8 +244,8 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - …::test_a_reference_without_a_carried_motif_leaves_a_plain_quality_order
 - …::test_a_tie_breaks_over_the_smaller_photo_id_in_every_permutation (Motiv-/Qualitäts-Aufbau entfällt; wird als Gleichstand bei taken_at neu geschrieben)
 - Umgezogen statt gestrichen (auf order_by_quality/chronologisch umgestellt): test_an_empty_candidate_list_stays_empty, test_the_reference_is_never_among_its_own_alternatives, test_without_a_reference_a_shared_motif_does_not_jump_ahead, test_without_a_reference_every_permutation_gives_quality_none_last_then_smaller_id
-- backend/tests/test_api_photos.py::test_the_order_is_the_one_of_order_alternatives (wird ersetzt durch einen Test, der die zeitliche Ordnung am Endpunkt prüft)
-- backend/tests/test_api_photos.py::test_temporal_proximity_is_not_a_sorting_criterion (Aussage wird ins Gegenteil gedreht)
+- backend/tests/test_api_photos_*.py::test_the_order_is_the_one_of_order_alternatives (wird ersetzt durch einen Test, der die zeitliche Ordnung am Endpunkt prüft)
+- backend/tests/test_api_photos_*.py::test_temporal_proximity_is_not_a_sorting_criterion (Aussage wird ins Gegenteil gedreht)
 - frontend/src/components/DraftAlternativesDialog.test.tsx 'keeps the ORDER OF THE ANSWER and does not sort again': bleibt, nur der Kommentar „hängt an den Motiven“ wird angepasst
 - Mitzuprüfen: Alle Tests, die den Endpunkt aufrufen und `PhotoListOut` erwarten, darunter test_the_alternatives_response_is_identical_before_and_after_a_joint_decision und test_without_a_reference_*: Die Antwortform wird angepasst, die Erwartung bleibt.
 

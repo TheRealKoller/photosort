@@ -4,12 +4,12 @@ import type { ProjectOut, ScanStatus } from '../api/types'
 import {
   criterionRunSummary,
   enumerateProjects,
-  projectFixture,
   scanSummary,
   scoringRunSummary,
   stepOfText,
   textOf,
 } from '../test/projectStateSpace'
+import { makeProject } from '../test/fixtures'
 import {
   computeStepStates,
   deriveProjectStand,
@@ -27,7 +27,7 @@ import {
 } from './pipelineSteps'
 import { AUSSCHUSS_CONFIRM_LABEL, RUN_STEP_TEXTS } from './stepActionTexts'
 
-const project = projectFixture
+const project = makeProject
 
 describe('PIPELINE_STEPS', () => {
   it('lists all 4 steps in the fixed order (Akzeptanzkriterium 1/2, Spec 0525)', () => {
