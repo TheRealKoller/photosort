@@ -49,7 +49,7 @@ from tests.support import add_scoring_run, make_project
 # klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md: EIN verketteter Lauf statt zweier
 # getrennt ausgeloester Laeufe, mit laufbezogener Cloud-Freigabe.
 #
-# Die Tests der beiden EINZELNEN Phasen leben unveraendert in test_worker_criterion_scoring.py und
+# Die Tests der beiden EINZELNEN Phasen leben unveraendert in den test_worker_criterion_scoring_*.py und
 # test_worker_remote_category_classification.py - hier geht es ausschliesslich um das Zusammen-
 # spiel: Reihenfolge, Cloud-Gate, Fehlerweitergabe, Phasen-/Lauf-Zustand.
 

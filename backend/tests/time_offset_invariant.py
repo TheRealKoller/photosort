@@ -2,7 +2,7 @@
 
 Bewusst kein `test_*`-Modul (wird nicht eingesammelt): gebraucht wird sie vom Scan
 (`test_worker_scan_project.py`), vom Versatz-Endpunkt (`test_api_cameras.py`) und vom Demo-Seeder
-(`test_demo_state.py`) - Muster `assert_event_invariants`/`event_rows.py`.
+(`test_demo_state_rebuild.py`) - Muster `assert_event_invariants`/`event_rows.py`.
 
 Zugesichert wird ADR 0090, Punkt 1: `taken_at == taken_at_original + offset_minutes` der Kamera
 dieses Fotos IN DIESEM PROJEKT; bei fehlender Kamera oder `offset_minutes = 0` sind beide Werte

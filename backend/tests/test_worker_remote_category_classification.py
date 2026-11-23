@@ -690,7 +690,7 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
 # fehler-persistierung.md Punkt 2/3 ab hier: worker/_runs.py::record_cloud_vision_error/
 # clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
-# (Teststrategie-Abschnitt der Spec), analog test_worker_criterion_scoring.py.
+# (Teststrategie-Abschnitt der Spec), analog test_worker_criterion_scoring_landmark_cost.py.
 
 
 async def test_failed_remote_category_call_persists_a_cloud_vision_error_row(
@@ -1680,7 +1680,7 @@ async def test_a_failure_before_the_counters_keeps_the_original_error_message(
 
 
 # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 6/7 ab hier - Gegenpart
-# zu den gleichnamigen Faellen der Landmark-Phase in test_worker_criterion_scoring.py. Auch hier
+# zu den gleichnamigen Faellen der Landmark-Phase in test_worker_criterion_scoring_landmark_cost.py. Auch hier
 # bewusst mit einem NICHT voreingestellten Modell, sonst haette der Test keine Trennschaerfe.
 
 _STRONGER_ANTHROPIC_MODEL = VISION_MODELS_BY_PROVIDER["anthropic"][1]
@@ -1832,7 +1832,7 @@ async def test_a_failed_photo_gets_no_header_and_stays_a_candidate(
 # specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
 # teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/6: Live-Zaehler der Fehlschlaege und
 # Modell-Fruehschreibung - das Gegenstueck zur Landmark-Phase in
-# test_worker_criterion_scoring.py.
+# test_worker_criterion_scoring_landmark_cost.py.
 # --------------------------------------------------------------------------------------------
 
 
@@ -2109,7 +2109,7 @@ async def test_counting_failures_adds_no_log_line_with_provider_raw_text(
 
 
 # specs/features/0382-cloud-rate-limits-aussitzen.md, K8/K9 ab hier - der zweite Cloud-
-# Teilschritt, strukturell analog zur Landmark-Phase in test_worker_criterion_scoring.py. Ueber
+# Teilschritt, strukturell analog zur Landmark-Phase in test_worker_criterion_scoring_landmark_cost.py. Ueber
 # die vorhandene Factory-Injektion wird ausnahmsweise ein ECHTER Client mit httpx.MockTransport
 # hereingereicht: ein Fake-Double abstrahierte genau die Schicht weg, um die es geht.
 

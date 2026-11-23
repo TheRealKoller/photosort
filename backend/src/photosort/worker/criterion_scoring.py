@@ -451,7 +451,7 @@ async def run_criterion_scoring(
             #
             # Ausschliesslich die EIGENE gemessene Koordinate des Fotos (S3): `infer_locations`
             # wird hier nicht aufgerufen, und ein Syntaxbaum-Waechter in
-            # tests/test_worker_criterion_scoring.py haelt das fest - ein hinzugefuegter Aufruf
+            # tests/test_worker_criterion_scoring_landmark_names.py haelt das fest - ein hinzugefuegter Aufruf
             # roetet sonst keinen Verhaltenstest, solange die Messlage echte Koordinaten traegt.
             landmark_place_infos = await place_infos(
                 session,

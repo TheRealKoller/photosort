@@ -2,7 +2,8 @@
 der laufenden Anwendung aus nicht erreichbar" festhalten.
 
 Bewusst kein `test_*`-Modul (wird nicht eingesammelt): der Walker wird von
-`test_demo_state.py` und `test_place_probe.py` gemeinsam gebraucht (Muster `project_graph.py`).
+`test_demo_state_coverage_states.py` und `test_place_probe.py` gemeinsam gebraucht (Muster
+`project_graph.py`).
 Eine zweite Fassung liefe auseinander, und ein Waechter, der etwas anderes laeuft als der
 danebenstehende, ist kein Waechter.
 """

@@ -789,7 +789,7 @@ class TestTheShareOfThePhotosDecides:
     immer eine Mehrheit.
 
     Gemessen wird hier die Wirkung im LAUF (Zellenfilter, Zellen, `place_kind`); die Schwelle
-    selbst samt Gewinner und Gleichstand liegt in `test_events.py`."""
+    selbst samt Gewinner und Gleichstand liegt in `test_events_place_names.py`."""
 
     async def test_a_name_that_just_meets_the_share_names_the_event(
         self, db_session: AsyncSession

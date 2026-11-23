@@ -990,7 +990,7 @@ async def test_create_photo_cloud_vision_error(db_session: AsyncSession) -> None
     assert stored.error_type == "LandmarkApiError"
     assert stored.error_message == "Anthropic Vision API nicht erreichbar: timeout"
     # SQLite (Testumgebung) speichert DateTime-Spalten tz-naiv - vergleicht denselben Zeitpunkt,
-    # nicht dieselbe tzinfo (analog test_worker_criterion_scoring.py-Konvention).
+    # nicht dieselbe tzinfo (analog der Konvention in test_worker_criterion_scoring_run.py).
     assert stored.attempted_at == now.replace(tzinfo=None)
 
 

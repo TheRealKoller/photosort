@@ -798,7 +798,7 @@ def _blocked_formation(*blocked: tuple[frozenset[str], ...]) -> EventFormation:
 
     Von Hand statt ueber `merge_small_segments`, weil Block F eine reine Zaehlung ueber diese
     Mengen ist - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen. Dass die
-    Mengen entstehen, wie sie entstehen, haelt `test_events.py::TestWhyASegmentCouldNotBeMerged`
+    Mengen entstehen, wie sie entstehen, haelt `test_events_merging.py::TestWhyASegmentCouldNotBeMerged`
     fest."""
     return EventFormation(
         events=(_segment(1, 1),),

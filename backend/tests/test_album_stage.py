@@ -35,7 +35,7 @@ _NOW = datetime(2026, 11, 8, tzinfo=UTC)
 
 @contextmanager
 def _recorded_select_statements() -> Iterator[list[str]]:
-    """Die TATSAECHLICH abgesetzten SELECTs (Muster aus test_api_photos.py)."""
+    """Die TATSAECHLICH abgesetzten SELECTs (Muster aus test_api_photos_place_and_event.py)."""
     statements: list[str] = []
 
     def _listener(

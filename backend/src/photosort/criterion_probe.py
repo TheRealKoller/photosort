@@ -69,7 +69,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # WOERTLICH DIE FUNKTION HINTER DER ANGEZEIGTEN ZAHL, nicht eine zweite Fassung davon: Der Bericht
 # weist `landmark_candidate_count` genau so aus, wie die Projekt-Antwort es tut. Eine Nachbildung
 # hier liefe beim naechsten Grenzfall auseinander, und der Beleg behauptete dann eine Zahl, die
-# niemand zu sehen bekommt. Denselben Weg nimmt `tests/test_worker_criterion_scoring.py` bereits.
+# niemand zu sehen bekommt. Denselben Weg nimmt
+# `tests/test_worker_criterion_scoring_landmark_names.py` bereits.
 from photosort.candidate_counts import count_landmark_candidates
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate

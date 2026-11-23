@@ -251,7 +251,7 @@ _OPEN_SUGGESTION_INDEX = 3
 # Kein Index kollidiert mit `_OPEN_SUGGESTION_INDEX` (3) - das Foto mit offenem
 # Ausschuss-Vorschlag soll seinen eigenen Zustand ungestoert zeigen. Alle vier liegen innerhalb
 # der Fotoanzahl des bewerteten Projekts (der Groesse des Motivregisters); ein Waechtertest in
-# tests/test_demo_state.py haelt das fest, sonst fiele ein Zustand bei einer Registry-Aenderung
+# tests/test_demo_state_generators.py haelt das fest, sonst fiele ein Zustand bei einer Registry-Aenderung
 # still aus dem Bestand.
 DEMO_UNASSESSED_INDEX = 5
 DEMO_LOCAL_BASIS_INDEX = 6

@@ -13,7 +13,7 @@ gemeinsame, an einer Stelle formulierte Zusage, dass die beiden Wege nicht ausei
     photos_processed == api_calls + failed_calls
 
 Hier statt in einer der beiden Testdateien, weil beide Phasen (Landmark in
-test_worker_criterion_scoring.py, Remote-Kategorie in
+test_worker_criterion_scoring_landmark_cost.py, Remote-Kategorie in
 test_worker_remote_category_classification.py) dieselbe Zusage tragen und zwei Kopien driften
 wuerden.
 """

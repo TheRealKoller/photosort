@@ -22,7 +22,7 @@ SICHERHEITS-MUSS-KRITERIUM (Demo-Seeder-Sperre M3): Dieses Modul importiert `dem
 Aufrufer entgegen und enthaelt KEINE Projekt-AUSWAHL-Logik (kein Namenspraefix, kein "alle
 Projekte"). Sonst waere ausgerechnet der Teil, den die dreiteilige Demo-Sperre bewacht, ueber
 einen HTTP-Endpunkt erreichbar. Bricht in
-tests/test_demo_state.py::TestNoCallPathFromTheRunningApplication (drei Faelle).
+tests/test_demo_state_main.py::TestNoCallPathFromTheRunningApplication (drei Faelle).
 """
 
 from __future__ import annotations

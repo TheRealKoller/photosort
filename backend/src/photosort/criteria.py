@@ -282,7 +282,7 @@ def compute_golden_ratio_score(
     worker/_criterion/local.py::compute_content_criteria ruft beide bereits für content_people/tier auf und
     reicht die Ergebnislisten hier durch - ein zusätzlicher detect()-Aufruf je Foto wäre
     reiner Compute-Overhead. Der Wiederverwendungsnachweis liegt deshalb auf
-    Worker-Integrationsebene, siehe test_worker_criterion_scoring.py::
+    Worker-Integrationsebene, siehe test_worker_criterion_scoring_content.py::
     test_detect_person_and_detect_objects_are_each_called_at_most_once_per_photo.
 
     `animals` bekommt AUSSCHLIESSLICH Tier-Erkennungen - der Aufrufer filtert die geweitete
@@ -590,7 +590,7 @@ def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
     classify_scene GENAU EINMAL pro Foto auf und reicht dieselbe Label-Liste an
     compute_gebaeude_score UND diese Funktion weiter - es entstehen keine zusätzlichen
     Kosten je Foto. Der Ein-Aufruf-Nachweis liegt deshalb auf Worker-Integrationsebene,
-    siehe test_worker_criterion_scoring.py."""
+    siehe test_worker_criterion_scoring_landmark_candidates.py."""
     allowed = [
         label
         for label in labels
