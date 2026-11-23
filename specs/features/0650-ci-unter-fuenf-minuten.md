@@ -1,6 +1,6 @@
 # 0650 - Prüfungen eines Pull Requests unter fünf Minuten
 
-**Status:** Implemented ([PR #662](https://github.com/TheRealKoller/photosort/pull/662))
+**Status:** Accepted
 **Erstellt:** 2026-11-23
 **Bezug:** Issue [#650](https://github.com/TheRealKoller/photosort/issues/650)
 
