@@ -73,10 +73,10 @@ Fabrikfunktionen werden importiert, Fixtures bleiben in `conftest.py`). Duplikat
 | Projekt | `_make_project` (18), `_project` (21), `_create_project` (4) | `make_project(session, *, name=…, …)` |
 | Foto | `_add_photo` (13), `_photo` (17), `_make_photo` (7) | `add_photo(session, project, …)` |
 | Nutzer | `_user` (10), `_make_user` (4) | `make_user` |
-| Lauf | `_successful_run` (7), `_add_run` (3), `_add_successful_scoring_run` (3) | `add_run`, `add_successful_run` |
+| Lauf | `_successful_run` (7), `_add_run` (3), `_add_successful_scoring_run` (3) | `add_scoring_run`, `add_successful_run` |
 | Anzeigebild | `_write_display_variant` (3) | `write_display_variant` |
-| OpenCloud-Eintrag/-URL | `_entry` (7), `_url` (8) | `opencloud_entry`, `opencloud_url` |
-| Migrationen | `_create_pre_migration_schema` (38), `_load_migration_module` (36), `_apply` (32), `_apply_upgrade`/`_apply_downgrade` (6) | `migration_harness` |
+| OpenCloud-Eintrag/-URL | `_entry` (7), `_url` (8) | `opencloud_entry`, `scan_entry` |
+| Migrationen | `_create_pre_migration_schema` (38), `_load_migration_module` (36), `_apply` (32), `_apply_upgrade`/`_apply_downgrade` (6) | `support/migration.py` (`load_migration_module`, `apply_migration`) |
 
 Form: Fabrikfunktion mit Schlüsselwort-Parametern. Jede Abweichung zwischen den Aufrufern (Pfad,
 Kennung, Schalter) wird ein Parameter mit dem Wert des häufigsten Aufrufers als Vorgabe. Vor dem
