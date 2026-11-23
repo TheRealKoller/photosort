@@ -9,25 +9,15 @@ Richtungen unveraendert.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / "d7e8f9a0b1c2_ortsauskunft.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("ortsauskunft_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -72,16 +62,9 @@ def _insert_legacy_event(
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "c5d6e7f8a9b0"
 
@@ -90,7 +73,7 @@ def test_upgrade_creates_the_place_lookups_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -122,7 +105,7 @@ def test_upgrade_binds_the_lookup_to_its_project_with_a_real_foreign_key(tmp_pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("place_lookups")
@@ -136,7 +119,7 @@ def test_upgrade_keeps_one_lookup_per_project_and_cell(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         constraints = inspect(connection).get_unique_constraints("place_lookups")
@@ -148,7 +131,7 @@ def test_upgrade_adds_a_nullable_place_name_to_events(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         columns = {c["name"]: c for c in inspect(connection).get_columns("events")}
@@ -165,7 +148,7 @@ def test_upgrade_leaves_place_name_null_for_every_existing_row(tmp_path: Path) -
         _create_pre_migration_schema(connection)
         _insert_legacy_event(connection, event_id=1, landmark_name=None)
         _insert_legacy_event(connection, event_id=2, landmark_name="Eiffelturm")
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT id, place_name FROM events ORDER BY id")).all()
@@ -179,7 +162,7 @@ def test_upgrade_keeps_every_existing_event_row(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_legacy_event(connection, event_id=1, landmark_name="Eiffelturm")
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -193,8 +176,8 @@ def test_downgrade_removes_both_the_table_and_the_column(tmp_path: Path) -> None
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -208,8 +191,8 @@ def test_the_existing_event_rows_survive_the_downgrade_too(tmp_path: Path) -> No
         _create_pre_migration_schema(connection)
         _insert_legacy_event(connection, event_id=1, landmark_name=None)
         _insert_legacy_event(connection, event_id=2, landmark_name="Eiffelturm")
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT id, landmark_name FROM events ORDER BY id")).all()

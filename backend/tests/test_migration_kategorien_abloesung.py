@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0427-motive-mit-staerke.md, PR 3 Schritt 2: ZWEI Migrationen, in dieser
 # Reihenfolge - erst Spalten und Constraint, dann die Tabelle. Isoliert ueber genau diese beiden
@@ -25,23 +23,6 @@ _VERSIONS_DIR = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 
 _COLUMNS_REVISION = "c3d4e5f6a7b8_kategoriespalten_entfallen.py"
 _TABLE_REVISION = "c4d5e6f7a8b9_kategorietabelle_entfaellt.py"
-
-
-def _load(revision_filename: str) -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"abloesung_{revision_filename}", _VERSIONS_DIR / revision_filename
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _apply(connection: Connection, revision_filename: str, direction: str) -> None:
-    module = _load(revision_filename)
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -127,12 +108,16 @@ class TestTheRevisionChain:
     def test_the_columns_revision_chains_onto_the_current_head(self) -> None:
         """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head (die
         Motivstaerken-Revision aus PR 1), nicht gegen den in der Spec genannten."""
-        assert _load(_COLUMNS_REVISION).down_revision == "b7c8d9e0f1a2"
+        assert (
+            load_migration_module(_VERSIONS_DIR / _COLUMNS_REVISION).down_revision == "b7c8d9e0f1a2"
+        )
 
     def test_the_table_revision_chains_onto_the_columns_revision(self) -> None:
         """Die festgeschriebene Reihenfolge der beiden Migrationen: Spalten/Constraint zuerst,
         dann die Tabelle."""
-        assert _load(_TABLE_REVISION).down_revision == "c3d4e5f6a7b8"
+        assert (
+            load_migration_module(_VERSIONS_DIR / _TABLE_REVISION).down_revision == "c3d4e5f6a7b8"
+        )
 
 
 class TestTheColumnsUpgrade:
@@ -141,7 +126,7 @@ class TestTheColumnsUpgrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             ranking_columns = {c["name"] for c in inspect(engine).get_columns("photo_rankings")}
             score_columns = {c["name"] for c in inspect(engine).get_columns("photo_scores")}
@@ -159,7 +144,7 @@ class TestTheColumnsUpgrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             names = _unique_constraint_names(engine)
         finally:
@@ -177,7 +162,7 @@ class TestTheColumnsUpgrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
                 connection.execute(
                     text(
                         "INSERT INTO photo_rankings (id, criterion_scoring_run_id, photo_id, "
@@ -212,7 +197,7 @@ class TestTheColumnsUpgrade:
                 _insert_ranking(
                     connection, row_id=2, category_key="menschen", is_primary=True, rank_position=1
                 )
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             with engine.connect() as connection:
                 rows = connection.execute(text("SELECT id FROM photo_rankings")).all()
@@ -239,7 +224,7 @@ class TestTheColumnsUpgrade:
                 _insert_ranking(
                     connection, row_id=2, category_key="tier", is_primary=True, rank_position=1
                 )
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             with engine.connect() as connection:
                 rows = connection.execute(text("SELECT id FROM photo_rankings")).all()
@@ -268,7 +253,7 @@ class TestTheColumnsUpgrade:
                     category_key="landschaft",
                     is_primary=True,
                 )
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             with engine.connect() as connection:
                 rows = connection.execute(text("SELECT id FROM photo_rankings ORDER BY id")).all()
@@ -287,7 +272,7 @@ class TestTheColumnsUpgrade:
                 _insert_ranking(
                     connection, row_id=1, category_key="menschen", is_primary=True, rank_position=4
                 )
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             with engine.connect() as connection:
                 row = connection.execute(
@@ -309,8 +294,8 @@ class TestTheColumnsDowngrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
-                _apply(connection, _COLUMNS_REVISION, "downgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
+                apply_migration(connection, "downgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             ranking_columns = {c["name"] for c in inspect(engine).get_columns("photo_rankings")}
             score_columns = {c["name"] for c in inspect(engine).get_columns("photo_scores")}
@@ -339,8 +324,8 @@ class TestTheColumnsDowngrade:
                         "category_override) VALUES (1, 0.5, 0.5, '2026-09-12 10:00:00', 'tier')"
                     )
                 )
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
-                _apply(connection, _COLUMNS_REVISION, "downgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
+                apply_migration(connection, "downgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             with engine.connect() as connection:
                 ranking = connection.execute(
@@ -363,8 +348,8 @@ class TestTheColumnsDowngrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _COLUMNS_REVISION, "upgrade")
-                _apply(connection, _COLUMNS_REVISION, "downgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
+                apply_migration(connection, "downgrade", path=_VERSIONS_DIR / _COLUMNS_REVISION)
 
             columns = {c["name"]: c for c in inspect(engine).get_columns("photo_rankings")}
         finally:
@@ -380,7 +365,7 @@ class TestTheTableRevision:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply(connection, _TABLE_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _TABLE_REVISION)
 
             tables = set(inspect(engine).get_table_names())
         finally:
@@ -403,7 +388,7 @@ class TestTheTableRevision:
                         "(1, 'menschen', '[\"menschen\"]', 'anthropic', '2026-09-12 10:00:00')"
                     )
                 )
-                _apply(connection, _TABLE_REVISION, "upgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _TABLE_REVISION)
 
             tables = set(inspect(engine).get_table_names())
         finally:
@@ -425,8 +410,8 @@ class TestTheTableRevision:
                         "(1, 'menschen', '[\"menschen\"]', 'anthropic', '2026-09-12 10:00:00')"
                     )
                 )
-                _apply(connection, _TABLE_REVISION, "upgrade")
-                _apply(connection, _TABLE_REVISION, "downgrade")
+                apply_migration(connection, "upgrade", path=_VERSIONS_DIR / _TABLE_REVISION)
+                apply_migration(connection, "downgrade", path=_VERSIONS_DIR / _TABLE_REVISION)
 
             columns = {
                 c["name"] for c in inspect(engine).get_columns("photo_category_classifications")

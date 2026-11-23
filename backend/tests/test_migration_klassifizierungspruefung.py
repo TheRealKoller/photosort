@@ -16,13 +16,11 @@ tragen mehr als die reine Spaltenform:
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "44ba5fe0184a_klassifizierungspruefung.py"
 _MIGRATION_PATH = (
@@ -37,16 +35,6 @@ _NEW_TABLES = (
     "classification_review_cases",
     "classification_review_verdicts",
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "klassifizierungspruefung_migration", _MIGRATION_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -79,13 +67,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
@@ -93,7 +74,7 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head. Die Kette selbst
     prueft `test_migration_chain.py`."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "44ba5fe0184a"
     assert module.down_revision == "8cf920dd03b4"
@@ -103,7 +84,7 @@ def test_every_review_table_exists_after_the_upgrade(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         assert set(_NEW_TABLES) <= set(inspect(connection).get_table_names())
 
@@ -112,7 +93,7 @@ def test_the_review_header_carries_the_run_state_and_the_frozen_sample(tmp_path:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, "classification_reviews")
 
@@ -142,7 +123,7 @@ def test_a_side_is_keyed_by_review_and_letter_and_keeps_its_origin(tmp_path: Pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         table = inspect(connection)
         assert table.get_pk_constraint("classification_review_sides")["constrained_columns"] == [
@@ -181,7 +162,7 @@ def test_the_results_keep_a_missing_statement_as_null(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, "classification_review_results")
         assert columns["excluded_document"]["nullable"] is True
@@ -198,7 +179,7 @@ def test_a_case_is_unique_per_review_photo_purpose_and_motif(tmp_path: Path) -> 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         unique = [
             constraint
@@ -217,7 +198,7 @@ def test_a_verdict_is_keyed_by_the_case(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         assert inspect(connection).get_pk_constraint("classification_review_verdicts")[
             "constrained_columns"
@@ -228,8 +209,8 @@ def test_the_downgrade_drops_all_six_tables(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         remaining = set(inspect(connection).get_table_names())
         assert remaining.isdisjoint(_NEW_TABLES)

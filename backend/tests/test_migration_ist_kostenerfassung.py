@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
 # laeufe.md Punkt 3: rein additive Migration - je vier Kostenspalten an criterion_scoring_runs und
@@ -30,14 +28,6 @@ _LANDMARK_COLUMNS = {
 _REMOTE_CATEGORY_COLUMNS = {"api_calls", "input_tokens", "output_tokens", "cost_usd"}
 
 
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("remote_cost_tracking_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Minimaler Nachbau des Schema-Stands unmittelbar VOR dieser Migration (Revision
     e2f3a4b5c6d7) - nur die beiden tatsaechlich beruehrten Run-Tabellen, reduziert auf die
@@ -57,15 +47,8 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "e2f3a4b5c6d7"
 
@@ -75,7 +58,7 @@ def test_migration_adds_all_eight_cost_columns(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         criterion_columns = {c["name"] for c in inspector.get_columns("criterion_scoring_runs")}
@@ -96,7 +79,7 @@ def test_all_eight_columns_are_nullable(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         nullable_by_name = {
@@ -133,7 +116,7 @@ def test_existing_rows_keep_null_instead_of_zero(tmp_path: Path) -> None:
                     "VALUES (1, 1, 'success')"
                 )
             )
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.begin() as connection:
             criterion_row = connection.execute(
@@ -160,8 +143,8 @@ def test_downgrade_removes_the_eight_columns_again(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
-            _apply(connection, "downgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         criterion_columns = {c["name"] for c in inspector.get_columns("criterion_scoring_runs")}

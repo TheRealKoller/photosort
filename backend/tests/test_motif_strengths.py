@@ -40,7 +40,6 @@ from photosort.motif_strengths import (
     upsert_assessment,
 )
 from photosort.motifs import MOTIF_REGISTRY
-
 from tests.support import add_photo, make_project
 
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"

@@ -7,26 +7,16 @@ die Spalte.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "6299223059c8_album_level_source.py"
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / _MIGRATION_FILENAME
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("album_level_source_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -52,13 +42,6 @@ def _insert_existing_run(connection: Connection, *, run_id: int = 1) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection) -> dict[str, dict[str, object]]:
     return {
         column["name"]: column
@@ -67,7 +50,7 @@ def _columns(connection: Connection) -> dict[str, dict[str, object]]:
 
 
 def test_revision_chains_onto_the_current_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "6299223059c8"
     assert module.down_revision == "43a3afeb7312"
@@ -78,7 +61,7 @@ def test_an_existing_run_reads_cloud_after_the_upgrade(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_run(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         source = connection.execute(
             text("SELECT album_level_source FROM criterion_scoring_runs WHERE id = 1")
@@ -91,7 +74,7 @@ def test_the_column_is_not_null_with_a_lasting_cloud_default(tmp_path: Path) -> 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection)
         _insert_existing_run(connection, run_id=7)
@@ -109,8 +92,8 @@ def test_the_downgrade_drops_the_column(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_run(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection)
         count = connection.execute(text("SELECT COUNT(*) FROM criterion_scoring_runs")).scalar_one()

@@ -20,29 +20,18 @@ Verlust, nicht nach der Struktur.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 
 from photosort.db import Base
 from photosort.models import Rating, RatingStatus
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "f6a7b8c9d0e1_albumentscheidung.py"
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / _MIGRATION_FILENAME
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("albumentscheidung_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -110,20 +99,13 @@ def _insert_existing_scores(connection: Connection) -> None:
         )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
 
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "e7f8a9b0c1d2"
 
@@ -164,7 +146,7 @@ def test_upgrade_converts_all_three_existing_status_values_side_by_side(tmp_path
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_rows(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -187,7 +169,7 @@ def test_after_the_upgrade_status_carries_nothing_outside_the_new_vocabulary(
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_rows(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         values = {
@@ -206,7 +188,7 @@ def test_upgrade_clears_a_photo_score_suggestion_outside_the_new_vocabulary(
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_scores(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -223,7 +205,7 @@ def test_upgrade_makes_status_nullable_and_favorite_not_null(tmp_path: Path) -> 
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         before = set(_columns(connection, "ratings"))
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         ratings = _columns(connection, "ratings")
 
@@ -239,7 +221,7 @@ def test_upgrade_keeps_the_unique_constraint_across_the_table_rebuild(tmp_path: 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         constraints = {
             constraint["name"]
@@ -295,7 +277,7 @@ def test_the_downgrade_deletes_every_row_without_an_album_decision(tmp_path: Pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         for rating_id, (photo_id, status_value, favorite) in enumerate(
             [
                 (1, None, 1),  # reiner Favorit -> wird wieder 'FAVORITE'
@@ -313,7 +295,7 @@ def test_the_downgrade_deletes_every_row_without_an_album_decision(tmp_path: Pat
                     "'2026-09-01 10:00:00')"
                 )
             )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT id, status FROM ratings ORDER BY id")).all()

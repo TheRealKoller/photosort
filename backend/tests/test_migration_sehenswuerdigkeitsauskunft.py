@@ -9,13 +9,11 @@ Auskunft (nie nachgeschlagen / ohne Fund / mit Fund) auseinanderzuhalten (ADR 01
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
@@ -23,16 +21,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "2c5472d41548_sehenswuerdigkeitsauskunft.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "sehenswuerdigkeitsauskunft_migration", _MIGRATION_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -67,16 +55,9 @@ def _insert_existing_landmark_name(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "c5bc9a02c3c2"
 
@@ -85,7 +66,7 @@ def test_upgrade_creates_the_landmark_place_lookups_table(tmp_path: Path) -> Non
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -105,7 +86,7 @@ def test_the_points_are_required_but_may_be_empty(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         connection.execute(
@@ -128,7 +109,7 @@ def test_upgrade_binds_the_lookup_to_its_project_with_a_real_foreign_key(tmp_pat
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         foreign_keys = inspect(connection).get_foreign_keys("landmark_place_lookups")
@@ -142,7 +123,7 @@ def test_upgrade_keeps_one_lookup_per_project_and_name(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         constraints = inspect(connection).get_unique_constraints("landmark_place_lookups")
@@ -156,7 +137,7 @@ def test_the_table_carries_no_distance_no_result_and_no_event_id(tmp_path: Path)
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         inspector = inspect(connection)
@@ -181,7 +162,7 @@ def test_upgrade_changes_nothing_existing(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_landmark_name(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(
@@ -195,8 +176,8 @@ def test_downgrade_removes_the_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         assert "landmark_place_lookups" not in inspect(connection).get_table_names()
@@ -207,8 +188,8 @@ def test_existing_rows_survive_the_downgrade_too(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_landmark_name(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT id, normalized_name FROM landmark_names")).all()

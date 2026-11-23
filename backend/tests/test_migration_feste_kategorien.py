@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration
 
 # specs/features/0289-feste-kategorien.md, Teststrategie Abschnitt 6: Muster von
 # test_migration_remote_category_classification.py (Revision isoliert per importlib laden,
@@ -21,14 +19,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "d5e6f7a8b9c0_feste_kategorien.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("feste_kategorien_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -64,20 +54,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply_upgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.upgrade()
-
-
-def _apply_downgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.downgrade()
-
-
 def _insert_fine_label_row(connection: Connection) -> None:
     connection.execute(
         text(
@@ -106,7 +82,7 @@ class TestSchema:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             inspector = inspect(engine)
             columns = {
                 col["name"] for col in inspector.get_columns("photo_category_classifications")
@@ -129,7 +105,7 @@ class TestSchema:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             inspector = inspect(engine)
             table_names = set(inspector.get_table_names())
             columns = {col["name"] for col in inspector.get_columns("photo_fine_labels")}
@@ -152,7 +128,7 @@ class TestSchema:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             columns = {col["name"] for col in inspect(engine).get_columns("photo_fine_labels")}
         finally:
             engine.dispose()
@@ -167,7 +143,7 @@ class TestSchema:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
                 _insert_fine_label_row(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
             with engine.begin() as connection:
                 row = connection.execute(
@@ -189,7 +165,7 @@ class TestDataStepC:
                 _create_pre_migration_schema(connection)
                 _insert_fine_label_row(connection)
                 _insert_photo_detection_row(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
             with engine.begin() as connection:
                 detection_count = connection.execute(
@@ -225,7 +201,7 @@ class TestDataStepD:
                         "(2, 0.7, 0.8, 'cd', 'c2', '2026-01-02 00:00:00', NULL)"
                     )
                 )
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
             with engine.begin() as connection:
                 rows = connection.execute(
@@ -251,9 +227,9 @@ class TestDowngrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             with engine.begin() as connection:
-                _apply_downgrade(connection)
+                apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
             inspector = inspect(engine)
             table_names = set(inspector.get_table_names())
             columns = {col["name"] for col in inspector.get_columns("photo_category_detections")}
@@ -285,9 +261,9 @@ class TestDowngrade:
                         "category_override) VALUES (1, 0.5, 0.6, '2026-01-01 00:00:00', 'tier')"
                     )
                 )
-                _apply_upgrade(connection)
+                apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
             with engine.begin() as connection:
-                _apply_downgrade(connection)
+                apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
             with engine.begin() as connection:
                 detection_count = connection.execute(

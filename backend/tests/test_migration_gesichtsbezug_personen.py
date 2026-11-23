@@ -9,17 +9,14 @@ der den Bestand an Zeilen haelt.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from photosort.db import enable_sqlite_foreign_keys
+from tests.support.migration import apply_migration, load_migration_module
 
 _VERSIONS = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 _PREVIOUS = _VERSIONS / "1f4027405ea5_personen.py"
@@ -31,20 +28,6 @@ _REFERENCE_COLUMNS = {"id", "person_id", "embedding", "model_key", "created_at"}
 _VECTOR = "[" + ", ".join(["1.0"] + ["0.0"] * 127) + "]"
 
 
-def _load(path: Path) -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _apply(connection: Connection, path: Path, direction: str) -> None:
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(_load(path), direction)()
-
-
 def _create_pre_migration_schema(connection: Connection) -> None:
     """Die Eltern der Vorgaenger-Revision, dann diese selbst, dann ein Bestand: eine Person mit
     Referenz, eine Erkennung und eine Korrektur."""
@@ -53,7 +36,7 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     connection.execute(
         text("CREATE TABLE criterion_scoring_runs (id INTEGER NOT NULL PRIMARY KEY)")
     )
-    _apply(connection, _PREVIOUS, "upgrade")
+    apply_migration(connection, "upgrade", path=_PREVIOUS)
     connection.execute(text("INSERT INTO users (id) VALUES (1)"))
     connection.execute(text("INSERT INTO photos (id) VALUES (1), (2), (3)"))
     connection.execute(
@@ -84,7 +67,7 @@ def upgraded(tmp_path: Path) -> Engine:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, _MIGRATION, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION)
     # Erst NACH dem Upgrade: Die Durchsetzung soll die neue Kante pruefen, nicht den
     # Tabellenumbau der Migration selbst.
     event.listen(engine, "connect", enable_sqlite_foreign_keys)
@@ -97,7 +80,7 @@ def _columns(connection: Connection, table: str) -> set[str]:
 
 
 def test_the_revision_chains_onto_the_persons_revision() -> None:
-    module = _load(_MIGRATION)
+    module = load_migration_module(_MIGRATION)
 
     assert module.revision == "b0814fc600bf"
     assert module.down_revision == "1f4027405ea5"
@@ -255,7 +238,7 @@ def test_downgrade_with_boxes_and_edges_keeps_every_row(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, _MIGRATION, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION)
         connection.execute(
             text(
                 "UPDATE photo_person_corrections SET face_box_x = 0.25, face_box_y = 0.25, "
@@ -263,7 +246,7 @@ def test_downgrade_with_boxes_and_edges_keeps_every_row(tmp_path: Path) -> None:
             )
         )
         connection.execute(text(_DETECTION_INSERT + f"(2, 1, '2026-09-28', {_box()})"))
-        _apply(connection, _MIGRATION, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION)
 
     with engine.connect() as connection:
         detections = _columns(connection, "photo_person_detections")

@@ -11,27 +11,17 @@ verloren.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "43a3afeb7312_modellwahl_je_projekt.py"
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / _MIGRATION_FILENAME
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("modellwahl_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -62,13 +52,6 @@ def _insert_existing_project(connection: Connection, *, project_id: int = 1) -> 
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns("projects")}
 
@@ -81,7 +64,7 @@ def _check_constraints(connection: Connection) -> dict[str, str]:
 
 
 def test_revision_chains_onto_the_current_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "43a3afeb7312"
     assert module.down_revision == "5c7633e53257"
@@ -92,7 +75,7 @@ def test_an_existing_project_stays_on_cloud_without_a_model(tmp_path: Path) -> N
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_project(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         row = connection.execute(
             text(
@@ -107,7 +90,7 @@ def test_the_method_is_not_null_with_a_lasting_cloud_default(tmp_path: Path) -> 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection)
         connection.execute(
@@ -136,7 +119,7 @@ def test_eye_with_a_cloud_model_is_rejected_by_the_constraint(tmp_path: Path) ->
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_project(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         checks = _check_constraints(connection)
         connection.execute(
@@ -160,7 +143,7 @@ def test_a_cloud_method_with_a_model_is_accepted(tmp_path: Path) -> None:
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_project(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         connection.execute(
             text("UPDATE projects SET category_model = 'claude-haiku-4-5' WHERE id = 1")
@@ -177,8 +160,8 @@ def test_the_downgrade_drops_the_columns_and_the_constraint(tmp_path: Path) -> N
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
         _insert_existing_project(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection)
         checks = _check_constraints(connection)

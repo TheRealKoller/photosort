@@ -12,13 +12,11 @@ DIE ZUSAGEN, die hier strukturell geprueft werden:
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "0b9d6f8d620b_export.py"
 _MIGRATION_PATH = (
@@ -27,14 +25,6 @@ _MIGRATION_PATH = (
 
 _RUN_TABLE = "export_runs"
 _PHOTO_TABLE = "export_photos"
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("export_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -63,13 +53,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
@@ -77,7 +60,7 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head. Die Kette selbst
     prueft `test_migration_chain.py`."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "1d3dbfdde02e"
 
@@ -91,7 +74,7 @@ def test_the_upgrade_creates_export_runs_with_exactly_the_expected_columns(
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _RUN_TABLE)
 
@@ -116,7 +99,7 @@ def test_the_upgrade_creates_export_photos_with_exactly_the_expected_columns(
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _PHOTO_TABLE)
 
@@ -129,7 +112,7 @@ def test_export_photos_photo_id_is_nullable(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _PHOTO_TABLE)
 
@@ -142,7 +125,7 @@ def test_export_photos_error_is_nullable(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _PHOTO_TABLE)
 
@@ -153,8 +136,8 @@ def test_the_downgrade_drops_both_tables(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
-        _apply(connection, "downgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         tables = set(inspect(connection).get_table_names())
 

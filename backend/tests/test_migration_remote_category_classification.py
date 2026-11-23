@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Naming-Migration": Zwei-Revisionen-Test (Zeile mit alten Spaltennamen VOR der Migration
@@ -20,16 +18,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "b3c4d5e6f7a8_remote_category_classification.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "remote_category_classification_migration", _MIGRATION_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -53,20 +41,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply_upgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.upgrade()
-
-
-def _apply_downgrade(connection: Connection) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        module.downgrade()
-
-
 def test_naming_migration_preserves_the_value_across_the_rename(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     try:
@@ -79,7 +53,7 @@ def test_naming_migration_preserves_the_value_across_the_rename(tmp_path: Path) 
                     "VALUES (1, 1, '2026-01-01 00:00:00')"
                 )
             )
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.begin() as connection:
             row = connection.execute(
@@ -102,7 +76,7 @@ def test_migration_adds_category_override_column(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         columns = {col["name"] for col in inspect(engine).get_columns("photo_scores")}
     finally:
         engine.dispose()
@@ -115,7 +89,7 @@ def test_migration_creates_the_three_new_tables(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
@@ -168,9 +142,9 @@ def test_downgrade_restores_the_original_columns_and_drops_the_new_tables(tmp_pa
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply_upgrade(connection)
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         with engine.begin() as connection:
-            _apply_downgrade(connection)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())

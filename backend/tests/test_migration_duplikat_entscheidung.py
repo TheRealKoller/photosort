@@ -20,18 +20,15 @@ Pruefung heraus.
 
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
 import pytest
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from photosort.db import Base
 from photosort.models import DuplicateDecision, PhotoDuplicateDecision
+from tests.support.migration import apply_migration, load_migration_module
 
 _MIGRATION_FILENAME = "e3f4a5b6c7d8_duplikat_entscheidung.py"
 _MIGRATION_PATH = (
@@ -39,16 +36,6 @@ _MIGRATION_PATH = (
 )
 
 _TABLE = "photo_duplicate_decisions"
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "duplikat_entscheidung_migration", _MIGRATION_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -69,13 +56,6 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]:
     return {column["name"]: column for column in inspect(connection).get_columns(table)}
 
@@ -90,7 +70,7 @@ def test_revision_chains_onto_the_current_head() -> None:
     Aufgefallen ist es erst an `test_migration_chain.py` (doppelte Id, zwei Heads). Die noch nicht
     gemergte Seite zieht um, und sie setzt danach HINTER der Ortsauskunft auf, damit die Kette
     linear bleibt: Die Duplikat-Tabelle entsteht im Deployment nach der Ortsauskunft."""
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.revision == "e3f4a5b6c7d8"
     assert module.down_revision == "d7e8f9a0b1c2"
@@ -104,7 +84,7 @@ def test_the_upgrade_creates_the_table_with_exactly_two_columns(tmp_path: Path) 
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -122,7 +102,7 @@ def test_the_photo_id_is_primary_key_and_foreign_key_under_a_written_out_name(
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(connection)
         primary_key = inspector.get_pk_constraint(_TABLE)
@@ -143,7 +123,7 @@ def test_the_migrated_table_has_decision_not_null_without_a_default(tmp_path: Pa
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         columns = _columns(connection, _TABLE)
 
@@ -238,7 +218,7 @@ def test_the_upgrade_touches_no_data_at_all(tmp_path: Path) -> None:
         _create_pre_migration_schema(connection)
         connection.execute(text("CREATE TABLE marker (id INTEGER PRIMARY KEY, note TEXT)"))
         connection.execute(text("INSERT INTO marker (id, note) VALUES (1, 'bleibt')"))
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         rows = connection.execute(text(f"SELECT COUNT(*) FROM {_TABLE}")).scalar_one()  # noqa: S608
         marker = connection.execute(text("SELECT note FROM marker")).scalar_one()
@@ -251,11 +231,11 @@ def test_the_downgrade_drops_the_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     with engine.begin() as connection:
         _create_pre_migration_schema(connection)
-        _apply(connection, "upgrade")
+        apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
         connection.execute(
             text(f"INSERT INTO {_TABLE} (photo_id, decision) VALUES (1, 'KEEP')")  # noqa: S608
         )
-        _apply(connection, "downgrade")
+        apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         tables = set(inspect(connection).get_table_names())
 

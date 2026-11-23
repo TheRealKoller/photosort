@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import importlib.util
-import types
 from pathlib import Path
 
-from alembic.operations import Operations
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, inspect, text
+
+from tests.support.migration import apply_migration, load_migration_module
 
 # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
 # und-modellgebundene-kostenschaetzung.md Punkt 6: rein additive Migration - je eine Modellspalte
@@ -20,14 +18,6 @@ _MIGRATION_PATH = (
     / "versions"
     / "5ab22032843c_run_vision_model.py"
 )
-
-
-def _load_migration_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location("run_vision_model_migration", _MIGRATION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _create_pre_migration_schema(connection: Connection) -> None:
@@ -51,15 +41,8 @@ def _create_pre_migration_schema(connection: Connection) -> None:
     )
 
 
-def _apply(connection: Connection, direction: str) -> None:
-    module = _load_migration_module()
-    context = MigrationContext.configure(connection)
-    with Operations.context(context):
-        getattr(module, direction)()
-
-
 def test_revision_chains_onto_the_cost_tracking_head() -> None:
-    module = _load_migration_module()
+    module = load_migration_module(_MIGRATION_PATH)
 
     assert module.down_revision == "f4a5b6c7d8e9"
 
@@ -69,7 +52,7 @@ def test_migration_adds_both_model_columns(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         criterion_columns = {c["name"] for c in inspector.get_columns("criterion_scoring_runs")}
@@ -90,7 +73,7 @@ def test_both_columns_are_nullable(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         nullable_by_name = {
@@ -126,7 +109,7 @@ def test_existing_rows_keep_null_instead_of_a_default_model(tmp_path: Path) -> N
                     "(id, project_id, status) VALUES (1, 1, 'success')"
                 )
             )
-            _apply(connection, "upgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
 
         with engine.connect() as connection:
             criterion_model = connection.execute(
@@ -147,8 +130,8 @@ def test_downgrade_removes_both_columns_again(tmp_path: Path) -> None:
     try:
         with engine.begin() as connection:
             _create_pre_migration_schema(connection)
-            _apply(connection, "upgrade")
-            _apply(connection, "downgrade")
+            apply_migration(connection, "upgrade", path=_MIGRATION_PATH)
+            apply_migration(connection, "downgrade", path=_MIGRATION_PATH)
 
         inspector = inspect(engine)
         criterion_columns = {c["name"] for c in inspector.get_columns("criterion_scoring_runs")}
