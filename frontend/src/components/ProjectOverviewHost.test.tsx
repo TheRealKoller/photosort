@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,9 +8,11 @@ import { ApiError, apiFetch } from '../api/client'
 import type { OverviewSeenOut, ProjectOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { useProjectOverview } from '../hooks/useProjectOverview'
-import { projectFixture, scanSummary } from '../test/projectStateSpace'
+import { scanSummary } from '../test/projectStateSpace'
+import { makeProject } from '../test/fixtures'
 import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { ProjectOverviewHost } from './ProjectOverviewHost'
+import { makeQueryClient, queryWrapper, withProviders } from '../test/render'
 
 /*
  * Wann die Ablaufübersicht erscheint. Gespielt wird auf `apiFetch`, der einzigen
@@ -24,7 +24,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   apiFetch: vi.fn(),
 }))
 
-const PROJECT = projectFixture({ id: 1 })
+const PROJECT = makeProject({ id: 1 })
 
 interface Answers {
   project?: () => Promise<ProjectOut>
@@ -80,11 +80,9 @@ function BackButton() {
 
 function renderHost(
   projectIdParam = '1',
-  { queryClient = new QueryClient(), path = '/projects/1/photos/5' } = {},
+  { queryClient = makeQueryClient(), path = '/projects/1/photos/5' } = {},
 ) {
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const wrapper = queryWrapper(queryClient)
   return render(
     <MemoryRouter initialEntries={[path]}>
       <ProjectOverviewHost projectIdParam={projectIdParam}>
@@ -192,7 +190,7 @@ describe('ProjectOverviewHost: von selbst', () => {
 
   it('schließt, wenn ein späterer Abruf das Projekt nicht mehr findet (404)', async () => {
     // Ohne Wiederholung des Projektabrufs - sonst wartete der Test die Rückoff-Pausen ab.
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = makeQueryClient()
     let gone = false
     answer({
       project: () =>
@@ -214,7 +212,7 @@ describe('ProjectOverviewHost: von selbst', () => {
   })
 
   it('bleibt bei einem vorübergehenden Abruffehler offen', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = makeQueryClient()
     let broken = false
     answer({
       project: () =>
@@ -292,7 +290,7 @@ describe('ProjectOverviewHost: Schließen', () => {
 
     // Neuladen: frischer Abfrage-Cache, der Server kennt "gesehen" nicht.
     first.unmount()
-    renderHost('1', { queryClient: new QueryClient() })
+    renderHost('1', { queryClient: makeQueryClient() })
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
@@ -350,15 +348,16 @@ const ROUTE_CASES: Record<keyof typeof PROJECT_ROUTE_PATHS, string> = {
 
 function renderApp(path: string) {
   setToken('header.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJkYW5pZWwifQ.sig')
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = makeQueryClient()
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
+    withProviders(
+      <>
         <Routes>
           <Route path="*" element={<App />} />
         </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: [path] },
+    ),
   )
 }
 

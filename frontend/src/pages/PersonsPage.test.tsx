@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +7,7 @@ import { ApiError } from '../api/client'
 import * as personsApi from '../api/persons'
 import type { PersonOut } from '../api/types'
 import { PersonsPage } from './PersonsPage'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/persons')
 
@@ -21,12 +20,8 @@ const ANNA: PersonOut = { id: 1, name: 'Anna', reference_count: 1 }
 const BEN: PersonOut = { id: 2, name: 'Ben', reference_count: 3 }
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   render(
     <MemoryRouter initialEntries={['/persons']}>
       <Routes>

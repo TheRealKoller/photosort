@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,6 +10,8 @@ import type { ProjectOut, ScanSummary } from '../../api/types'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 import { ScanStepPage } from './ScanStepPage'
 import { RUN_STEP_TEXTS } from '../../utils/stepActionTexts'
+import { makeProject as project } from '../../test/fixtures'
+import { makeQueryClient, queryWrapper } from '../../test/render'
 
 const START = RUN_STEP_TEXTS.scan.start
 const RERUN = RUN_STEP_TEXTS.scan.rerun
@@ -24,37 +24,6 @@ vi.mock('../../api/projects')
 vi.mock('../../api/operations')
 
 const GESTERN = '2026-07-19T10:00:00Z'
-
-function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
 
 function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
@@ -85,12 +54,8 @@ function OutletHost({ project: contextProject, refetchProject }: PipelineOutletC
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return {
     ...render(
       <MemoryRouter initialEntries={['/x']}>

@@ -1,7 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Location, NavigateFunction } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +12,7 @@ import type { PersonOut, PhotoListOut, PhotoOut, UnnamedFacesPageOut } from '../
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { ProjectPersonsPage } from './ProjectPersonsPage'
+import { makeQueryClient, withProviders } from '../test/render'
 
 vi.mock('../api/persons')
 vi.mock('../api/photos')
@@ -83,19 +83,18 @@ function Probe() {
 }
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/stub', '/projects/3/persons']} initialIndex={1}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/stub" element={<p>Stub</p>} />
           <Route path="/projects/:projectId/persons" element={<ProjectPersonsPage />} />
         </Routes>
         <Probe />
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: ['/stub', '/projects/3/persons'], initialIndex: 1 },
+    ),
   )
   return { queryClient }
 }

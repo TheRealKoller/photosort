@@ -1,17 +1,12 @@
-import {
-  focusManager,
-  onlineManager,
-  QueryClient,
-  QueryClientProvider,
-} from '@tanstack/react-query'
+import { focusManager, onlineManager } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as personsApi from '../api/persons'
 import type { UnnamedFacesPageOut } from '../api/types'
 import { useUnnamedFaces } from './useUnnamedFaces'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/persons')
 
@@ -50,10 +45,8 @@ function page(
 }
 
 function setup() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   const view = renderHook(() => useUnnamedFaces(3), { wrapper })
   return { ...view, queryClient }
 }
@@ -401,10 +394,8 @@ describe('useUnnamedFaces - Cache', () => {
   })
 
   it('beginnt nach Aus- und erneutem Einhängen bei after_id 0', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const wrapper = queryWrapper(queryClient)
     const first = renderHook(() => useUnnamedFaces(3), { wrapper })
     await waitFor(() => expect(calls).toHaveLength(1))
     await answer(pending(0), page([[3, 0]], null, 5, 5))

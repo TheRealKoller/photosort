@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -32,6 +30,8 @@ import {
   useSetFavoriteMutation,
   useSetRatingMutation,
 } from './usePhotos'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, queryWrapper, FreshQueryWrapper as wrapper } from '../test/render'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
@@ -54,25 +54,13 @@ const EVENT: EventOut = {
 }
 
 function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `${id}.jpg`,
     taken_at: '2026-07-20T10:00:00Z',
     taken_at_original: '2026-07-20T10:00:00Z',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     ...overrides,
-  }
+  })
 }
 
 function page(items: number[], total: number): PhotoListOut {
@@ -115,16 +103,9 @@ function written(photoId: number, status: RatingStatus | null): RatingWriteOut {
 }
 
 function sharedClient() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const sharedWrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const sharedWrapper = queryWrapper(queryClient)
   return { queryClient, sharedWrapper }
-}
-
-function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
 beforeEach(() => {
@@ -756,10 +737,8 @@ describe('useSetRatingMutation', () => {
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
     })
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const listWrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const listWrapper = queryWrapper(queryClient)
     const listHook = renderHook(() => usePhotoSequenceQuery(1), { wrapper: listWrapper })
     await waitFor(() => expect(listHook.result.current.isSuccess).toBe(true))
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
@@ -785,10 +764,8 @@ describe('useSetFavoriteMutation', () => {
       favorite: true,
       updated_at: '2026-09-13T10:00:00',
     })
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const listWrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const listWrapper = queryWrapper(queryClient)
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const { result } = renderHook(() => useSetFavoriteMutation(1), { wrapper: listWrapper })
@@ -805,10 +782,8 @@ describe('useSetFavoriteMutation', () => {
 describe('useDeleteRatingMutation', () => {
   it('deletes the rating and invalidates all photo queries of the project', async () => {
     vi.mocked(ratingsApi.deleteRating).mockResolvedValue(written(1, null))
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const listWrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const listWrapper = queryWrapper(queryClient)
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const { result } = renderHook(() => useDeleteRatingMutation(1), { wrapper: listWrapper })

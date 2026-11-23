@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import {
@@ -14,47 +13,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../api/client'
 import * as projectsApi from '../../api/projects'
-import type {
-  CriterionScoringRunSummary,
-  ProjectOut,
-  ScanSummary,
-  ScoringRunSummary,
-} from '../../api/types'
+import type { CriterionScoringRunSummary, ScanSummary, ScoringRunSummary } from '../../api/types'
 import { ProjectOverviewContext } from '../../hooks/useProjectOverview'
 import { ProjectPipelineLayout, type PipelineOutletContext } from './ProjectPipelineLayout'
+import { makeProject as project } from '../../test/fixtures'
+import { makeQueryClient, withQuery } from '../../test/render'
 
 vi.mock('../../api/projects')
-
-function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
 
 function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
@@ -132,16 +97,16 @@ function StepProbe() {
 const openOverview = vi.fn()
 
 function renderLayout(initialPath = '/projects/1/pipeline') {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <ProjectOverviewContext.Provider value={{ open: openOverview }}>
-        {children}
-      </ProjectOverviewContext.Provider>
-    </QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    withQuery(
+      <>
+        <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+          {children}
+        </ProjectOverviewContext.Provider>
+      </>,
+      queryClient,
+    )
   return {
     ...render(
       <MemoryRouter initialEntries={[initialPath]}>
@@ -230,11 +195,13 @@ describe('ProjectPipelineLayout', () => {
       { initialEntries: ['/projects/1/pipeline/scan'] },
     )
     render(
-      <QueryClientProvider client={new QueryClient()}>
-        <ProjectOverviewContext.Provider value={{ open: openOverview }}>
-          <RouterProvider router={router} />
-        </ProjectOverviewContext.Provider>
-      </QueryClientProvider>,
+      withQuery(
+        <>
+          <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+            <RouterProvider router={router} />
+          </ProjectOverviewContext.Provider>
+        </>,
+      ),
     )
     await screen.findByText(/schritt-inhalt: scan/i)
     const trigger = screen.getByRole('button', { name: 'Ablauf' })
@@ -392,9 +359,7 @@ describe('ProjectPipelineLayout', () => {
       'link (Akzeptanzkriterium 10 - kein Zurueck-Button-Loop)',
     async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(project())
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-      })
+      const queryClient = makeQueryClient()
       const router = createMemoryRouter(
         [
           { path: '/', element: <p>Projektliste-Seite</p> },
@@ -408,11 +373,14 @@ describe('ProjectPipelineLayout', () => {
       )
 
       render(
-        <QueryClientProvider client={queryClient}>
-          <ProjectOverviewContext.Provider value={{ open: openOverview }}>
-            <RouterProvider router={router} />
-          </ProjectOverviewContext.Provider>
-        </QueryClientProvider>,
+        withQuery(
+          <>
+            <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+              <RouterProvider router={router} />
+            </ProjectOverviewContext.Provider>
+          </>,
+          queryClient,
+        ),
       )
 
       // Fuer ein frisches Projekt (nur scan/ausschuss erreichbar) ist der hoechste erreichbare

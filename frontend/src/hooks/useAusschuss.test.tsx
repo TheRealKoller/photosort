@@ -1,34 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as ausschussApi from '../api/ausschuss'
-import type { AusschussGroupEntry, AusschussOut, PhotoOut } from '../api/types'
+import type { AusschussGroupEntry, AusschussOut } from '../api/types'
 import { AUSSCHUSS_PAGE_SIZE, useAusschussEntryQuery, useAusschussQuery } from './useAusschuss'
+import { makeSeriesPhoto as photo } from '../test/fixtures'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/ausschuss')
-
-function photo(id: number): PhotoOut {
-  return {
-    id,
-    relative_path: `Reise/serie-${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
-}
 
 function stand(ids: number[], total: number): AusschussOut {
   return {
@@ -49,10 +28,8 @@ function stand(ids: number[], total: number): AusschussOut {
 }
 
 function sharedClient() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return { queryClient, wrapper }
 }
 

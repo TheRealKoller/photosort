@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -18,6 +17,7 @@ import type {
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { ClassificationReviewDetailPage } from './ClassificationReviewDetailPage'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/classificationReviews')
 vi.mock('../api/motifs')
@@ -148,19 +148,18 @@ function detailOut(
 }
 
 function renderPage(search = '?foto=1') {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   const router = createMemoryRouter(
     [
       {
         path: PROJECT_ROUTE_PATHS.classificationReviewDetail,
-        element: (
-          <QueryClientProvider client={queryClient}>
+        element: withQuery(
+          <>
             <ClassificationReviewDetailPage />
             {/* Ein echtes Textfeld neben der Seite - der Tastenschutz prueft den Fokus darin. */}
             <input aria-label="Notizfeld" />
-          </QueryClientProvider>
+          </>,
+          queryClient,
         ),
       },
     ],

@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,6 +17,8 @@ import { installIntersectionObserver, installResizeObserver } from '../test/obse
 import type { IntersectionObserverHarness, ResizeObserverHarness } from '../test/observers'
 import { GRID_GAP_PX } from '../utils/justifiedRows'
 import { PhotoGridPage } from './PhotoGridPage'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 // specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
@@ -37,23 +37,9 @@ function makeToken(payload: unknown): string {
 }
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
+  return makePhoto({
     taken_at: '2026-07-20T10:00:00Z',
     taken_at_original: '2026-07-20T10:00:00Z',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     // Basiszustand: klassifiziert per Cloud-Grundlage, ohne Ausschluss.
     motif_assessment: {
       source: 'cloud' as const,
@@ -68,7 +54,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
       present: false,
     })),
     ...overrides,
-  }
+  })
 }
 
 function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
@@ -98,12 +84,8 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
 }
 
 function renderPage(initialPath = '/projects/1/photos') {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>

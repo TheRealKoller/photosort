@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as duplicatesApi from '../api/duplicates'
@@ -12,6 +10,7 @@ import {
   useDuplicateGroupIndexQuery,
   useDuplicateGroupQuery,
 } from './useDuplicates'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/duplicates')
 
@@ -26,10 +25,8 @@ const GROUP: DuplicateGroupOut = {
 }
 
 function sharedClient() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return { queryClient, wrapper }
 }
 

@@ -1,34 +1,19 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as albumSelectionApi from '../api/albumSelection'
 import type { AlbumSelectionOut, PhotoOut } from '../api/types'
 import { useAlbumDecisionMutation, useAlbumSelectionQuery } from './useAlbumSelection'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/albumSelection')
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
+  return makePhoto({
     relative_path: '1.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     ...overrides,
-  }
+  })
 }
 
 function selection(items: PhotoOut[]): AlbumSelectionOut {
@@ -43,10 +28,8 @@ function selection(items: PhotoOut[]): AlbumSelectionOut {
 }
 
 function sharedClient() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return { queryClient, wrapper }
 }
 

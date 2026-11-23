@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { PhotoOut, RatingOut, RatingStatus } from './api/types'
 import { draftMembership } from './utils/albumDraft'
+import { makePhoto } from './test/fixtures'
 
 interface MembershipRow {
   ranking: 'none' | 'not_proposed' | 'proposed'
@@ -37,15 +38,8 @@ function rated(own: RatingStatus | null, other: RatingStatus): RatingOut[] {
 }
 
 function photo(form: MembershipRow['ranking'], ratings: RatingOut[]): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
+  return makePhoto({
     ratings,
-    suggestion: null,
     ranking:
       form === 'none'
         ? null
@@ -57,14 +51,7 @@ function photo(form: MembershipRow['ranking'], ratings: RatingOut[]): PhotoOut {
             partition_size: 1,
             curation_position: null,
           },
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
+  })
 }
 
 describe('draftMembership gegen die Falltabelle des Servers', () => {

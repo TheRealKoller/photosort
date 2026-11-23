@@ -3,9 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { DuplicateDecision, DuplicateGroupItem, PhotoOut } from '../api/types'
+import type { DuplicateDecision, DuplicateGroupItem } from '../api/types'
 import { DuplicateEnlargedView } from './DuplicateEnlargedView'
 import { DUPLICATE_IMMUTABLE_TEXT, DUPLICATE_ZUSTAENDE } from './DuplicatePhotoTile'
+import { makeSeriesPhoto as photo } from '../test/fixtures'
 
 vi.mock('./PhotoImage', () => ({
   PhotoImage: ({
@@ -18,27 +19,6 @@ vi.mock('./PhotoImage', () => ({
     variant: string
   }) => <img alt={alt} className={className} data-variant={variant} />,
 }))
-
-function photo(id: number): PhotoOut {
-  return {
-    id,
-    relative_path: `Reise/serie-${id}.jpg`,
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-  }
-}
 
 function item(
   id: number,

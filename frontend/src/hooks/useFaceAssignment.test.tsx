@@ -1,12 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as personsApi from '../api/persons'
 import type { FaceAssignmentOut } from '../api/types'
 import { personGroupQueryKey, useFaceAssignment } from './useFaceAssignment'
 import { PERSONS_QUERY_KEY } from './usePersons'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/persons')
 
@@ -21,15 +20,13 @@ const RESULT: FaceAssignmentOut = {
 }
 
 function setup(refreshGroup: boolean) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = makeQueryClient()
   queryClient.setQueryData(['photos', 3, 'list'], {
     pages: [{ items: [{ id: 5, persons: [] }], total: 1 }],
   })
   const groupFetch = vi.fn(() => Promise.resolve({ pages: [] }))
   queryClient.setQueryData(PERSONS_QUERY_KEY, [])
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const wrapper = queryWrapper(queryClient)
   const view = renderHook(() => useFaceAssignment(3, { refreshGroup }), { wrapper })
   return { ...view, queryClient, groupFetch }
 }

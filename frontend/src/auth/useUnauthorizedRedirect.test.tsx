@@ -1,10 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob, UNAUTHORIZED_EVENT } from '../api/client'
 import { useUnauthorizedRedirect } from './useUnauthorizedRedirect'
+import { makeQueryClient, withProviders } from '../test/render'
 
 function Probe() {
   useUnauthorizedRedirect()
@@ -30,7 +31,7 @@ function jsonResponse(status: number, body: unknown): Response {
  * (specs/architecture/0002-testkonzept.md, Sektion "Query-Client-Cache bei Sitzungsende leeren").
  */
 function makeClient(): QueryClient {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = makeQueryClient()
   queryClient.setQueryData(['projects'], [{ id: 1, name: 'Costa Rica' }])
   queryClient.setQueryDefaults(['motifs'], { staleTime: Infinity, gcTime: Infinity })
   queryClient.setQueryData(['motifs'], { items: [{ key: 'wasser', label: 'Wasser' }] })
@@ -39,14 +40,15 @@ function makeClient(): QueryClient {
 
 function renderProbe(queryClient: QueryClient) {
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/']}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/" element={<Probe />} />
           <Route path="/login" element={<LoginStub />} />
         </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: ['/'] },
+    ),
   )
 }
 

@@ -1,8 +1,6 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { UserEvent } from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import type { InitialEntry, Location, NavigateFunction } from 'react-router'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,6 +34,8 @@ import {
   SETTINGS_LINK_LABEL,
 } from '../utils/albumDraftTexts'
 import { AlbumDraftPage } from './AlbumDraftPage'
+import { makePhoto } from '../test/fixtures'
+import { makeQueryClient, queryWrapper, withProviders } from '../test/render'
 
 vi.mock('../api/photos')
 vi.mock('../api/projects')
@@ -109,29 +109,18 @@ function ranking(proposed: boolean): RankingOut {
 }
 
 function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `${id}.jpg`,
     taken_at: `2026-07-20T10:0${id}:00`,
     taken_at_original: `2026-07-20T10:0${id}:00`,
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
     ranking: ranking(true),
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     motif_assessment: null,
     motifs: [],
     album_suitability: null,
     event: EVENT_A,
     ...overrides,
-  }
+  })
 }
 
 function own(status: RatingStatus) {
@@ -163,12 +152,8 @@ function renderPage(
       ...draft,
     })
   }
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
@@ -1350,12 +1335,10 @@ describe('AlbumDraftPage: Großansicht', () => {
     if (draft !== null) {
       vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draft)
     }
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    })
+    const queryClient = makeQueryClient()
     render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/stub', entry]} initialIndex={1}>
+      withProviders(
+        <>
           <Probe />
           <Routes>
             <Route path="/stub" element={<p>Stub</p>} />
@@ -1364,8 +1347,9 @@ describe('AlbumDraftPage: Großansicht', () => {
               element={<AlbumDraftPage createPositionObserver={noObserver} />}
             />
           </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
+        </>,
+        { queryClient, initialEntries: ['/stub', entry], initialIndex: 1 },
+      ),
     )
     return queryClient
   }

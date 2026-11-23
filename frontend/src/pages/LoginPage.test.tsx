@@ -1,13 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getToken, setToken } from '../auth/token'
 import * as authApi from '../api/auth'
 import { LoginPage } from './LoginPage'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/auth')
 
@@ -20,13 +19,9 @@ function ProjectStub() {
 }
 
 function renderLoginPage(initialEntries: Array<string | { pathname: string; state?: unknown }>) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
 
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const wrapper = queryWrapper(queryClient)
 
   return render(
     <MemoryRouter initialEntries={initialEntries}>

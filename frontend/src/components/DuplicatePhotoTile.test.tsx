@@ -8,6 +8,7 @@ import {
   DUPLICATE_ZUSTAENDE,
   DuplicatePhotoTile,
 } from './DuplicatePhotoTile'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('./PhotoImage', () => ({
   PhotoImage: ({ alt, className }: { alt: string; className?: string }) => (
@@ -16,25 +17,10 @@ vi.mock('./PhotoImage', () => ({
 }))
 
 function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
+  return makePhoto({
     relative_path: 'Reise/serie-01.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
     ...overrides,
-  }
+  })
 }
 
 interface TileOverrides {

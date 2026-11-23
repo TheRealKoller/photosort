@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   criterionRunSummary,
   enumerateProjects,
-  projectFixture,
   scanSummary,
   scoringRunSummary,
   stepOfText,
   textOf,
 } from '../test/projectStateSpace'
+import { makeProject } from '../test/fixtures'
 import {
   computeStepStates,
   deriveProjectStand,
@@ -41,14 +41,14 @@ function standStepOf(project: (typeof projects)[number]): StepId | null {
 
 describe('deriveWorkflowOverview: Einträge', () => {
   it('nennt die vier Schritte in der Reihenfolge der Schrittleiste, danach die beiden Stationen', () => {
-    const ids = deriveWorkflowOverview(projectFixture()).map((entry) => entry.id)
+    const ids = deriveWorkflowOverview(makeProject()).map((entry) => entry.id)
 
     expect(ids).toEqual([...PIPELINE_STEPS.map((step) => step.id), 'album', 'selection'])
   })
 
   it('führt jeden Eintrag zu seinem Ziel - Schritte wie in der Schrittleiste', () => {
     const targets = Object.fromEntries(
-      deriveWorkflowOverview(projectFixture({ id: 42 })).map((entry) => [entry.id, entry.to]),
+      deriveWorkflowOverview(makeProject({ id: 42 })).map((entry) => [entry.id, entry.to]),
     )
 
     expect(targets).toEqual({
@@ -195,7 +195,7 @@ describe('deriveWorkflowOverview: Gleichlauf über 864 Lagen', () => {
 
 describe('deriveWorkflowOverview: Einzelfälle', () => {
   it('nennt bei "Noch nicht gescannt" den Scan als aktuell', () => {
-    const scan = deriveWorkflowOverview(projectFixture()).find((entry) => entry.id === 'scan')
+    const scan = deriveWorkflowOverview(makeProject()).find((entry) => entry.id === 'scan')
 
     expect(scan?.state).toBe('aktuell')
     expect(scan?.run).toBeNull()
@@ -203,7 +203,7 @@ describe('deriveWorkflowOverview: Einzelfälle', () => {
 
   it('zeigt im Randfall C keinen Schritt als aktuell', () => {
     const entries = deriveWorkflowOverview(
-      projectFixture({
+      makeProject({
         category_selection_enabled: false,
         last_scan: scanSummary('success'),
         last_scoring_run: scoringRunSummary('success', '2026-08-12T09:30:00Z'),
@@ -216,7 +216,7 @@ describe('deriveWorkflowOverview: Einzelfälle', () => {
 
   it('zeigt einen fehlgeschlagenen Lauf auch an einem erledigten Schritt', () => {
     const entries = deriveWorkflowOverview(
-      projectFixture({
+      makeProject({
         last_scan: scanSummary('success'),
         last_scoring_run: scoringRunSummary('failed', '2026-08-12T09:30:00Z'),
         last_criterion_scoring_run: criterionRunSummary('running'),

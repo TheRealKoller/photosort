@@ -1,6 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as photosApi from '../api/photos'
@@ -8,6 +7,7 @@ import type { PhotoOut, PhotoPersonOut } from '../api/types'
 import { storePhotoPersons } from './usePhotoPersons'
 import { PERSON_GROUP_PAGE_SIZE, usePersonGroupQuery } from './usePersonGroupQuery'
 import { usePhotoSequenceQuery } from './usePhotos'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/photos')
 
@@ -34,10 +34,8 @@ function server(total: number) {
 }
 
 function setup() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   const view = renderHook(() => usePersonGroupQuery(3, ANNA), { wrapper })
   return { ...view, queryClient }
 }
@@ -134,10 +132,8 @@ describe('usePersonGroupQuery', () => {
 
   it('teilt den Schlüssel nicht mit der Fotofolge - keiner der beiden Beobachter doppelt oder verliert', async () => {
     server(70)
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const wrapper = queryWrapper(queryClient)
     const { result } = renderHook(
       () => ({
         group: usePersonGroupQuery(3, ANNA),

@@ -1,44 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
+import { Outlet, Route, Routes } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ProjectOut } from '../../api/types'
 import type { StepId } from '../../utils/pipelineSteps'
 import { PIPELINE_STEPS } from '../../utils/pipelineSteps'
 import { PipelineStepView } from './PipelineStepView'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
-
-function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
+import { makeProject as project } from '../../test/fixtures'
+import { makeQueryClient, withProviders } from '../../test/render'
 
 function OutletHost() {
   const context: PipelineOutletContext = { project: project(), refetchProject: vi.fn() }
@@ -46,19 +15,18 @@ function OutletHost() {
 }
 
 function renderAt(step: StepId) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/x/${step}`]}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/x" element={<OutletHost />}>
             <Route path=":step" element={<PipelineStepView />} />
           </Route>
         </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: [`/x/${step}`] },
+    ),
   )
 }
 

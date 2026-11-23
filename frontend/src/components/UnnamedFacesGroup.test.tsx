@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRef } from 'react'
@@ -11,6 +10,7 @@ import { usePersonsQuery } from '../hooks/usePersons'
 import { useUnnamedFaces } from '../hooks/useUnnamedFaces'
 import type { UnnamedFaces } from '../hooks/useUnnamedFaces'
 import { UnnamedFacesGroup } from './UnnamedFacesGroup'
+import { makeQueryClient, withQuery } from '../test/render'
 
 vi.mock('../api/persons')
 
@@ -96,13 +96,14 @@ function Harness() {
 
 async function renderGroup(persons: PersonOut[] = [ANNA, BEN]) {
   vi.mocked(personsApi.listPersons).mockResolvedValue(persons)
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   const view = render(
-    <QueryClientProvider client={queryClient}>
-      <Harness />
-    </QueryClientProvider>,
+    withQuery(
+      <>
+        <Harness />
+      </>,
+      queryClient,
+    ),
   )
   await settle()
   return { ...view, queryClient }

@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as camerasApi from '../api/cameras'
@@ -12,6 +10,7 @@ import {
   useSetCameraTimeOffsetMutation,
 } from './useCameras'
 import { projectStatsQueryKey } from './useProjects'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/cameras')
 
@@ -24,16 +23,6 @@ const CAMERA: ProjectCameraOut = {
   offset_minutes: 0,
 }
 
-function makeWrapper(queryClient: QueryClient) {
-  return function wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  }
-}
-
-function makeQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
-}
-
 describe('useCamerasQuery', () => {
   beforeEach(() => {
     vi.mocked(camerasApi.listCameras).mockReset()
@@ -42,7 +31,7 @@ describe('useCamerasQuery', () => {
 
   it('loads the camera list of the project', async () => {
     const { result } = renderHook(() => useCamerasQuery(PROJECT_ID), {
-      wrapper: makeWrapper(makeQueryClient()),
+      wrapper: queryWrapper(makeQueryClient()),
     })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
@@ -63,7 +52,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
 
   it('sends project, camera and offset to the endpoint', async () => {
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(makeQueryClient()),
+      wrapper: queryWrapper(makeQueryClient()),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -78,7 +67,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
     const queryClient = makeQueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -91,7 +80,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
     const queryClient = makeQueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -109,7 +98,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
     const candidatesKey = ['photos', PROJECT_ID, 'curate', 'candidates', 1, 'landschaft', 0]
     queryClient.setQueryData(candidatesKey, { items: [], total: 0 })
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -122,7 +111,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
     const queryClient = makeQueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -138,7 +127,7 @@ describe('useSetCameraTimeOffsetMutation', () => {
     const queryClient = makeQueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useSetCameraTimeOffsetMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ cameraId: 7, offsetMinutes: -120 })
@@ -162,7 +151,7 @@ describe('useCameraTimeOffsetSuggestionMutation', () => {
 
   it('sends both photo ids', async () => {
     const { result } = renderHook(() => useCameraTimeOffsetSuggestionMutation(PROJECT_ID), {
-      wrapper: makeWrapper(makeQueryClient()),
+      wrapper: queryWrapper(makeQueryClient()),
     })
 
     result.current.mutate({ photoId: 11, referencePhotoId: 12 })
@@ -176,7 +165,7 @@ describe('useCameraTimeOffsetSuggestionMutation', () => {
     const queryClient = makeQueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useCameraTimeOffsetSuggestionMutation(PROJECT_ID), {
-      wrapper: makeWrapper(queryClient),
+      wrapper: queryWrapper(queryClient),
     })
 
     result.current.mutate({ photoId: 11, referencePhotoId: 12 })

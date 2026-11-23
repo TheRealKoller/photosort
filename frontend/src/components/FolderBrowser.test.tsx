@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Profiler, useState } from 'react'
@@ -9,14 +8,13 @@ import * as opencloudApi from '../api/opencloud'
 import { ApiError } from '../api/client'
 import type { BrowseEntry, FolderCountOut } from '../api/types'
 import { FolderBrowser } from './FolderBrowser'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/opencloud')
 
 function renderWithClient(ui: ReactNode) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   return render(ui, { wrapper })
 }
 
@@ -99,10 +97,8 @@ describe('FolderBrowser', () => {
     vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
       { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
     ])
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
+    const queryClient = makeQueryClient()
+    const wrapper = queryWrapper(queryClient)
 
     const { rerender } = render(
       <FolderBrowser value="CostaRica" onChange={vi.fn()} onErrorChange={vi.fn()} />,

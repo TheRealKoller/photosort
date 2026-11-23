@@ -13,28 +13,7 @@ import {
   SELECTION_NOTHING_CONTESTED_TEXT,
   SELECTION_VIEW_LABELS,
 } from './albumSelection'
-
-function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
-    time_offset_minutes: 0,
-    camera: null,
-    ratings: [],
-    suggestion: null,
-    ranking: null,
-    criterion_scores: [],
-    fine_labels: [],
-    cloud_vision_status: [],
-    final_selection_decision: null,
-    in_final_selection: false,
-    contested: false,
-    persons: [],
-    ...overrides,
-  }
-}
+import { makePhoto as photo } from '../test/fixtures'
 
 function selection(items: PhotoOut[]): AlbumSelectionOut {
   return {

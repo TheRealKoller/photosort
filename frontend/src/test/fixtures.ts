@@ -63,3 +63,8 @@ export function makePhoto(overrides: Partial<PhotoOut> = {}): PhotoOut {
     ...overrides,
   }
 }
+
+/** Foto einer Duplikat-Serie: Pfad `Reise/serie-<id>.jpg`, sonst die Vorgaben von `makePhoto`. */
+export function makeSeriesPhoto(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
+  return makePhoto({ id, relative_path: `Reise/serie-${id}.jpg`, ...overrides })
+}

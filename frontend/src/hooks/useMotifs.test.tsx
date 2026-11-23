@@ -1,11 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as motifsApi from '../api/motifs'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { useMotifsQuery } from './useMotifs'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/motifs')
 
@@ -15,11 +14,7 @@ vi.mock('../api/motifs')
 // ueberhaupt beobachtbar; ein Wrapper, der bei jedem Render einen neuen Client baut, wuerde die
 // Aussage still unterlaufen. Muster wie useCategories.test.tsx.
 function makeWrapper() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  function wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  }
-  return wrapper
+  return queryWrapper(makeQueryClient())
 }
 
 describe('useMotifsQuery', () => {

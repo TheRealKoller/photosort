@@ -1,14 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as camerasApi from '../api/cameras'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
-import type { ProjectCameraOut, ProjectOut } from '../api/types'
+import type { ProjectCameraOut } from '../api/types'
 import { ProjectSettingsPage } from './ProjectSettingsPage'
+import { makeProject as project } from '../test/fixtures'
+import { makeQueryClient, withProviders } from '../test/render'
 
 vi.mock('../api/projects')
 vi.mock('../api/cameras')
@@ -18,49 +19,17 @@ vi.mock('../api/cameras')
 // Info-Popover (ohne geraetespezifische Hover-Auto-Close-Logik - technische Detailentscheidung der
 // Umsetzung, siehe ProjectSettingsPage.tsx-Kommentar).
 
-function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
-    opencloud_path: 'CostaRica',
-    created_at: '2026-07-20T10:00:00Z',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
-    category_selection_enabled: true,
-    cloud_vision_detection_enabled: false,
-    cloud_vision_consent_at: null,
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
-    selection_target: null,
-    effective_selection_target: 1,
-    has_selection_proposal: false,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
-    ...overrides,
-  }
-}
-
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  const queryClient = makeQueryClient()
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/1/settings']}>
+    withProviders(
+      <>
         <Routes>
           <Route path="/projects/:projectId/settings" element={<ProjectSettingsPage />} />
         </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      </>,
+      { queryClient, initialEntries: ['/projects/1/settings'] },
+    ),
   )
 }
 

@@ -1,13 +1,12 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as reviewApi from '../api/classificationReviews'
 import type { ClassificationReviewEstimateOut, ClassificationReviewOptionsOut } from '../api/types'
 import { ClassificationReviewCreatePanel } from './ClassificationReviewCreatePanel'
+import { makeQueryClient, queryWrapper } from '../test/render'
 
 vi.mock('../api/classificationReviews')
 
@@ -70,12 +69,8 @@ const ESTIMATE: ClassificationReviewEstimateOut = {
 }
 
 function renderPanel(onCreated = vi.fn()) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
+  const queryClient = makeQueryClient()
+  const wrapper = queryWrapper(queryClient)
   render(<ClassificationReviewCreatePanel projectId={7} id="create" onCreated={onCreated} />, {
     wrapper,
   })

@@ -1,17 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import * as opencloudApi from '../api/opencloud'
 import { useOpenCloudBrowseQuery } from './useOpenCloudBrowse'
+import { FreshQueryWrapper as wrapper } from '../test/render'
 
 vi.mock('../api/opencloud')
-
-function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-}
 
 describe('useOpenCloudBrowseQuery', () => {
   it('fetches entries for the given path and keys the query by path', async () => {
