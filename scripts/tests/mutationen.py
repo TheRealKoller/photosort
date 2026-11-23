@@ -286,6 +286,16 @@ MUTATIONEN: tuple[Mutation, ...] = (
         invariante="modell-assets-geprueft",
     ),
     Mutation(
+        name="download-nach-dem-projekt-install",
+        waechter="ci",
+        datei=DOCKERFILE,
+        alt="RUN pip install --no-cache-dir --no-deps .\n",
+        neu=(
+            "RUN pip install --no-cache-dir --no-deps .\nRUN python scripts/fetch_model_assets.py\n"
+        ),
+        invariante="modell-assets-geprueft",
+    ),
+    Mutation(
         name="qualitaet-nicht-ausgefuehrt",
         waechter="ci",
         datei=CI,

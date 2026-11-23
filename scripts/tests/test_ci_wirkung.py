@@ -125,8 +125,9 @@ INVARIANTEN = (
     Invariante(
         "modell-assets-geprueft",
         "Jede Datei aus `MODEL_ASSETS` steht in `backend/.dockerignore`, und der Dockerfile ruft "
-        "den SHA256-geprueften Download vor dem letzten `COPY` auf - sonst ueberschriebe eine "
-        "lokale Kopie im Build-Kontext den geprueften Stand.",
+        "den SHA256-geprueften Download vor dem finalen Projekt-Install (`pip install ... "
+        "--no-deps .`) auf - sonst fehlen die Assets beim Packaging oder stammen ungeprueft aus "
+        "dem Build-Kontext.",
     ),
 )
 
@@ -1226,7 +1227,7 @@ def _cache_und_artefakte(bestand: Bestand, work: tuple[Workflow, ...]) -> list[B
 
 
 def _modell_assets_geprueft(bestand: Bestand) -> list[Befund]:
-    """Nur der geprüfte Download darf ins Image; kein COPY darf eine .onnx mitbringen."""
+    """Download vor dem finalen Projekt-Install; keine .onnx aus dem Build-Kontext."""
     if MODELL_MANIFEST not in bestand or BACKEND_DOCKERFILE not in bestand:
         return []
     befunde: list[Befund] = []
@@ -1260,43 +1261,49 @@ def _modell_assets_geprueft(bestand: Bestand) -> list[Befund]:
                 )
             )
     dockerfile = bestand[BACKEND_DOCKERFILE].split("\n")
-    fetch = next(
-        (
-            zeile
-            for zeile, text in enumerate(dockerfile, 1)
-            if "scripts/fetch_model_assets.py" in text
-        ),
-        0,
-    )
-    if fetch == 0:
+    # Nur `RUN`-Zeilen tragen die Reihenfolge: Das `COPY scripts/fetch_model_assets.py` nennt
+    # denselben Dateinamen, ist aber kein Download.
+    run_zeilen = [
+        (zeile, text) for zeile, text in enumerate(dockerfile, 1) if re.match(r"^\s*RUN\b", text)
+    ]
+    downloads = [zeile for zeile, text in run_zeilen if "fetch_model_assets.py" in text]
+    installs = [
+        zeile for zeile, text in run_zeilen if "pip install" in text and "--no-deps ." in text
+    ]
+    if not downloads:
         return [
             *befunde,
             befund(
                 BACKEND_DOCKERFILE,
                 1,
                 "modell-assets-geprueft",
-                "Der Dockerfile ruft `scripts/fetch_model_assets.py` nicht auf - die Assets "
-                "kaemen dann aus dem Build-Kontext statt aus dem geprueften Download.",
+                "Der Dockerfile ruft `scripts/fetch_model_assets.py` in keiner `RUN`-Zeile auf - "
+                "die Assets kaemen dann aus dem Build-Kontext statt aus dem geprueften Download.",
             ),
         ]
-    letztes_copy = max(
-        (
-            zeile
-            for zeile, text in enumerate(dockerfile, 1)
-            if text.strip().upper().startswith("COPY ")
-        ),
-        default=0,
-    )
-    if fetch > letztes_copy:
-        befunde.append(
+    if not installs:
+        return [
+            *befunde,
             befund(
                 BACKEND_DOCKERFILE,
-                letztes_copy,
+                1,
                 "modell-assets-geprueft",
-                "Der gepruefte Asset-Download steht erst nach dem letzten `COPY` - die "
-                "zugesagte Reihenfolge (Download vor dem Quellcode-Copy) ist verloren.",
+                "Kein finaler Projekt-Install (`pip install ... --no-deps .`) gefunden - die "
+                "Reihenfolge des Downloads laesst sich dann nicht pruefen.",
+            ),
+        ]
+    install = installs[-1]
+    for download in downloads:
+        if download > install:
+            befunde.append(
+                befund(
+                    BACKEND_DOCKERFILE,
+                    download,
+                    "modell-assets-geprueft",
+                    "Der gepruefte Asset-Download steht nach dem finalen Projekt-Install - die "
+                    "Assets fehlen dann beim Packaging ueber `[tool.setuptools.package-data]`.",
+                )
             )
-        )
     return befunde
 
 
