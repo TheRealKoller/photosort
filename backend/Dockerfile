@@ -33,6 +33,10 @@ COPY pyproject.toml uv.lock ./
 # Download haengt nicht an `src/` und bleibt im Cache, solange sich Manifest und Skript nicht
 # aendern. Das Skript liest das Manifest ueber seinen Dateipfad, nicht ueber das installierte
 # Paket; die Dateien werden per SHA256 geprueft und erst nach bestandener Pruefung geschrieben.
+# Der spaetere `COPY src ./src` bringt KEINE `.onnx`-Datei mehr mit: backend/.dockerignore
+# schliesst genau die drei Ziele des Manifests aus. Das ist die einzige Absicherung dagegen, dass
+# eine lokal vorhandene, ungepruefte Kopie den Download ueberschreibt - gehalten von
+# `modell-assets-geprueft` in scripts/tests/test_ci_wirkung.py.
 COPY src/photosort/model_assets.py src/photosort/model_assets.py
 COPY scripts/fetch_model_assets.py scripts/fetch_model_assets.py
 RUN python scripts/fetch_model_assets.py

@@ -45,6 +45,9 @@ AUSGENOMMENE_QUALITAETSJOBS = frozenset({"eye"})
 CACHE_LESE_DATEI = "docker-compose.ci-cache.yml"
 CACHE_SCHREIB_DATEI = "docker-compose.ci-cache-write.yml"
 SEKRETNAME = re.compile(r"(TOKEN|KEY|PASSWORD|SECRET)", re.IGNORECASE)
+MODELL_MANIFEST = "backend/src/photosort/model_assets.py"
+DOCKERIGNORE = "backend/.dockerignore"
+BACKEND_DOCKERFILE = "backend/Dockerfile"
 COVERAGE_FIXIERUNG = re.compile(r"coverage==\d")
 OVERLAY_ZEILE = re.compile(
     r"^(services:"
@@ -116,12 +119,14 @@ INVARIANTEN = (
     ),
     Invariante(
         "cache-und-artefakte",
-        "`cache_to` steht nur im Schreib-Overlay und wird nur hinter dem Fork-Ausschluss "
-        "gesetzt; der Cache-Scope ist ein Literal. Kein Job traegt `permissions:`, kein "
-        "Qualitaetsjob liest `secrets.*`, `download-artifact` laeuft ohne `run-id`/"
-        "`github-token`, Artefaktnamen tragen nur Workflow-Literale und `matrix.*`, die "
         "Coverage-Version im Aggregator stammt aus `backend/uv.lock`, und weder Dockerfiles noch "
         "`build.args` tragen einen secret-artigen Namen.",
+    ),
+    Invariante(
+        "modell-assets-geprueft",
+        "Jede Datei aus `MODEL_ASSETS` steht in `backend/.dockerignore`, und der Dockerfile ruft "
+        "den SHA256-geprueften Download vor dem letzten `COPY` auf - sonst ueberschriebe eine "
+        "lokale Kopie im Build-Kontext den geprueften Stand.",
     ),
 )
 
@@ -1220,6 +1225,81 @@ def _cache_und_artefakte(bestand: Bestand, work: tuple[Workflow, ...]) -> list[B
     return befunde
 
 
+def _modell_assets_geprueft(bestand: Bestand) -> list[Befund]:
+    """Nur der geprüfte Download darf ins Image; kein COPY darf eine .onnx mitbringen."""
+    if MODELL_MANIFEST not in bestand or BACKEND_DOCKERFILE not in bestand:
+        return []
+    befunde: list[Befund] = []
+    dateinamen = re.findall(r'filename="([^"]+)"', bestand[MODELL_MANIFEST])
+    if not dateinamen:
+        return [
+            befund(
+                MODELL_MANIFEST,
+                1,
+                "modell-assets-geprueft",
+                "Kein Asset im Manifest gelesen - die Pruefung waere leer wahr.",
+            )
+        ]
+    ignore_zeilen = bestand.get(DOCKERIGNORE, "").split("\n")
+    for name in dateinamen:
+        pfad = f"src/photosort/assets/{name}"
+        nummer = next(
+            (zeile for zeile, text in enumerate(ignore_zeilen, 1) if pfad in text),
+            0,
+        )
+        aktiv = nummer > 0 and not ignore_zeilen[nummer - 1].lstrip().startswith("#")
+        if not aktiv:
+            befunde.append(
+                befund(
+                    DOCKERIGNORE,
+                    nummer or 1,
+                    "modell-assets-geprueft",
+                    f"`{pfad}` fehlt in `backend/.dockerignore` (oder ist auskommentiert) - ein "
+                    "lokaler Build-Kontext ueberschriebe dann den SHA256-geprueften Download mit "
+                    "einer ungeprueften Kopie.",
+                )
+            )
+    dockerfile = bestand[BACKEND_DOCKERFILE].split("\n")
+    fetch = next(
+        (
+            zeile
+            for zeile, text in enumerate(dockerfile, 1)
+            if "scripts/fetch_model_assets.py" in text
+        ),
+        0,
+    )
+    if fetch == 0:
+        return [
+            *befunde,
+            befund(
+                BACKEND_DOCKERFILE,
+                1,
+                "modell-assets-geprueft",
+                "Der Dockerfile ruft `scripts/fetch_model_assets.py` nicht auf - die Assets "
+                "kaemen dann aus dem Build-Kontext statt aus dem geprueften Download.",
+            ),
+        ]
+    letztes_copy = max(
+        (
+            zeile
+            for zeile, text in enumerate(dockerfile, 1)
+            if text.strip().upper().startswith("COPY ")
+        ),
+        default=0,
+    )
+    if fetch > letztes_copy:
+        befunde.append(
+            befund(
+                BACKEND_DOCKERFILE,
+                letztes_copy,
+                "modell-assets-geprueft",
+                "Der gepruefte Asset-Download steht erst nach dem letzten `COPY` - die "
+                "zugesagte Reihenfolge (Download vor dem Quellcode-Copy) ist verloren.",
+            )
+        )
+    return befunde
+
+
 def pruefe(bestand: Bestand) -> list[Befund]:
     """Alle CI-Invarianten ueber einem Bestand - die eine Funktion dieses Waechters."""
     work = workflows(bestand)
@@ -1232,6 +1312,7 @@ def pruefe(bestand: Bestand) -> list[Befund]:
     befunde.extend(_nicht_ueberspringbar(work))
     befunde.extend(_pr_ausloeser(work))
     befunde.extend(_cache_und_artefakte(bestand, work))
+    befunde.extend(_modell_assets_geprueft(bestand))
     return befunde
 
 

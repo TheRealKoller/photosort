@@ -101,6 +101,11 @@
       "klasse": "A"
     },
     {
+      "modul": "scripts/tests/test_ci_wirkung.py",
+      "invariante": "modell-assets-geprueft",
+      "klasse": "A"
+    },
+    {
       "modul": "scripts/tests/test_issue_befehle_in_skills.py",
       "invariante": "freitext-nur-als-datei",
       "klasse": "A"

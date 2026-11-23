@@ -40,6 +40,8 @@ CI_TEST_SCHRITT = (
 CI_GATE_BEFEHL = (
     "python -m coverage combine && python -m coverage report --show-missing --fail-under=80"
 )
+DOCKERIGNORE = "backend/.dockerignore"
+DOCKERFILE = "backend/Dockerfile"
 DEVELOPER = ".claude/agents/developer.md"
 
 
@@ -274,6 +276,14 @@ MUTATIONEN: tuple[Mutation, ...] = (
         alt="          pattern: coverage-shard-*\n",
         neu="          run-id: 123\n          pattern: coverage-shard-*\n",
         invariante="cache-und-artefakte",
+    ),
+    Mutation(
+        name="modell-asset-im-kontext",
+        waechter="ci",
+        datei=DOCKERIGNORE,
+        alt="src/photosort/assets/label_embedder.onnx\n",
+        neu="# src/photosort/assets/label_embedder.onnx\n",
+        invariante="modell-assets-geprueft",
     ),
     Mutation(
         name="qualitaet-nicht-ausgefuehrt",
