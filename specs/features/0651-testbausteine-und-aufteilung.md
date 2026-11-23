@@ -1,6 +1,6 @@
 # 0651 - Testdaten an einer Stelle pflegen, Tests je Thema ausführen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #661](https://github.com/TheRealKoller/photosort/pull/661))
 **Erstellt:** 2026-11-22
 **Bezug:** Issue [#651](https://github.com/TheRealKoller/photosort/issues/651)
 
