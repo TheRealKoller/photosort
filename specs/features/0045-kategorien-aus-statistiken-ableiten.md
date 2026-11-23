@@ -58,7 +58,7 @@ Siehe ADR [`decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigk
 1. `backend/src/photosort/criteria.py` — `CriterionDefinition`-Felder, Registry-Einträge, neue Konstanten (`CATEGORY_ACTIVE_THRESHOLD_FRACTION`, Presence-Schwellwerte für `tier`/`gebaeude`), `derive_active_categories`, geänderte `derive_category_key`-Signatur.
 2. `backend/tests/test_criteria.py` — Registry-Invarianten-Test, neue Testklasse für `derive_active_categories`, `TestDeriveCategoryKey` auf neue Signatur umgestellt.
 3. `backend/src/photosort/worker.py` — `run_criterion_scoring`: Aggregationsaufruf nach der Foto-Schleife, Umbenennung `_CONTENT_CRITERION_KEYS`→`_IMAGE_ANALYSIS_CRITERION_KEYS`.
-4. `backend/tests/test_worker_criterion_scoring.py` — Integrationstests (siehe Teststrategie).
+4. `backend/tests/test_worker_criterion_scoring_*.py` — Integrationstests (siehe Teststrategie).
 5. `frontend/src/utils/categoryLabels.ts` — Mapping-Eintrag für „gebaeude".
 
 Kein neuer Endpunkt. `docs/architecture.md` wird im selben PR um die neuen `CriterionDefinition`-Felder und `derive_active_categories` ergänzt.
@@ -87,7 +87,7 @@ Erstes zweistufiges Aggregations-vor-Zuweisungs-Muster im Projekt (bisher war je
 
 **Unit (`test_criteria.py`):** `derive_active_categories` als eigene Testklasse — leerer Kandidatenpool (kein `ZeroDivisionError`), genau an der 15%-Schwelle (inklusiv) + je ein Fall knapp drüber/drunter, Kriterium mit 0 Treffern bleibt inaktiv, fehlende Kriterien-Werte pro Foto. `TestDeriveCategoryKey` auf neue Signatur umgestellt (bestehende vier Fälle werden zum Regressionstest für Bestandsverhalten), plus neue Fälle für Score-Priorität bei mehreren aktiven Kriterien und alphabetischen Tie-Break. Eigener Registry-Invarianten-Test (`category_eligible ⇔ threshold gesetzt`) über alle `CRITERIA_REGISTRY`-Einträge.
 
-**Integration (`test_worker_criterion_scoring.py`):** Aufrufzähler-Nachweis „genau einmal pro Lauf, projektweit, nach der Foto-Schleife"; Ende-zu-Ende-Häufigkeitsszenario (gleiche Tierfoto-Scores, einmal über/einmal unter 15% verdünnt → unterschiedlicher `category_key`); Bestandsverhalten-Regression; leerer Kandidatenpool.
+**Integration (`test_worker_criterion_scoring_*.py`):** Aufrufzähler-Nachweis „genau einmal pro Lauf, projektweit, nach der Foto-Schleife"; Ende-zu-Ende-Häufigkeitsszenario (gleiche Tierfoto-Scores, einmal über/einmal unter 15% verdünnt → unterschiedlicher `category_key`); Bestandsverhalten-Regression; leerer Kandidatenpool.
 
 **Testkonzept-Ergänzung:** `specs/architecture/0002-testkonzept.md` wurde bereits um eine neue Sektion „Zweistufige Häufigkeits-Aggregation vor Zuweisung + Registry-Invariante (`derive_active_categories`/`category_eligible`)" im Backend-Abschnitt ergänzt (inkl. Verlaufseintrag) — als Vorlage für künftige Features mit vorgelagerter, batch-weiter Aggregation vor einer Pro-Item-Zuweisung.
 

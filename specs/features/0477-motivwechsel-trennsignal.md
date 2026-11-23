@@ -118,8 +118,8 @@ fortgeschrieben.
 |---|---|
 | `backend/src/photosort/events.py` | `EventCandidate` +2 Felder, `MOTIF_CHANGE_CONFIRMING_PHOTOS`, `_motif_picture`, `motif_change_starts`, ein Zweig in `build_events` |
 | `backend/src/photosort/worker.py` | `_build_grouping_and_rankings` befüllt die beiden neuen Felder |
-| `backend/tests/test_events.py` | Regel- und Zusammenspiel-Fälle, Kandidatenhelfer erweitert |
-| `backend/tests/test_worker_criterion_scoring.py` | Verdrahtung: wirksame Stärken und Ausschluss kommen wirklich an |
+| `backend/tests/test_events_*.py` | Regel- und Zusammenspiel-Fälle, Kandidatenhelfer erweitert |
+| `backend/tests/test_worker_criterion_scoring_*.py` | Verdrahtung: wirksame Stärken und Ausschluss kommen wirklich an |
 | `docs/architecture.md` | Block „Gebildet wird in EINEM sortierten Durchlauf" |
 
 ### Die neue Regel in `events.py`
@@ -230,10 +230,10 @@ Gliederung ändert sich, ihre Darstellung nicht.
 
 ## Teststrategie
 
-**Ebenen.** Schwerpunkt Unit (`test_events.py`, DB-frei): die Regel wird an `motif_change_starts`
+**Ebenen.** Schwerpunkt Unit (`test_events_*.py`, DB-frei): die Regel wird an `motif_change_starts`
 selbst geprüft, nicht nur durch `build_events` hindurch — sie ist eine Segmentierung über die ganze
 Folge und ihr Ergebnis (eine Indexmenge) ist direkt beobachtbar. Die Integrationsebene
-(`test_worker_criterion_scoring.py`) prüft ausschließlich die Verdrahtung. **Kein E2E-Fall und kein
+(`test_worker_criterion_scoring_*.py`) prüft ausschließlich die Verdrahtung. **Kein E2E-Fall und kein
 Frontend-Fall:** API, `EventOut` und Oberfläche ändern sich nicht, der `e2e`-Job fährt keinen
 Worker, und `demo_state.py` schreibt seine `events`-Zeilen direkt — ein Fall dort erreichte
 `build_events` gar nicht.
@@ -326,7 +326,7 @@ linear und DB-frei. Geprüft wird je Folge der Invariantensatz plus die Indexzus
 `motif_change_starts`. Das deckt die Formen ab, die eine handverlesene Fallmenge nicht aufzählt (leeres
 führendes Event, Index 0, ein Foto in zwei Events), ohne eine Abhängigkeit und ohne Zufall.
 
-### Integration: die Verdrahtung (`test_worker_criterion_scoring.py`)
+### Integration: die Verdrahtung (`test_worker_criterion_scoring_*.py`)
 
 Vier Fälle, jeder mit dem Ergebnis an den geschriebenen `Event`-/`PhotoRanking`-Zeilen gemessen:
 

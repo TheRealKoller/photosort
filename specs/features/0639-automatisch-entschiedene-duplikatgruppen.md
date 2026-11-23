@@ -244,13 +244,13 @@ neue Fläche ist jsdom-fähig).
 | `open_count`, `total`, Einträge, `auto_decided`-Felder, `decision`/`effective_decision`, Gate-Autoset-Interaktion | Integration `test_api_ausschuss.py` |
 | Zähler projektweit, unabhängig von `limit`/`offset`, auch im `photo_id`-Zweig | Integration `test_api_ausschuss.py` |
 | Filter `auto_decided=true` (nur Auto-Stapel, `total` gefiltert, beide Zähler projektweit), `false` = weggelassen, `true`+`photo_id` = 422 mit `detail` | Integration `test_api_ausschuss.py` |
-| `suggested`-Filter und `PhotoOut.suggestion` schließen Auto-Aufnahmen aus; Parität beider Prädikate bleibt | Integration `test_api_photos.py`, `test_ausschuss_ueberlebende.py` |
+| `suggested`-Filter und `PhotoOut.suggestion` schließen Auto-Aufnahmen aus; Parität beider Prädikate bleibt | Integration `test_api_photos_*.py`, `test_ausschuss_ueberlebende.py` |
 | `auto_decided` in `DuplicateGroupOut`; `position`/`total`/Nachbarn zählen alle Gruppen; Kettenlauf besucht jede genau einmal | Integration `test_api_duplicate_groups.py`, `test_duplicate_group_index.py` |
 | Rücknahme per `keep`: Aufnahme bleibt, Kennzeichnung weg, Zähler −1, Rest wieder offen, späterer Lauf entscheidet nicht automatisch; `keep` auf Repräsentant | Integration `test_api_duplicate_decisions.py` |
 | Nutzer-Schreibwege räumen den Merker des ganzen Sterns ab (Einzel- und Gruppenweg), nie fremde Sterne/Projekte | Integration `test_api_duplicate_decisions.py` |
 | Gruppenabschluss trifft Auto-Gruppen nicht (kein offener Vorschlag → keine Auswahl, kein Schreibvorgang) | Integration `test_api_duplicate_decisions.py` |
 | Migration: drei Spalten, NOT NULL/Default, Vorgänger, Downgrade | `test_migration_automatisch_entschiedene_duplikate.py` |
-| Demo: drei Gruppen, eigene Konstante, Merker/keine Zeile/Schwelle/Auflösung, offene Gruppen unverändert, `photo_count`/`suggestions_found` | `test_demo_state.py` |
+| Demo: drei Gruppen, eigene Konstante, Merker/keine Zeile/Schwelle/Auflösung, offene Gruppen unverändert, `photo_count`/`suggestions_found` | `test_demo_state_*.py` |
 | Probe zieht die neue Rückgabeform nach, Bericht bleibt datensparsam | `test_duplicate_probe.py` |
 | Wort „Automatisch entschieden“ (Zeile + `aria-label`), genau zwei Entscheidungen je Aufnahme, „Gruppe abschließen“ abwesend (über Anzahl, nicht Namensabfrage) | `vitest` `DuplicateStackTile.test.tsx`, `DuplicateComparePage.test.tsx` |
 | Zähler + Link `?auto=1`, Filter im Query-Key, Rückweg zur vollständigen Übersicht, Zähler bei 0 nicht vorhanden | `vitest` `AusschussStepPage.test.tsx`, `useAusschuss.test.tsx`, `api/ausschuss.test.ts` |
@@ -264,7 +264,7 @@ bleibt offen); Wettlauf mit und ohne Fremdzeile; `keep` auf Verlierer und auf Re
 eigenem Merker; Demo-Gruppe mit unveränderlich abgelehntem Gewinner.
 
 **Bewusste Erwartungsänderungen (keine Regressionen):** `test_scoring.py` (elf
-`assign_duplicate_groups(...) == {...}` wandern auf `.duplicate_of`), `test_demo_state.py` (zwei →
+`assign_duplicate_groups(...) == {...}` wandern auf `.duplicate_of`), `test_demo_state_*.py` (zwei →
 drei Gruppen, `len(Repräsentanten)`),
 `test_api_ausschuss.py::test_the_answer_carries_exactly_the_agreed_fields`,
 `test_duplicate_probe.py`, `e2e/tests/ausschuss-stapel.spec.ts` (Stapelzahl 2 → 3).

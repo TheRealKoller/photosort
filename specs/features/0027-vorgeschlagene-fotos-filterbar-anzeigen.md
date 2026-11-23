@@ -68,7 +68,7 @@ Design-System: [`architecture/0004-design-system.md`](../architecture/0004-desig
 
 ## Teststrategie
 
-- **Backend, Integrationsebene** (`backend/tests/test_api_photos.py`, `authenticated_api_client` + In-Memory-SQLite, Muster identisch zu bestehenden `test_list_photos_filters_by_own_*`-Tests):
+- **Backend, Integrationsebene** (`backend/tests/test_api_photos_*.py`, `authenticated_api_client` + In-Memory-SQLite, Muster identisch zu bestehenden `test_list_photos_filters_by_own_*`-Tests):
   - Fallmatrix für den `suggested`-Zweig (siehe Akzeptanzkriterien): kein `PhotoScore`, `suggested_status IS NULL`, eigenes Rating vorhanden/fehlt, fremdes Rating eines anderen Nutzers.
   - **Paritäts-Test** (wichtigster neue Test): gleicher Datensatz einmal ungefiltert abgefragt, Menge der IDs mit `item["suggestion"] is not None` gebildet, gegen die Menge der IDs aus `rating_status=suggested` verglichen — müssen identisch sein. Sichert die bewusste Doppelimplementierung (Python-Boolean in `_to_photo_out` vs. SQL-`WHERE` in `_filtered_photo_ids`) gegen künftiges Auseinanderlaufen ab.
   - Mix-Test: drei Fotos (`REJECTED`+`duplicate_of` gesetzt, `REJECTED` ohne `duplicate_of`, `ALBUM_WORTHY`) erscheinen gemeinsam im `suggested`-Filter, keine serverseitige Unterteilung nach `reason`.

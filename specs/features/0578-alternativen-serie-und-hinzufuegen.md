@@ -387,7 +387,7 @@ Der Docstring von `draft_alternatives` wird umgeschrieben, nicht gelöscht: `pho
 - Invarianten über alle Fälle: Fenster zusammenhängend, enthält `reference_index`, `size = min(max(Serie, min(4, n)), 12)` sinngemäß, `rest ≥ 0`, `offset + size ≤ n`. Erschöpfende Aufzählung kleiner Folgen (Abstände aus {0, Schwelle, Schwelle+1 s}, Länge bis ~15, alle Bezugsindizes) gegen eine im Test nachgebildete Referenz statt Property-Testing (Muster der Sektion zu ADR 0109, Punkt 3).
 - `nearest_window_offset` samt Tests entfällt.
 
-**Backend Integration (`test_api_photos.py`, `draft_alternatives`).**
+**Backend Integration (`test_api_photos_*.py`, `draft_alternatives`).**
 - `series=true` liefert das Fenster aus `series_window` samt `series_rest`; ein mitgeschicktes `offset`/`limit` ändert nichts (gleiche Antwort mit und ohne).
 - `series=true` ohne `photo_id` → `422`; `nearest` wird nicht mehr angenommen bzw. wirkt nicht (Abwesenheit belegen).
 - `series_rest = 0` ohne `series` und im Leerkörper; Leerkörper byte-gleich über alle Fehlerursachen (bestehender Test, nur um das Feld erweitert).

@@ -632,7 +632,7 @@ Kriterium unbelegt, auch wenn die Oberfläche richtig aussieht.
 
 **Neu:** `test_motifs.py` (Unit, DB-frei), `test_motif_strengths.py`, `test_api_motifs.py`,
 `test_api_motif_corrections.py`, `test_migration_motivstaerken.py`. **Erweitert:**
-`test_models.py`, `test_worker_criterion_scoring.py`, `test_api_photos.py`, `test_demo_state.py`,
+`test_models.py`, `test_worker_criterion_scoring_*.py`, `test_api_photos_*.py`, `test_demo_state_*.py`,
 `test_postgres_ddl_compatibility.py`, `tests/project_graph.py`, `test_project_deletion.py`,
 `test_api_projects.py`, `test_auth_guard.py`, `test_openapi_beschreibungen.py`. **Frontend neu:**
 `test/motifSetFixture.ts`, `api/motifs.test.ts`, `hooks/useMotifs.test.tsx`,
@@ -669,7 +669,7 @@ Nicht offensichtliche Nachweise:
 ### PR 2 — Die Cloud-Klassifizierung liefert Motivstärken
 
 **Erweitert:** `test_remote_classification.py`, `test_worker_remote_category_classification.py`,
-`test_api_classification_estimate.py`, `test_api_photos.py`.
+`test_api_classification_estimate.py`, `test_api_photos_*.py`.
 
 - Bauwerk stark / Menschen schwach: eine Antwort mit `0.9`/`0.2` erzeugt genau diese Relation in
   den persistierten Zeilen, die Gegenprobe mit getauschten Zahlen die getauschte. Der Fall mit
@@ -686,7 +686,7 @@ Nicht offensichtliche Nachweise:
   verschiedene Zahlen liefern.
 - **Regel für den Zwischenzustand:** In dieser PR darf **kein** Test durch eine von Hand
   eingefügte `photo_category_classifications`-Zeile grün gehalten werden, die der Produktivpfad
-  nicht mehr schreibt. Betroffen sind die Fälle in `test_worker_criterion_scoring.py`, die über
+  nicht mehr schreibt. Betroffen sind die Fälle in `test_worker_criterion_scoring_*.py`, die über
   einen Remote-Lauf gehen und danach eine abgeleitete Kategorie erwarten: ihre Erwartung wandert
   auf die Kopfzeile, oder der Fall entfällt mit dem Schreibpfad.
 
@@ -705,7 +705,7 @@ ihre Revision per `importlib` und bauen den Vorher-Schema-Stand von Hand, hänge
 Modell. Ihre Revisionen laufen bei jedem Containerstart weiter; mitgelöscht wäre die Lücke lautlos.
 
 **Umgeschrieben:** `test_api_stats.py`, `test_criteria.py`, `test_ranking.py`,
-`test_worker_criterion_scoring.py`, `test_api_photos.py`, `test_demo_state.py`; Frontend
+`test_worker_criterion_scoring_*.py`, `test_api_photos_*.py`, `test_demo_state_*.py`; Frontend
 `CurateCategoriesPage.test.tsx`, `ProjectStatsPage.test.tsx`, `PhotoGridPage.test.tsx`,
 `CurationPhotoTile.test.tsx`, `PhotoCard.test.tsx`, `ClassificationBalance.test.tsx`,
 `utils/rankings.test.ts`, `utils/formatStats.test.ts`, `utils/curationTopN.test.ts`,

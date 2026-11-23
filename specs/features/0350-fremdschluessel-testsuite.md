@@ -98,7 +98,7 @@ Test für bewusst umgeschrieben, nicht für eine Regression.
 
 - **Zusage** „Ein Kriterien-Lauf mit einer nicht mehr existierenden `scoring_run_id` endet als
   fehlgeschlagener Lauf in der Historie", gehalten durch
-  `tests/test_worker_criterion_scoring.py::test_guard_fails_run_when_scoring_run_id_does_not_exist`.
+  `tests/test_worker_criterion_scoring_run.py::test_guard_fails_run_when_scoring_run_id_does_not_exist`.
   An ihre Stelle tritt: **Es entsteht kein Lauf-Datensatz, der Aufruf endet mit einer verständlichen
   Meldung** (AK3). Der Test wird ersetzt. Für den benachbarten Fall (Bewertungslauf existiert, ist
   aber veraltet oder nicht erfolgreich) bleibt das *Aussehen der Historie* — ein `FAILED`-Lauf —
@@ -172,7 +172,7 @@ Fremdschlüsselverletzung, sobald die Durchsetzung aktiv ist. Deshalb:
    Pragma.
 2. **Pragma in `db.py`** plus neue Datei `backend/tests/test_foreign_keys.py` (AK1/ AK2).
 3. **Worker**: Ausnahme und Helfer, dann die beiden Aufrufstellen. Rot-Nachweis: der umgestellte
-   Test in `tests/test_worker_criterion_scoring.py` (siehe `## Teststrategie`).
+   Test in `tests/test_worker_criterion_scoring_*.py` (siehe `## Teststrategie`).
 4. **Vollsuite** und Laufzeitvergleich gegen `main` (AK5/AK6); beide Werte gehören in die
    PR-Beschreibung.
 5. **Doku-Nachziehliste** im selben PR.
@@ -181,7 +181,7 @@ Fremdschlüsselverletzung, sobald die Durchsetzung aktiv ist. Deshalb:
 
 Genau zwei Stellen der Suite werden durch die Durchsetzung rot, beide oben adressiert:
 `test_models.py::test_deleting_criterion_scoring_run_cascades_to_photo_rankings` (Löschreihenfolge)
-und `test_worker_criterion_scoring.py::test_guard_fails_run_when_scoring_run_id_does_not_exist`
+und `test_worker_criterion_scoring_run.py::test_guard_fails_run_when_scoring_run_id_does_not_exist`
 (ersetzt). Alles Weitere, was rot würde, sind die ausgenommenen Migrationstests. Bleibt bei der
 Umsetzung eine weitere Stelle rot, ist das ein **Fund**, kein Testartefakt, und gehört in die
 PR-Beschreibung.
@@ -238,7 +238,7 @@ E2E-Spec.
   `postgresql+psycopg://…`-Engine ist der `connect`-Handler nicht registriert; Quelltext-Wächter:
   `create_async_engine` nur in `db.py`, und die Dateien, die eine Engine selbst bauen, sind genau
   {`db.py`, `tests/test_seed.py`, `tests/test_migration_*.py`}.
-- **`tests/test_worker_criterion_scoring.py`:** der Test
+- **`tests/test_worker_criterion_scoring_*.py`:** der Test
   `test_guard_fails_run_when_scoring_run_id_does_not_exist` wird **ersetzt** (nicht ergänzt): neue
   Erwartung `CriterionScoringReferenceError` und Zeilenzahl `criterion_scoring_runs == 0`. Die
   beiden benachbarten Guard-Tests bleiben **wörtlich unverändert** — sie sind der Beleg für AK4.

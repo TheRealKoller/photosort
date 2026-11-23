@@ -338,7 +338,7 @@ wird. Schwellwert-Fälle werden aus dem Symbol gebaut (`Fraction.numerator`/`.de
 
 | Ebene | Ort | Gegenstand |
 |---|---|---|
-| Backend Unit (DB-frei) | `test_events.py`, neue Klasse | `_name_of`/`_built`: Mehrheit, Gleichstand, Anteil inklusiv, kein Nachrücken, Ein-Foto-Event, unbrauchbare Namen; `locality_of_event`/`assign_place_names`: eine Ortsregel |
+| Backend Unit (DB-frei) | `test_events_*.py`, neue Klasse | `_name_of`/`_built`: Mehrheit, Gleichstand, Anteil inklusiv, kein Nachrücken, Ein-Foto-Event, unbrauchbare Namen; `locality_of_event`/`assign_place_names`: eine Ortsregel |
 | Backend Integration (In-Memory-DB) | `test_worker_place_names.py` | Zellenfilter gefallen, `place_name` neben dem Namen, Koordinatenstufe verdrängt, Namensverlust → Koordinatenstufe, Identität zweier Datenlagen |
 | Backend Integration (Request-Pfad) | `test_worker_place_names.py` | `rebuild_run_grouping`: geänderte Schwelle wirkt, keine Erkennung, Detektionszeilen unverändert |
 | Messkommando (rein) | `test_place_probe.py`, `test_event_probe.py` | Block D: überlappende Partition; Block C3: benannte Events, kleinster Trägeranteil, Events unter der Schwelle |
@@ -381,16 +381,16 @@ wird. Schwellwert-Fälle werden aus dem Symbol gebaut (`Fraction.numerator`/`.de
 
 Ein grüner Fall, der die abgelöste Regel behauptet, wird **ersetzt, nicht nachgezogen**:
 
-- `test_events.py::test_the_earliest_name_wins_across_a_merge_of_the_third_stage` (Z. 1437)
-- `test_events.py::test_an_event_with_two_different_names_carries_the_earlier_one` (Z. 1422) —
+- `test_events_*.py::test_the_earliest_name_wins_across_a_merge_of_the_third_stage` (Z. 1437)
+- `test_events_*.py::test_an_event_with_two_different_names_carries_the_earlier_one` (Z. 1422) —
   wird zum Gleichstandsfall
-- `test_events.py::test_a_landmark_event_gets_no_place_name_and_triggers_no_district` (Z. 1882)
+- `test_events_*.py::test_a_landmark_event_gets_no_place_name_and_triggers_no_district` (Z. 1882)
 - `test_worker_place_names.py::test_only_events_without_a_landmark_are_asked_for` (Z. 345)
 - `test_place_probe.py::TestBlockDHeadings::test_a_landmark_event_never_counts_towards_homonymy`
   (Z. 424) und der Begründungskommentar in `test_homonymy_one_resolvable_by_district_and_one_not`
-- `test_demo_state.py::TestTheDemoStateShowsTheDistrictRule::…` — erste Hälfte behauptet die
+- `test_demo_state_coverage_states.py::TestTheDemoStateShowsTheDistrictRule::…` — erste Hälfte behauptet die
   abgelöste Zusage
-- `test_api_photos.py` — Kommentar „Ein Event MIT Sehenswürdigkeit trägt keinen Ortsnamen"
+- `test_api_photos_*.py` — Kommentar „Ein Event MIT Sehenswürdigkeit trägt keinen Ortsnamen"
 - `frontend/src/utils/timeOfDay.test.ts` (`laesst der Sehenswuerdigkeit den Vorrang …` Z. 119,
   `eventPlaceName > nimmt die erkannte Sehenswürdigkeit zuerst` Z. 229)
 

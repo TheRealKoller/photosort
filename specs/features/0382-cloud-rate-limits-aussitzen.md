@@ -543,7 +543,7 @@ das Modul beim Import einmal aufruft — sonst ist die Registry nur über `impor
 | Unit, Konfiguration | `cloud_vision_requests_per_minute`, `resolved_…()`, Registry und abgeleitetes Intervall | `tests/test_config.py`, `tests/test_cloud_vision_throttle.py` (neu) |
 | Integration, HTTP | `post_vision_request` gegen `httpx.MockTransport` | `tests/test_cloud_vision.py` |
 | Integration, Client | die vier Aufrufstellen, „429→200" und „429 bis Budgetende" | `tests/test_landmark.py`, `tests/test_remote_classification.py` |
-| Integration, Lauf | K9-Nachweis und die Protokoll-Zusammenfassung je Teilschritt | `tests/test_worker_criterion_scoring.py`, `tests/test_worker_remote_category_classification.py` |
+| Integration, Lauf | K9-Nachweis und die Protokoll-Zusammenfassung je Teilschritt | `tests/test_worker_criterion_scoring_*.py`, `tests/test_worker_remote_category_classification.py` |
 | Invariante | Wartebudget gegen `STALL_THRESHOLD` | `tests/test_cloud_vision.py` |
 | E2E/Frontend | **nichts.** Keine Oberfläche, kein Antwortfeld, keine Route. | — |
 

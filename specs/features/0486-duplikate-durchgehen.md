@@ -506,7 +506,7 @@ beiden Feldmengen; die Gleichheit von `PhotoOut` gegen die Fotoliste bleibt rich
 `test_both_write_paths_answer_in_the_same_form_as_the_read_path` bleibt unverändert gültig und wird
 zum Wächter dafür, dass beide Schreibwege die Nachbar-Ids mitliefern.
 
-**`backend/tests/test_demo_state.py`** —
+**`backend/tests/test_demo_state_*.py`** —
 `test_the_duplicate_project_holds_two_reachable_groups` (falsch: behauptet für jeden Repräsentanten
 `duplicate_of is None` **und** `suggested_status is None`; Gruppe 2 bricht die zweite Hälfte
 bewusst). `test_the_duplicate_project_leaves_every_group_undecided` bleibt gültig und wird nicht

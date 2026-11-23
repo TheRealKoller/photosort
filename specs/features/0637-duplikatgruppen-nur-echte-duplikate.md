@@ -195,7 +195,7 @@ Bilder laufen durch die Produktionsfunktionen, nicht durch handgebaute Hashes.
 | Veraltete Entscheidung sichtbar: bestehender Fall `test_a_stale_keep_becomes_ineffective_while_a_stale_discard_keeps_working` bleibt; Entscheidungszeilen überleben den Neulauf | Integration |
 | Frontend: „Aus früherem Lauf“ statt Grund-Kennzeichen; „wirkt nicht mehr“ nur bei `keep` + `false` + `keepPossible === false`; Bedienung unverändert | `vitest` |
 | Probe: reine Zählfunktionen, Bericht ohne Bilddaten, „nicht gemessen“ statt 0, Read-only-Dreiteilung (Import-Graph, Schreibform-Wächter, `main()`-Schnappschuss) | `test_duplicate_probe.py` |
-| Demo: zwei Gruppen der Größen 7 und 3, unverändert | `test_demo_state.py` |
+| Demo: zwei Gruppen der Größen 7 und 3, unverändert | `test_demo_state_*.py` |
 | Lokal und ohne Kosten: autouse-Netzsperre deckt jeden neuen Fall | `conftest.py` |
 
 ## UI/UX

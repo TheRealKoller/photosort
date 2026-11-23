@@ -99,8 +99,8 @@ bei Berührung angepasst, nicht flächig umgeschrieben. `docs/architecture.md` �
 dort ein Testverzeichnis beschrieben ist.
 
 **Aufteilung (Schritt 2)** entlang der Themen der Produktionsmodule; Dateiname = Thema. Beispiele:
-`test_api_photos.py` → `test_api_photos_list.py`, `…_detail.py`, `…_curation.py`, `…_display.py`;
-`test_worker_criterion_scoring.py` → je Kriterium/Phase. Der genaue Schnitt ergibt sich aus den
+`test_api_photos_*.py` → `test_api_photos_list.py`, `…_detail.py`, `…_curation.py`, `…_display.py`;
+`test_worker_criterion_scoring_*.py` → je Kriterium/Phase. Der genaue Schnitt ergibt sich aus den
 `class Test…`-Gruppen und `# ---`-Abschnitten der Dateien; Testklassen wandern vollständig. Alles
 Gemeinsame, das nach dem Schnitt in zwei Teilen gebraucht wird, geht nach `support/`, nie in eine
 Schwesterdatei. Frontend: `designSystem.contract.test.ts` je Regelgruppe; Suchmuster-Literale tragende

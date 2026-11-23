@@ -69,14 +69,14 @@ Entscheidung: ADR 0135; ändert ADR 0123 in Teilen ab (Punkt 2 Zustand 1, Punkt 
 
 ## Teststrategie
 
-- **Unit, rein** (`test_events.py`): `location_excursions` direkt; Einbindung über `_build`/`explain_events` mit `assert_event_invariants`; alle fail-closed-Zweige direkt.
+- **Unit, rein** (`test_events_*.py`): `location_excursions` direkt; Einbindung über `_build`/`explain_events` mit `assert_event_invariants`; alle fail-closed-Zweige direkt.
 - **Unit** (`test_event_probe.py`): beide Aggregate und Formwächter; `_adjustable_constants_of_events` erfasst `LOCATION_CHANGE_CONFIRMING_PHOTOS`.
 - **Integration** (`test_worker_place_names.py`, `test_worker_rebuild_run_grouping.py`): fehlender Auszug, Hash-Abweichung, Neuaufbau mit und ohne abgelegte Zeile, A–X–A durch den Worker.
 - **Manuell:** die zwei Projekt-7-Fälle samt Vorher/Nachher-Messung (kein Korpus im Repository).
 
 **Edge Cases (Pflicht).** Ausreißer als erstes Foto (kein Bezug → kein Ausreißer) bzw. letztes (keine Rückkehr → trennt); X–X' hintereinander gilt als Wechsel, mit Schwelle 3 per monkeypatch beide neutralisiert; A–X–Y–A mit verschiedenen fernen Orten ist kein Ausreißer; A–∅–X–∅–A neutralisiert X; GPS-loses Foto neben X mit von X übernommener Koordinate wird mit neutralisiert und bestätigt nicht; A–X–A–X2–A ergibt zwei Ausreißer, Bezug bleibt A; Rückkehr und Ausreißerabstand knapp inner-/außerhalb von `EVENT_STEP_MAX_METERS` (am Symbol mit `EPSILON_METERS`); Zeitlücke direkt nach dem Ausreißer trennt weiterhin, X ist ortloses Mitglied des ersten Events; Ausreißer mit passendem Fundort bestätigt den Namen nicht; `location_excursions` über bereits neutralisierte Kandidaten liefert ∅.
 
-**Umzukehrende Bestandstests (umstellen, nicht löschen, Rot-Beleg festhalten).** In `test_events.py` die fail-open-Fälle in `TestTheLandmarkNameNeedsAPlausiblePlace` und Namenswahl-Tests, die ohne Auskunft einen Namen erwarten (auf gemessene Kandidaten plus bestätigende Auskunft umstellen); in `test_worker_place_names.py` die Fälle „fehlender Auszug/Hash-Abweichung/leerer Fundort behält Namen" und `test_the_two_extracts_fail_independently`; `test_worker_criterion_scoring.py::test_without_an_embedder_the_run_completes_without_canonical_names`; in `test_event_probe.py` `test_without_a_stored_auskunft_the_name_stays` und `test_the_three_states_of_the_auskunft_do_not_collapse`.
+**Umzukehrende Bestandstests (umstellen, nicht löschen, Rot-Beleg festhalten).** In `test_events_place_names.py` die fail-open-Fälle in `TestTheLandmarkNameNeedsAPlausiblePlace` und Namenswahl-Tests, die ohne Auskunft einen Namen erwarten (auf gemessene Kandidaten plus bestätigende Auskunft umstellen); in `test_worker_place_names.py` die Fälle „fehlender Auszug/Hash-Abweichung/leerer Fundort behält Namen" und `test_the_two_extracts_fail_independently`; `test_worker_criterion_scoring_landmark_names.py::test_without_an_embedder_the_run_completes_without_canonical_names`; in `test_event_probe.py` `test_without_a_stored_auskunft_the_name_stays` und `test_the_three_states_of_the_auskunft_do_not_collapse`.
 
 ## UI/UX
 

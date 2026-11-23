@@ -114,8 +114,8 @@ Sicherheitsrelevant, aber eng begrenzt (`security-engineer`-Konsultation, 2026-0
 
 **Testebenen:**
 - **Unit** (`test_criteria.py`): `is_landmark_candidate` — Grenzfälle an `category_presence_threshold` (`>=`), leeres Dict → `False`.
-- **Integration, In-Memory-SQLite** (`test_api_photos.py`, neue Sektion): `_cloud_vision_status_out` — vollständige Prioritäts-Kombinationsmatrix (siehe Akzeptanzkriterien), Landmark `no_result`/`not_run`-Abgrenzung, Datenanomalie-Regressionstest (Score>0 ohne Detection-Zeile → dennoch `no_result`).
-- **Integration, In-Memory-SQLite** (`test_worker_criterion_scoring.py`/`test_worker_remote_category_classification.py`): `_record_cloud_vision_error`/`_clear_cloud_vision_error` — Upsert bei wiederholtem Fehlschlag, 500/501-Zeichen-Kappungsgrenze, tatsächliches Löschen der Fehler-Zeile bei Erfolg (eigener DB-Zustands-Test, unabhängig von der API-Sichtbarkeit).
+- **Integration, In-Memory-SQLite** (`test_api_photos_*.py`, neue Sektion): `_cloud_vision_status_out` — vollständige Prioritäts-Kombinationsmatrix (siehe Akzeptanzkriterien), Landmark `no_result`/`not_run`-Abgrenzung, Datenanomalie-Regressionstest (Score>0 ohne Detection-Zeile → dennoch `no_result`).
+- **Integration, In-Memory-SQLite** (`test_worker_criterion_scoring_*.py`/`test_worker_remote_category_classification.py`): `_record_cloud_vision_error`/`_clear_cloud_vision_error` — Upsert bei wiederholtem Fehlschlag, 500/501-Zeichen-Kappungsgrenze, tatsächliches Löschen der Fehler-Zeile bei Erfolg (eigener DB-Zustands-Test, unabhängig von der API-Sichtbarkeit).
 - **Migration/Schema** (`test_models.py`): additive Tabelle + Composite-PK per `inspect()`, Cascade-Test bei Projekt-Löschung.
 - **Frontend** (`vitest`/Testing Library): alle 6 Zustände mit Icon+Text, Fehlermeldung inline nur bei `error`, permanente Sichtbarkeit unabhängig vom Rating, gemischter Zustand beider Phasen gleichzeitig.
 

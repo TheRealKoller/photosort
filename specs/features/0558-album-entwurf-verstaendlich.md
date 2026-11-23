@@ -677,7 +677,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - Ein Kandidat mit geteiltem Motiv springt nicht vor.
   - Qualität absteigend, `None` zuletzt, Gleichstand nach kleinerer Id.
   - Permutationsfall gegen die vollständige Id-Folge.
-- **`test_api_photos.py`, neue Klasse `TestTheAlbumDraft`** (ersetzt `TestTheDraft`):
+- **`test_api_photos_album_draft.py`, neue Klasse `TestTheAlbumDraft`** (ersetzt `TestTheDraft`):
   - **Falltabelle** `backend/tests/data/album_draft_membership.json`: 9 Zeilen (Rangzeile keine / nicht vorgeschlagen / vorgeschlagen × eigener Status keiner / `album_worthy` / `rejected`), je Zeile eine Gegenbewertung des anderen Nutzers. Zuerst wird die Vollständigkeit des Kreuzprodukts geprüft, dann je Zeile Lage anlegen und `GET /album-draft` lesen: `out` heißt nicht in `items`, `album` und `struck` sind am eigenen Status in `items` erkennbar.
   - **Invariantenhelfer als Nachsatz jedes Falls**:
     - `events[].position` ist lückenlos 1..m und aufsteigend.
@@ -705,7 +705,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - Atomarität nach dem Muster `TestTheAtomicity` (der zweite `flush` scheitert, dann bleibt nichts zurück).
 - **`test_api_ratings.py`**: `DELETE` antwortet `200` mit `RatingWriteOut`; geprüft werden `status: null`, `favorite` (erhalten bzw. `false`), `photo_id` und `user_id`. Idempotent `200`/`200`.
 - **`test_openapi_beschreibungen.py`**: beide neuen Endpunkte im Register.
-- **`test_demo_state.py`**: je eine Zusicherung über den Lesepfad, dass der Bestand enthält:
+- **`test_demo_state_*.py`**: je eine Zusicherung über den Lesepfad, dass der Bestand enthält:
   - ein gestrichenes vorgeschlagenes Foto
   - ein aufgenommenes nicht vorgeschlagenes Foto
   - ein gestrichenes nicht vorgeschlagenes Foto mit Rangzeile
@@ -780,7 +780,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
 ### Bestehende Tests: ändern oder löschen
 
 **Backend**
-- `test_api_photos.py::TestTheDraft`: alle Fälle auf `GET /album-draft` und `{events, items}` umziehen, ohne `total`. Einzeln:
+- `test_api_photos_*.py::TestTheDraft`: alle Fälle auf `GET /album-draft` und `{events, items}` umziehen, ohne `total`. Einzeln:
   - `test_a_rejected_photo_that_was_never_proposed_stays_out` **umkehren**: Mit Rangzeile steht das Foto als gestrichen darin, ohne Rangzeile bleibt es draußen.
   - `test_a_run_without_a_draft_answers_empty`: Die Events stehen jetzt in der Antwort.
   - `test_without_the_draft_mode_the_default_listing_answers` **löschen**, an seine Stelle tritt der Riegelfall `true`/`false` → `422`.

@@ -298,7 +298,7 @@ Freitextanteil; die Auflage bleibt für `category_key`).
 
 ## Teststrategie
 
-**Unit (`backend/tests/test_events.py`, neu, DB-frei) — der Schwerpunkt.**
+**Unit (`backend/tests/test_events_*.py`, neu, DB-frei) — der Schwerpunkt.**
 
 - Ein Helfer `assert_event_invariants(candidates, events)` prüft chronologische Ordnung,
   Überschneidungsfreiheit, `position` lückenlos ab 1, `started_at <= ended_at` und „jeder Kandidat in
@@ -322,10 +322,10 @@ Freitextanteil; die Auflage bleibt für `category_key`).
 - **`place_*` nur aus gemessenen Werten:** Event mit ausschließlich geerbten Koordinaten → kein
   Ortsbezug, obwohl die geerbten Werte die Grenzen mitbestimmt haben.
 
-**Integration.** `test_worker_criterion_scoring.py`: Event-Zeilen mit `position`/Zeiten/Ortsfeldern,
+**Integration.** `test_worker_criterion_scoring_*.py`: Event-Zeilen mit `position`/Zeiten/Ortsfeldern,
 der bestehende Rot-Anker „Lauf ohne Cloud-Phase mit Detections aus einem früheren Lauf" wandert auf das
 neue Signal, `PhotoScore.cluster_key` wird nachweislich nicht mutiert, Partitionen über
-`(event_id, category_key)`. `test_api_photos.py`: `PhotoOut.event` über alle Fotos eines Events
+`(event_id, category_key)`. `test_api_photos_*.py`: `PhotoOut.event` über alle Fotos eines Events
 feldgleich, über beide Lesepfade und über `top_n_per_category=1` vs. `=10`; Rot-Anker für `location`
 verschärft (einziger Anker ist ein aussortiertes Foto ohne Rangzeile); `event_id`-Validierung
 (`0`/`-1` → 422, Obergrenze); fremdes `event_id` → `items: []` **und** `total: 0`; Abfrageanzahl fest
@@ -333,7 +333,7 @@ und unabhängig von der Fotoanzahl über den `before_cursor_execute`-Mitschnitt.
 die Rangzeilen der Altläufe sind fort, die Lauf-Zeilen stehen, keine Waise, `downgrade()` als
 festgeschriebenes Verhalten, `test_migration_chain.py` bleibt bei einem Head. Dazu
 `test_postgres_ddl_compatibility.py` (Tabelle, FK, `UniqueConstraint`) und `test_project_deletion.py`
-(Event im Vollgraphen, eigene Zeilenzählung, Reihenfolge). `test_demo_state.py`: echte Event-Zeilen in
+(Event im Vollgraphen, eigene Zeilenzählung, Reihenfolge). `test_demo_state_*.py`: echte Event-Zeilen in
 allen Anzeigezuständen. Zu löschen: die `refine_clusters_by_landmark`-Tests in `test_scoring.py`; die
 `assign_clusters`-Tests bleiben **unangetastet** — sie sind der Nachweis, dass Phase A nicht mitgewandert
 ist.

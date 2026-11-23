@@ -475,7 +475,7 @@ aus dem `try` heraus den Erfolgspfad unverändert lässt **und** dass die Berein
 Cache-Dateien nicht anfasst (alle darin geschriebenen Dateien sind jünger als die Schonfrist).
 Verbindlich: **jede Anpassung, die an einem dieser Bestandsfälle nötig würde, ist ein Befund und
 keine Nachpflege** — sie wäre der Beleg, dass die Bereinigung sichtbares Verhalten geändert hat.
-`test_worker_fail_run.py`, `test_demo_state.py`, `test_project_deletion.py` und
+`test_worker_fail_run.py`, `test_demo_state_*.py`, `test_project_deletion.py` und
 `test_api_projects.py` bleiben unberührt; der Projekt-Löschpfad bekommt keine Zeile.
 
 ### Was bewusst nicht getestet wird

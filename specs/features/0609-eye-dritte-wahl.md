@@ -313,7 +313,7 @@ Kein neues Werkzeug, keine neue Fixture-Art; die Ebenen des
 |---|---|---|
 | Unit | `eye_mapping` (SDK-Dict → Motive/Ausschluss/Album/Feinlabels/Tag-Tabelle), Rangfolge-Matrix, reine Vergleichslogik, `Settings`-Felder | `test_eye_mapping.py` (neu), `test_motif_strengths.py`, `test_eye_comparison.py` (neu), `test_config.py` |
 | Integration | Eye-Phase gegen In-Memory-DB mit Fake-Client, Rangfolge/Schnappschuss, Fehlerpfade, Unberührtheit von Album/Cloud, Migration | `test_worker_eye_phase.py` (neu), `test_worker_classification.py`, `test_migration_eye_*.py`, `test_project_deletion.py` + `project_graph.py` |
-| API | `mode`-Pflicht, 403/503-Reihenfolge, `estimate?mode=`, `eye_available`, `eye_result` | `test_api_criterion_scoring.py`, `test_api_classification_estimate.py`, `test_api_projects.py`, `test_api_photos.py` |
+| API | `mode`-Pflicht, 403/503-Reihenfolge, `estimate?mode=`, `eye_available`, `eye_result` | `test_api_criterion_scoring.py`, `test_api_classification_estimate.py`, `test_api_projects.py`, `test_api_photos_*.py` |
 | Sidecar | Pins, Health-Zustand, Bytes-Grenze, Routen, Lizenzabbruch — ohne Modell | `eye/test/*.test.js` (`node --test`) |
 | Frontend | Auswahl, Kostenzeile, Alert, Herkunft, Attribution, Teilschritt, Bilanz | `ClassificationSection.test.tsx`, `ClassificationEstimate.test.tsx`, `ClassificationProgress.test.tsx`, `ClassificationBalance.test.tsx`, `classificationSteps.test.ts`, `MotifStrengthSection.test.tsx`, `PhotoDetailPage.test.tsx`, `useProjects.test.tsx` |
 | E2E | Prüfstack mit `EYE_ENABLED=true` ohne Dienst: sichtbare `503`-Ablehnung, kein Rückfall | `e2e/tests/eye-nicht-verfuegbar.spec.ts` (neu, `DESKTOP_ONLY`) |

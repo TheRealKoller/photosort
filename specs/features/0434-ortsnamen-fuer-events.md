@@ -516,9 +516,9 @@ echten baut, wird laut rot statt still online zu gehen.
 ### Teil 1 — „Messen, bevor gewählt wird"
 
 Neu: `backend/tests/test_places.py`, `backend/tests/test_place_probe.py`,
-`backend/tests/import_closure.py` (der `_import_closure`-Helfer zieht aus `test_demo_state.py` in
+`backend/tests/import_closure.py` (der `_import_closure`-Helfer zieht aus `test_demo_state_*.py` in
 ein geteiltes Nicht-`test_*`-Modul, Muster `project_graph.py`). Geändert: `conftest.py`,
-`test_events.py`.
+`test_events_*.py`.
 
 **Unit — `test_places.py`** (rein, ohne DB):
 
@@ -580,7 +580,7 @@ ein geteiltes Nicht-`test_*`-Modul, Muster `project_graph.py`). Geändert: `conf
 - **Coverage:** `place_probe.py` liegt in `--cov=photosort` und bekommt **keine** `omit`-Zeile, auch
   nicht für die wegwerfbaren Auflöser.
 
-**`test_events.py` (Bestand):** Die Umbenennung auf `places.place_cell` ändert kein Verhalten und
+**`test_events_*.py` (Bestand):** Die Umbenennung auf `places.place_cell` ändert kein Verhalten und
 hat keinen Rot-Zustand — Nachweis nach der Sektion „Nachweis ohne Rot-Grün": kein Testdiff,
 identische Testknoten-Menge mit identischem Ausgang, `Stmts` je Datei unverändert. Dazu ein
 struktureller Wächter, weil „die Rundung steht an einer Stelle" (ADR 0102 Punkt 2) eine Zusage über
@@ -594,8 +594,8 @@ zu `scripts/*.sh` (Bezugs-/Verifikations-Wrapping ohne eigene Testsuite).
 
 Neu: `backend/tests/test_migration_ortsauskunft.py`, `backend/tests/test_worker_place_names.py`.
 Geändert: `test_models.py`, `tests/project_graph.py`, `test_project_deletion.py`,
-`test_postgres_ddl_compatibility.py`, `test_events.py`, `test_worker_rebuild_run_grouping.py`,
-`test_api_photos.py`, `test_demo_state.py`, `frontend/src/utils/timeOfDay.test.ts`,
+`test_postgres_ddl_compatibility.py`, `test_events_*.py`, `test_worker_rebuild_run_grouping.py`,
+`test_api_photos_*.py`, `test_demo_state_*.py`, `frontend/src/utils/timeOfDay.test.ts`,
 `frontend/src/pages/AlbumDraftPage.test.tsx`.
 
 **Migration und Modell.** Muster `test_migration_events.py`: Schema-Nachbau vor der Revision,
@@ -609,7 +609,7 @@ Projekt scheitert am Constraint, **dieselbe Zelle in einem zweiten Projekt geht 
 legt eine `PlaceLookup`-Zeile an — ohne sie prüfen die beiden Vollständigkeitstests in
 `test_project_deletion.py` die neue Kante nicht.
 
-**`assign_place_names` (`test_events.py`, rein und vollständig unit-testbar):**
+**`assign_place_names` (`test_events_*.py`, rein und vollständig unit-testbar):**
 
 - Ein Event, dessen Zellen genau einen Namen liefern, bekommt ihn — auch über **mehrere** Zellen,
   und auch dann, wenn eine der Zellen gar keinen Namen liefert.
