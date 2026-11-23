@@ -55,7 +55,7 @@ def _now() -> float:
 
 
 async def _add_photo(
-    session: AsyncSession, project_id: int, relative_path: str, etag: str
+    session: AsyncSession, project_id: int, relative_path: str, etag: str, **kwargs: Any
 ) -> Photo:
     return await add_photo(
         session,
@@ -64,6 +64,7 @@ async def _add_photo(
         etag=etag,
         content_length=10,
         taken_at=datetime(2023, 8, 15, 10, 0, tzinfo=UTC),
+        **kwargs,
     )
 
 

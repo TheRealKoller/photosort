@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import fields
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -290,6 +291,7 @@ async def _photo(
     minutes: int = 0,
     duplicate_of: int | None = None,
     with_score: bool = True,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -303,6 +305,7 @@ async def _photo(
         exposure=0.5,
         duplicate_of=duplicate_of,
         flush=True,
+        **kwargs,
     )
 
 

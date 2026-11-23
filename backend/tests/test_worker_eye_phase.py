@@ -56,19 +56,19 @@ from tests.support import add_photo, add_scoring_run, make_project, write_displa
 # ---------------------------------------------------------------------------------------------
 
 
-async def _make_project(session: AsyncSession, *, consent: bool = False) -> Project:
+async def _make_project(session: AsyncSession, *, consent: bool = False, **kwargs: Any) -> Project:
     return await make_project(
-        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent
+        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent, **kwargs
     )
 
 
 async def _add_run(
-    session: AsyncSession, project: Project, *, started_at: datetime | None = None
+    session: AsyncSession, project: Project, *, started_at: datetime | None = None, **kwargs: Any
 ) -> ScoringRun:
     """`started_at` ist ausdruecklich zu setzen, sobald ein Test ZWEI Laeufe braucht: unter SQLite
     hat `CURRENT_TIMESTAMP` Sekundenaufloesung, und zwei Laeufe derselben Sekunde liessen "der
     neueste" unbestimmt - der Lauf braeche dann an seiner eigenen Bindung ab."""
-    return await add_scoring_run(session, project, started_at=started_at)
+    return await add_scoring_run(session, project, started_at=started_at, **kwargs)
 
 
 async def _add_photo(

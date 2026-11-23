@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from sqlalchemy import select, update
@@ -84,9 +85,11 @@ async def _user(session: AsyncSession, username: str) -> User:
 
 
 async def _project(
-    session: AsyncSession, name: str = "Costa Rica", opencloud_path: str = "/a"
+    session: AsyncSession, name: str = "Costa Rica", opencloud_path: str = "/a", **kwargs: Any
 ) -> Project:
-    return await make_project(session, name, drive_id="drive-1", path=opencloud_path, flush=True)
+    return await make_project(
+        session, name, drive_id="drive-1", path=opencloud_path, flush=True, **kwargs
+    )
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:

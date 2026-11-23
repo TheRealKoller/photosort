@@ -153,6 +153,7 @@ async def _add_photo(
     *,
     content_length: int = 1_000,
     taken_at: datetime | None = None,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -161,6 +162,7 @@ async def _add_photo(
         etag=f"etag-{project.id}-{path}",
         content_length=content_length,
         taken_at=taken_at or datetime(2023, 6, 1, 12, 0),
+        **kwargs,
     )
 
 

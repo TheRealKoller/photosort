@@ -4,6 +4,7 @@ import asyncio
 import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PIL import Image, ImageDraw, ImageFilter
@@ -40,6 +41,7 @@ async def _add_photo(
     taken_at: datetime,
     last_modified: datetime | None = None,
     pixel_count: int | None = None,
+    **kwargs: Any,
 ) -> Photo:
     # Der Versatz haelt `taken_at_original != last_modified`: die Zeit gilt als aus dem Bild
     # gelesen. Ein Negativfall setzt `last_modified=taken_at` - dann ist sie abgeleitet.
@@ -51,6 +53,7 @@ async def _add_photo(
         taken_at=taken_at,
         last_modified=taken_at + timedelta(hours=1) if last_modified is None else last_modified,
         pixel_count=pixel_count,
+        **kwargs,
     )
 
 

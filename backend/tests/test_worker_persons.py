@@ -169,8 +169,10 @@ async def _user(session: AsyncSession) -> User:
     return await make_user(session, "daniel", password_hash="hashed-value")
 
 
-async def _project(session: AsyncSession, name: str, *, cloud_consent: bool = False) -> Project:
-    return await make_project(session, name, cloud_vision_consent=cloud_consent)
+async def _project(
+    session: AsyncSession, name: str, *, cloud_consent: bool = False, **kwargs: Any
+) -> Project:
+    return await make_project(session, name, cloud_vision_consent=cloud_consent, **kwargs)
 
 
 async def _scoring_run(session: AsyncSession, project: Project) -> ScoringRun:

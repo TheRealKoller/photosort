@@ -57,9 +57,9 @@ async def _add_run(session: AsyncSession, model: type[Any], **fields: Any) -> An
 
 
 async def _add_photo(
-    session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime
+    session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime, **kwargs: Any
 ) -> Photo:
-    return await add_photo(session, project, path, etag=etag, taken_at=taken_at)
+    return await add_photo(session, project, path, etag=etag, taken_at=taken_at, **kwargs)
 
 
 def _url(project_id: int) -> str:

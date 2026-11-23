@@ -16,6 +16,7 @@ import ast
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -193,9 +194,13 @@ async def _photo_score(
 
 
 async def _successful_run(
-    session: AsyncSession, project_id: int, *, status: ScanStatus = ScanStatus.SUCCESS
+    session: AsyncSession,
+    project_id: int,
+    *,
+    status: ScanStatus = ScanStatus.SUCCESS,
+    **kwargs: Any,
 ) -> CriterionScoringRun:
-    return await add_successful_run(session, project_id, status=status)
+    return await add_successful_run(session, project_id, status=status, **kwargs)
 
 
 # Die gemessene Lage, in beiden Aufbauten dieselbe: fuenf Fotos, drei Kandidaten, davon zwei

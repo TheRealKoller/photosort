@@ -59,9 +59,9 @@ from tests.support import make_user as _make_user
 _ALL_NULL_STRENGTHS = {motif_key: 0.0 for motif_key in MOTIF_REGISTRY}
 
 
-async def _make_project(session: AsyncSession, *, consent: bool = True) -> Project:
+async def _make_project(session: AsyncSession, *, consent: bool = True, **kwargs: Any) -> Project:
     return await make_project(
-        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent
+        session, drive_id="drive", path="Costa Rica", cloud_vision_consent=consent, **kwargs
     )
 
 

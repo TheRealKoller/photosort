@@ -20,6 +20,7 @@ import ast
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -90,6 +91,7 @@ async def _photo(
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -105,6 +107,7 @@ async def _photo(
         duplicate_of=duplicate_of,
         decision=decision,
         flush=True,
+        **kwargs,
     )
 
 

@@ -16,6 +16,7 @@ Eintrag noch als Anker erscheinen.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -52,6 +53,7 @@ async def _photo(
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -64,6 +66,7 @@ async def _photo(
         duplicate_of=duplicate_of,
         decision=decision,
         flush=True,
+        **kwargs,
     )
 
 

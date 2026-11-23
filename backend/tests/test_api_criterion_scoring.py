@@ -34,9 +34,9 @@ from tests.support import (
 
 
 async def _create_project(
-    client: httpx.AsyncClient, name: str = "Costa Rica", path: str = "A"
+    client: httpx.AsyncClient, name: str = "Costa Rica", path: str = "A", **kwargs: Any
 ) -> int:
-    return await create_project_via_api(client, name, path=path)
+    return await create_project_via_api(client, name, path=path, **kwargs)
 
 
 async def _add_successful_scoring_run(
@@ -45,9 +45,10 @@ async def _add_successful_scoring_run(
     *,
     suggestions_found: int = 1,
     started_at: datetime | None = None,
+    **kwargs: Any,
 ) -> ScoringRun:
     return await add_scoring_run(
-        session, project_id, suggestions_found=suggestions_found, started_at=started_at
+        session, project_id, suggestions_found=suggestions_found, started_at=started_at, **kwargs
     )
 
 
@@ -62,6 +63,7 @@ async def _add_photo(
     open_suggestion: bool = False,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> int:
     """Ein Foto mit Bewertungszeile, wahlweise mit offenem Vorschlag und/oder Entscheidungszeile.
 
@@ -78,6 +80,7 @@ async def _add_photo(
         duplicate_of=duplicate_of,
         decision=decision,
         flush=True,
+        **kwargs,
     )
     return photo.id
 

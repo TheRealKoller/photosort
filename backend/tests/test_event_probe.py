@@ -14,6 +14,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -155,6 +156,7 @@ async def _photo(
     *,
     minutes: float,
     gps: tuple[float, float] | None = None,
+    **kwargs: Any,
 ) -> int:
     photo = await add_photo(
         session,
@@ -166,6 +168,7 @@ async def _photo(
         last_modified=NOW,
         gps=gps,
         flush=True,
+        **kwargs,
     )
     return photo.id
 

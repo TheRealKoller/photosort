@@ -55,9 +55,9 @@ _MOMENT = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
 
 
 async def _make_project(
-    session: AsyncSession, *, consent: bool = False, name: str = "Costa Rica"
+    session: AsyncSession, *, consent: bool = False, name: str = "Costa Rica", **kwargs: Any
 ) -> Project:
-    return await make_project(session, name, cloud_vision_consent=consent)
+    return await make_project(session, name, cloud_vision_consent=consent, **kwargs)
 
 
 async def _add_photo(
@@ -68,6 +68,7 @@ async def _add_photo(
     suggested_status: RatingStatus | None = None,
     decision: DuplicateDecision | None = None,
     with_score: bool = True,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -78,6 +79,7 @@ async def _add_photo(
         with_score=with_score,
         suggested_status=suggested_status,
         decision=decision,
+        **kwargs,
     )
 
 

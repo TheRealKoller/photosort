@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import pytest
@@ -22,9 +23,9 @@ from tests.support import opencloud_entry
 WEBDAV_URL = "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
 
 
-def _entry(name: str, is_collection: bool = False) -> DavEntry:
+def _entry(name: str, is_collection: bool = False, **kwargs: Any) -> DavEntry:
     return opencloud_entry(
-        name, is_collection=is_collection, href=f"/dav/spaces/x/CostaRica/{name}"
+        name, is_collection=is_collection, href=f"/dav/spaces/x/CostaRica/{name}", **kwargs
     )
 
 

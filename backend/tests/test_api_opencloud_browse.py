@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from typing import Any
 
 import httpx
 
@@ -35,8 +36,12 @@ class FakeClient:
         return self._entries
 
 
-def _entry(name: str, is_collection: bool, last_modified: datetime | None = None) -> DavEntry:
-    return opencloud_entry(name, is_collection=is_collection, etag="e", last_modified=last_modified)
+def _entry(
+    name: str, is_collection: bool, last_modified: datetime | None = None, **kwargs: Any
+) -> DavEntry:
+    return opencloud_entry(
+        name, is_collection=is_collection, etag="e", last_modified=last_modified, **kwargs
+    )
 
 
 async def test_browse_returns_only_folders(authenticated_api_client: httpx.AsyncClient) -> None:

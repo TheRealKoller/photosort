@@ -9,6 +9,7 @@ waehrend beide fuer sich gruen blieben.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,7 @@ async def _photo(
     *,
     minutes: int,
     gps: tuple[float, float] | None = None,
+    **kwargs: Any,
 ) -> int:
     photo = await add_photo(
         session,
@@ -48,6 +50,7 @@ async def _photo(
         last_modified=NOW,
         gps=gps,
         flush=True,
+        **kwargs,
     )
     return photo.id
 

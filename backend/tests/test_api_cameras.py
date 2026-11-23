@@ -67,6 +67,7 @@ async def _add_photo(
     taken_at_original: datetime,
     *,
     camera: ProjectCamera | None = None,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -75,6 +76,7 @@ async def _add_photo(
         taken_at=taken_at_original,
         last_modified=taken_at_original,
         camera=camera,
+        **kwargs,
     )
 
 

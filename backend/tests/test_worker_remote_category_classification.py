@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import httpx
 import pytest
@@ -60,13 +60,16 @@ from tests.support import make_project as _make_project
 # Vorfilter (kompletter Ausschuss-Ueberlebender-Bestand statt eines Vorfilter-Ergebnisses).
 
 
-async def _add_photo(session: AsyncSession, project: Project, path: str, etag: str) -> Photo:
+async def _add_photo(
+    session: AsyncSession, project: Project, path: str, etag: str, **kwargs: Any
+) -> Photo:
     return await add_photo(
         session,
         project,
         path,
         etag=etag,
         taken_at=datetime(2023, 1, 1, tzinfo=UTC),
+        **kwargs,
     )
 
 

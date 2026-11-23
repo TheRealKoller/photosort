@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import select, update
@@ -49,16 +50,16 @@ _NONE = 0.0
 
 
 async def _project(
-    session: AsyncSession, name: str = "Reise", *, target: int | None = None
+    session: AsyncSession, name: str = "Reise", *, target: int | None = None, **kwargs: Any
 ) -> Project:
     """`target` steht in jedem Fall ausgeschrieben, der eine bestimmte Platzzahl braucht: die
     Vorbelegung ist fest 150 (ADR 0131), und ein Testaufbau mit drei Fotos bekaeme sonst
     jedes Foto."""
-    return await make_project(session, name, selection_target=target, flush=True)
+    return await make_project(session, name, selection_target=target, flush=True, **kwargs)
 
 
 async def _successful_run(
-    session: AsyncSession, project: Project, *, started_at: datetime = _BASE
+    session: AsyncSession, project: Project, *, started_at: datetime = _BASE, **kwargs: Any
 ) -> CriterionScoringRun:
     finished_at = started_at + timedelta(minutes=5)
     return await add_successful_run(
@@ -67,6 +68,7 @@ async def _successful_run(
         started_at=started_at,
         finished_at=finished_at,
         last_progress_at=finished_at,
+        **kwargs,
     )
 
 

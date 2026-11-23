@@ -12,6 +12,7 @@ welcher davon vorliegt - sonst waere die Antwort ein Auskunftsmittel ueber fremd
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -44,6 +45,7 @@ async def _photo(
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
     decision: DuplicateDecision | None = None,
+    **kwargs: Any,
 ) -> Photo:
     moment = taken_at if taken_at is not None else _BASE + timedelta(seconds=seconds)
     return await add_photo(
@@ -56,6 +58,7 @@ async def _photo(
         suggested_status=suggested_status,
         duplicate_of=duplicate_of,
         decision=decision,
+        **kwargs,
     )
 
 

@@ -7,7 +7,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import numpy as np
 import pytest
@@ -60,9 +60,9 @@ from tests.support import add_scoring_run, make_project
 
 
 async def _make_project(
-    session: AsyncSession, *, name: str = "Costa Rica", cloud_consent: bool = False
+    session: AsyncSession, *, name: str = "Costa Rica", cloud_consent: bool = False, **kwargs: Any
 ) -> Project:
-    return await make_project(session, name, cloud_vision_consent=cloud_consent)
+    return await make_project(session, name, cloud_vision_consent=cloud_consent, **kwargs)
 
 
 async def _add_successful_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:

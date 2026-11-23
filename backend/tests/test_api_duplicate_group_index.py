@@ -12,6 +12,7 @@ Durchgang, dessen Zaehler eine andere Gesamtzahl nennt.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -33,6 +34,7 @@ async def _photo(
     seconds: int = 0,
     suggested_status: RatingStatus | None = None,
     duplicate_of: int | None = None,
+    **kwargs: Any,
 ) -> Photo:
     return await add_photo(
         session,
@@ -43,6 +45,7 @@ async def _photo(
         with_score=True,
         suggested_status=suggested_status,
         duplicate_of=duplicate_of,
+        **kwargs,
     )
 
 
