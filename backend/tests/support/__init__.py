@@ -16,6 +16,7 @@ from tests.support.fixtures import (
     make_project_id,
     make_user,
     opencloud_entry,
+    scan_entry,
     write_display_variant,
 )
 from tests.support.migration import apply_migration, load_migration_module
@@ -33,5 +34,6 @@ __all__ = [
     "make_project_id",
     "make_user",
     "opencloud_entry",
+    "scan_entry",
     "write_display_variant",
 ]

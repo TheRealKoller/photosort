@@ -19,15 +19,15 @@ from photosort.models import Photo, ScanRun, ScanStatus
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.worker import run_project_scan
 from photosort.worker import scan as worker_scan
+from tests.support import FakeOpenCloudClient, scan_entry
 from tests.support import make_project as _project
-from tests.test_worker_scan_project import FakeOpenCloudClient, _entry
 
 MODIFIED = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
 
 
 def _entries(count: int) -> list[tuple[str, DavEntry]]:
     return [
-        (f"CostaRica/img{i:03}.png", _entry(f"img{i:03}.png", f"etag-{i}", MODIFIED))
+        (f"CostaRica/img{i:03}.png", scan_entry(f"img{i:03}.png", f"etag-{i}", MODIFIED))
         for i in range(count)
     ]
 

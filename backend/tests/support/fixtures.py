@@ -259,6 +259,19 @@ def opencloud_entry(
     )
 
 
+def scan_entry(
+    name: str, etag: str, last_modified: datetime, content_length: int = 100
+) -> DavEntry:
+    """Eine Datei im Scan-Projekt `CostaRica` des Space `drive-1` (Scan-Tests der Worker)."""
+    return opencloud_entry(
+        name,
+        etag=etag,
+        href=f"/dav/spaces/drive-1/CostaRica/{name}",
+        last_modified=last_modified,
+        content_length=content_length,
+    )
+
+
 async def create_project_via_api(
     client: httpx.AsyncClient, name: str = "Costa Rica", *, path: str | None = None
 ) -> int:
