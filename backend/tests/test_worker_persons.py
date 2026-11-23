@@ -71,7 +71,7 @@ from tests.face_fakes import (
 )
 from tests.import_closure import package_files
 from tests.phase_binding import assert_phase_binding
-from tests.support import add_photo, make_project
+from tests.support import add_photo, add_scoring_run, make_project, make_user
 
 ANNA = "Annabell-Merkname"
 BERTA = "Bertrude-Merkname"
@@ -166,10 +166,7 @@ async def _fresh_session(url: str = "sqlite+aiosqlite:///:memory:") -> AsyncIter
 
 
 async def _user(session: AsyncSession) -> User:
-    user = User(username="daniel", password_hash="hashed-value")
-    session.add(user)
-    await session.commit()
-    return user
+    return await make_user(session, "daniel", password_hash="hashed-value")
 
 
 async def _project(session: AsyncSession, name: str, *, cloud_consent: bool = False) -> Project:
@@ -177,11 +174,7 @@ async def _project(session: AsyncSession, name: str, *, cloud_consent: bool = Fa
 
 
 async def _scoring_run(session: AsyncSession, project: Project) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
+    return await add_scoring_run(session, project)
 
 
 async def _photo(

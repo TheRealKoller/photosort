@@ -44,10 +44,9 @@ from photosort.models import (
     PhotoScore,
     RatingStatus,
     ScanStatus,
-    ScoringRun,
 )
 from tests.import_closure import import_closure, module_file
-from tests.support import add_photo, make_project_id
+from tests.support import add_photo, add_successful_run, make_project_id
 from tests.write_guard import write_statements
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -196,13 +195,7 @@ async def _photo_score(
 async def _successful_run(
     session: AsyncSession, project_id: int, *, status: ScanStatus = ScanStatus.SUCCESS
 ) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(project_id=project_id, scoring_run_id=scoring_run.id, status=status)
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_successful_run(session, project_id, status=status)
 
 
 # Die gemessene Lage, in beiden Aufbauten dieselbe: fuenf Fotos, drei Kandidaten, davon zwei

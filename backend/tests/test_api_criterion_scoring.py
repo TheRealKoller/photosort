@@ -28,6 +28,7 @@ from photosort.models import (
 from tests.support import (
     FakeEnqueuer,
     add_photo,
+    add_scoring_run,
     create_project_via_api,
 )
 
@@ -45,15 +46,9 @@ async def _add_successful_scoring_run(
     suggestions_found: int = 1,
     started_at: datetime | None = None,
 ) -> ScoringRun:
-    run = ScoringRun(
-        project_id=project_id, status=ScanStatus.SUCCESS, suggestions_found=suggestions_found
+    return await add_scoring_run(
+        session, project_id, suggestions_found=suggestions_found, started_at=started_at
     )
-    if started_at is not None:
-        run.started_at = started_at
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
 
 
 _PHOTO_MOMENT = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)

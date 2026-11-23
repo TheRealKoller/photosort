@@ -43,7 +43,7 @@ from photosort.worker import _runs as worker_runs
 from photosort.worker import reap_stalled_runs, run_classification
 from photosort.worker._criterion import ranking as worker_ranking
 from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
-from tests.support import make_project
+from tests.support import add_scoring_run, make_project
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
 # klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md: EIN verketteter Lauf statt zweier
@@ -66,11 +66,7 @@ async def _make_project(
 
 
 async def _add_successful_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
+    return await add_scoring_run(session, project)
 
 
 async def _add_candidate_photo(

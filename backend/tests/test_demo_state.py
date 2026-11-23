@@ -125,6 +125,7 @@ from photosort.thumbnails import (
 )
 from tests.import_closure import import_closure, module_file
 from tests.phase_binding import assert_phase_binding
+from tests.support import make_user
 from tests.time_offset_invariant import assert_time_offset_invariant
 
 
@@ -414,10 +415,7 @@ class TestDemoPhotoIdentity:
 
 
 async def _make_user(session: AsyncSession, username: str) -> User:
-    user = User(username=username, password_hash="argon2-platzhalter")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, username, password_hash="argon2-platzhalter", flush=True)
 
 
 async def _project(session: AsyncSession, name: str) -> Project:

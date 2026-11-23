@@ -35,15 +35,13 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
-    ScanStatus,
-    ScoringRun,
     User,
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.persons import delete_person
 from photosort.selection import DEFAULT_TARGET, MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
 from photosort.worker import rebuild_run_grouping, rebuild_run_selection
-from tests.support import add_photo, make_project
+from tests.support import add_photo, add_successful_run, make_project
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 _FULL = 1.0
@@ -62,22 +60,14 @@ async def _project(
 async def _successful_run(
     session: AsyncSession, project: Project, *, started_at: datetime = _BASE
 ) -> CriterionScoringRun:
-    scoring_run = ScoringRun(
-        project_id=project.id, status=ScanStatus.SUCCESS, started_at=started_at
-    )
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project.id,
-        scoring_run_id=scoring_run.id,
-        status=ScanStatus.SUCCESS,
+    finished_at = started_at + timedelta(minutes=5)
+    return await add_successful_run(
+        session,
+        project,
         started_at=started_at,
-        finished_at=started_at + timedelta(minutes=5),
-        last_progress_at=started_at + timedelta(minutes=5),
+        finished_at=finished_at,
+        last_progress_at=finished_at,
     )
-    session.add(run)
-    await session.flush()
-    return run
 
 
 async def _event_row(session: AsyncSession, run: CriterionScoringRun, position: int) -> Event:

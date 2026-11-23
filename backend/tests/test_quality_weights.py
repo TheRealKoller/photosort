@@ -24,7 +24,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import QualityWeightEntry, QualityWeightSet, QualityWeightSetOrigin, User
+from photosort.models import QualityWeightEntry, QualityWeightSet, QualityWeightSetOrigin
 from photosort.quality import QUALITY_CRITERION_WEIGHTS
 from photosort.quality_weights import (
     effective_weights,
@@ -33,15 +33,13 @@ from photosort.quality_weights import (
     previous_weights,
     store_weights,
 )
+from tests.support import make_user
 
 _BASELINE = {"sharpness": 1.0, "exposure": 1.0, "aesthetics": 1.0}
 
 
 async def _user(session: AsyncSession, username: str = "daniel") -> int:
-    user = User(username=username, password_hash="x")
-    session.add(user)
-    await session.flush()
-    return user.id
+    return (await make_user(session, username, flush=True)).id
 
 
 class TestTheOverlayRunsInBothDirections:

@@ -23,8 +23,6 @@ from photosort.models import (
     Photo,
     PhotoRanking,
     Project,
-    ScanStatus,
-    ScoringRun,
     User,
 )
 from photosort.opencloud.client import Drive, OpenCloudError, join_remote_path
@@ -34,7 +32,7 @@ from photosort.worker import (
     sanitize_project_name,
 )
 from tests.event_rows import event_id_of_run
-from tests.support import add_photo, make_project
+from tests.support import add_photo, add_successful_run, make_project, make_user
 
 DRIVE = Drive(
     id="drive-1",
@@ -82,10 +80,7 @@ class RecordingExportClient:
 
 
 async def _user(session: AsyncSession, username: str) -> User:
-    user = User(username=username, password_hash="irrelevant")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, username, password_hash="irrelevant", flush=True)
 
 
 async def _project(
@@ -95,15 +90,7 @@ async def _project(
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
-    )
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_successful_run(session, project)
 
 
 async def _photo(session: AsyncSession, project: Project, path: str) -> Photo:

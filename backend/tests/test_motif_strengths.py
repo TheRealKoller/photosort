@@ -40,7 +40,7 @@ from photosort.motif_strengths import (
     upsert_assessment,
 )
 from photosort.motifs import MOTIF_REGISTRY
-from tests.support import add_photo, make_project
+from tests.support import add_photo, make_project, make_user
 
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"
 
@@ -72,10 +72,7 @@ async def _photo(session: AsyncSession, *, name: str = "Costa Rica") -> Photo:
 
 
 async def _user(session: AsyncSession, username: str = "daniel") -> User:
-    user = User(username=username, password_hash="hashed-value")
-    session.add(user)
-    await session.flush()
-    return user
+    return await make_user(session, username, password_hash="hashed-value", flush=True)
 
 
 class TestUpsertAssessment:

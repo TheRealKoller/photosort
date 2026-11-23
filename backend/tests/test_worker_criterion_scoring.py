@@ -86,7 +86,7 @@ from photosort.worker._criterion import ranking as worker_ranking
 from photosort.worker._criterion.landmark import select_landmark_candidates
 from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
-from tests.support import add_photo
+from tests.support import add_photo, add_scoring_run, write_display_variant
 from tests.support import make_project as _make_project
 
 
@@ -141,19 +141,7 @@ async def _add_score(
 async def _add_successful_scoring_run(
     session: AsyncSession, project: Project, *, started_at: datetime | None = None
 ) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    if started_at is not None:
-        run.started_at = started_at
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-    return run
-
-
-def _write_display_variant(cache_dir: Path, photo: Photo, image: Image.Image) -> None:
-    path = display_path(cache_dir, photo.id, photo.etag)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(path, format="JPEG")
+    return await add_scoring_run(session, project, started_at=started_at)
 
 
 def _flat_image(color: tuple[int, int, int] = (100, 100, 100), size: int = 160) -> Image.Image:
@@ -362,7 +350,7 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.1)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -404,7 +392,7 @@ async def test_symmetrie_criterion_is_written_unconditionally_like_content_lands
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -443,7 +431,7 @@ async def test_horizont_criterion_is_written_unconditionally_like_content_landsc
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -478,7 +466,7 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -534,7 +522,7 @@ async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_
         db_session, project, "rejected.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED)
-    _write_display_variant(tmp_path, rejected, _flat_image())
+    write_display_variant(tmp_path, rejected, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -575,7 +563,7 @@ async def test_a_keep_decision_pulls_a_duplicate_loser_back_into_the_run(
         db_session, project, "gewinner.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, winner)
-    _write_display_variant(tmp_path, winner, _flat_image())
+    write_display_variant(tmp_path, winner, _flat_image())
     behalten = await _add_photo(
         db_session, project, "behalten.jpg", "etag-2", datetime(2023, 1, 1, 0, 0, 1, tzinfo=UTC)
     )
@@ -587,7 +575,7 @@ async def test_a_keep_decision_pulls_a_duplicate_loser_back_into_the_run(
         duplicate_of=winner.id,
         duplicate_decision=DuplicateDecision.KEEP,
     )
-    _write_display_variant(tmp_path, behalten, _flat_image())
+    write_display_variant(tmp_path, behalten, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -618,7 +606,7 @@ async def test_a_discard_decision_takes_a_survivor_out_of_the_run(
         db_session, project, "raus.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, verworfen, duplicate_decision=DuplicateDecision.DISCARD)
-    _write_display_variant(tmp_path, verworfen, _flat_image())
+    write_display_variant(tmp_path, verworfen, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -742,7 +730,7 @@ async def test_tier_criterion_is_written_when_an_animal_is_detected(
         db_session, project, "dog.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -785,7 +773,7 @@ async def test_a_failing_model_builder_does_not_fail_the_run_or_unrelated_criter
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -840,7 +828,7 @@ async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -885,7 +873,7 @@ async def test_gebaeude_criterion_is_written_when_an_architecture_label_is_detec
         db_session, project, "church.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -925,7 +913,7 @@ async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_o
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -972,7 +960,7 @@ async def test_aesthetics_criterion_is_written_from_the_model_prediction(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -1012,7 +1000,7 @@ async def test_aesthetics_criterion_best_effort_failure_does_not_fail_the_run_or
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1053,7 +1041,7 @@ async def test_freiraum_criterion_is_written_when_a_face_is_detected(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     # Gesicht weit links im Bild, nach rechts (steigendes x) gedreht -> viel Freiraum in
     # Blickrichtung (looking_space = 1 - 0.15 = 0.85, opposite_space = 0.05).
@@ -1098,7 +1086,7 @@ async def test_freiraum_criterion_best_effort_failure_does_not_fail_the_run_or_o
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1156,7 +1144,7 @@ async def test_freiraum_criterion_is_unaffected_by_a_failing_face_detector(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     stub = FaceLandmarkerStub(landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0))
 
@@ -1203,7 +1191,7 @@ async def test_freiraum_builder_failure_does_not_fail_the_run_or_unrelated_crite
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1248,7 +1236,7 @@ async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1285,7 +1273,7 @@ async def test_goldener_schnitt_is_left_out_when_both_detections_succeed_without
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -1330,7 +1318,7 @@ async def test_detect_person_and_detect_objects_are_each_called_at_most_once_per
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     face_detector = CountingDetector()
     animal_detector = CountingDetector()
@@ -1362,7 +1350,7 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
             db_session, project, f"{i}.jpg", f"etag-{i}", datetime(2023, 1, 1, 0, i, tzinfo=UTC)
         )
         await _add_score(db_session, photo, sharpness=float(50 + i * 20), exposure=0.0)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         # Seit Spec 0428 traegt nur ein Foto MIT Modellbewertung einen Qualitaetswert - ohne sie
         # stuende in beiden Rangspalten `NULL`, und dieser Fall pruefte die Partitionierung nicht
         # mehr.
@@ -1411,14 +1399,14 @@ async def test_partitions_are_isolated_by_event(db_session: AsyncSession, tmp_pa
         db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, first, cluster_key="cluster-a")
-    _write_display_variant(tmp_path, first, _flat_image())
+    write_display_variant(tmp_path, first, _flat_image())
     await _add_album_suitability(db_session, first)
 
     second = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
     )
     await _add_score(db_session, second, cluster_key="cluster-b")
-    _write_display_variant(tmp_path, second, _flat_image())
+    write_display_variant(tmp_path, second, _flat_image())
     await _add_album_suitability(db_session, second)
 
     run = await run_criterion_scoring(
@@ -1461,7 +1449,7 @@ async def test_progress_is_committed_periodically(
             db_session, project, f"{i}.jpg", f"etag-{i}", datetime(2023, 1, 1, 0, i, tzinfo=UTC)
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1495,7 +1483,7 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1530,7 +1518,7 @@ async def test_run_marked_failed_on_cancelled_error(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     try:
         await run_criterion_scoring(
@@ -1570,7 +1558,7 @@ async def test_rescoring_does_not_overwrite_ratings(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     first_run = await run_criterion_scoring(
         db_session,
@@ -1610,7 +1598,7 @@ async def test_end_to_end_with_run_project_scoring(
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
     assert scoring_run.gate_confirmed_at is not None  # keine Duplikate/Unschaerfe -> Auto-Gate
@@ -1702,7 +1690,7 @@ async def _add_photos_with_optional_animal_marker(
         )
         await _add_score(session, photo, sharpness=100.0, exposure=0.0)
         image = _animal_marked_image() if i < marked else _flat_image()
-        _write_display_variant(tmp_path, photo, image)
+        write_display_variant(tmp_path, photo, image)
         photos.append(photo)
     return photos
 
@@ -1858,7 +1846,7 @@ async def test_consent_disabled_by_default_never_calls_landmark_client_builder(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1897,7 +1885,7 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     client = RecordingLandmarkClient(
         detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
@@ -1969,7 +1957,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
 
@@ -2007,7 +1995,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     first_client = RecordingLandmarkClient(
         detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
@@ -2073,7 +2061,7 @@ async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     client = RecordingLandmarkClient(detection=LandmarkDetection(name=None, confidence=0.0))
 
@@ -2117,7 +2105,7 @@ async def test_vorfilterung_sends_photo_that_only_meets_the_gebaeude_threshold(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+    write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
 
     client = RecordingLandmarkClient()
 
@@ -2153,7 +2141,7 @@ async def test_vorfilterung_does_not_send_photo_below_both_thresholds_empty_cand
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+    write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
 
     client = RecordingLandmarkClient()
 
@@ -2188,7 +2176,7 @@ async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo, sharpness=50.0)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     db_session.add(
         PhotoCriterionScore(
@@ -2245,7 +2233,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     failing_client = RecordingLandmarkClient(raise_error=True)
 
@@ -2331,7 +2319,7 @@ async def test_failed_landmark_call_persists_a_cloud_vision_error_row(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     failing_client = RecordingLandmarkClient(raise_error=True)
 
@@ -2370,7 +2358,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -2429,7 +2417,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
         db_session,
@@ -2496,7 +2484,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     class _RaisingClient:
         def __init__(self, message: str) -> None:
@@ -2554,7 +2542,7 @@ async def test_landmark_error_message_is_capped_at_500_characters(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     overlong_message = "x" * 600
 
@@ -2600,7 +2588,7 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
             db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     client = ConcurrencyTrackingLandmarkClient()
 
@@ -2641,17 +2629,17 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
         db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo_a)
-    _write_display_variant(tmp_path, photo_a, _flat_image())
+    write_display_variant(tmp_path, photo_a, _flat_image())
     photo_b = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo_b)
-    _write_display_variant(tmp_path, photo_b, _flat_image())
+    write_display_variant(tmp_path, photo_b, _flat_image())
     photo_c = await _add_photo(
         db_session, project, "c.jpg", "etag-c", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo_c)
-    _write_display_variant(tmp_path, photo_c, _flat_image())
+    write_display_variant(tmp_path, photo_c, _flat_image())
 
     client = PerPhotoLandmarkClient(
         [
@@ -2703,7 +2691,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     # Spec 0056/ADR 0034: ein CancelledError durchlaeuft die separate, dem continue-Loop
     # vorgelagerte Propagations-Schleife und erreicht die neuen logger.warning(...)-Aufrufe
@@ -2816,7 +2804,7 @@ async def test_classify_scene_is_called_exactly_once_per_photo_for_both_criteria
         db_session, project, "alps.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
     classifier = CountingSceneClassifier([("valley", 0.7), ("church", 0.9)])
 
     await run_criterion_scoring(
@@ -2861,7 +2849,7 @@ async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
         db_session, project, "church.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -2897,7 +2885,7 @@ async def test_a_failing_gebaeude_score_leaves_landschaft_untouched(
         db_session, project, "valley.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -2932,7 +2920,7 @@ async def test_a_failing_scene_classification_leaves_both_criteria_unwritten(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -2971,7 +2959,7 @@ async def test_a_flat_photo_without_a_landscape_label_scores_no_landschaft(
         db_session, project, "wall.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -3013,7 +3001,7 @@ async def test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_any
         db_session, project, "wall.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
     client = RecordingLandmarkClient()
 
     run = await run_criterion_scoring(
@@ -3046,7 +3034,7 @@ async def test_a_recognised_landscape_photo_is_still_sent_to_the_landmark_client
         db_session, project, "valley.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
     client = RecordingLandmarkClient()
 
     run = await run_criterion_scoring(
@@ -3090,7 +3078,7 @@ async def _landmark_cost_setup(
             datetime(2023, 1, 1, tzinfo=UTC),
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         photos.append(photo)
     return project, scoring_run, photos
 
@@ -3987,7 +3975,7 @@ class TestTheLandmarkPhaseSitsOutARateLimit:
             db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         client = AnthropicLandmarkClient(
             api_key="sk-test-not-a-real-secret",
@@ -4097,7 +4085,7 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
             db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         client = AnthropicLandmarkClient(
             api_key="sk-test-not-a-real-secret",
@@ -4140,7 +4128,7 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
             db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         client = RecordingLandmarkClient(
             detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
         )
@@ -4432,7 +4420,7 @@ async def test_the_landmark_names_of_a_run_without_any_cloud_phase_reach_their_e
     )
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, eiffel, "Eiffelturm")
     await _add_landmark_detection(db_session, trocadero, "Trocadero")
 
@@ -4463,7 +4451,7 @@ async def test_the_event_building_never_mutates_photo_score_cluster_key(
     trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, eiffel, "Eiffelturm")
     await _add_landmark_detection(db_session, trocadero, "Trocadero")
 
@@ -4487,7 +4475,7 @@ async def test_without_any_landmark_row_all_photos_share_one_event(
         db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     )
     await _add_score(db_session, photo, cluster_key="cluster-0")
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4515,7 +4503,7 @@ async def test_a_landmark_row_for_a_photo_without_a_candidate_row_has_no_effect(
         db_session, rejected, cluster_key="cluster-0", suggested_status=RatingStatus.REJECTED
     )
     for photo in (survivor, rejected):
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, survivor, "Eiffelturm")
     await _add_landmark_detection(db_session, rejected, "Trocadero")
 
@@ -4543,7 +4531,7 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
     )
     for photo in (older, fresh):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     # A: Ergebnis aus einem FRUEHEREN Lauf - Detection-Zeile plus die zugehoerige
     # `landmark`-Kriterienzeile, denn genau an ihr haengt das Skip-Verhalten aus ADR 0025 Punkt 3.
     await _add_landmark_detection(db_session, older, "Alexanderplatz")
@@ -4597,7 +4585,7 @@ async def test_the_partition_ranking_uses_the_event(
     trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         await _add_album_suitability(db_session, photo)
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
@@ -4635,7 +4623,7 @@ async def test_partitions_are_formed_over_the_event_alone(
     ]
     for photo in photos:
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         await _add_album_suitability(db_session, photo)
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
@@ -4673,7 +4661,7 @@ async def test_the_run_persists_its_events_with_position_and_time_span(
     )
     for photo in (first, second, third):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4699,7 +4687,7 @@ async def test_the_event_place_comes_from_measured_coordinates(
         gps_lon=2.294481,
     )
     await _add_score(db_session, photo, cluster_key="cluster-0")
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4732,7 +4720,7 @@ async def test_an_event_without_any_measured_coordinate_has_no_place(
     )
     await _add_score(db_session, candidate, cluster_key="cluster-0")
     for photo in (anchor, candidate):
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4762,7 +4750,7 @@ async def test_a_rejected_photo_anchors_the_inherited_location(
         await _add_score(
             db_session, anchor, cluster_key="cluster-0", suggested_status=RatingStatus.REJECTED
         )
-        _write_display_variant(tmp_path, anchor, _flat_image())
+        write_display_variant(tmp_path, anchor, _flat_image())
     candidates = [
         await _add_photo(
             db_session,
@@ -4775,7 +4763,7 @@ async def test_a_rejected_photo_anchors_the_inherited_location(
     ]
     for photo in candidates:
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4811,7 +4799,7 @@ async def test_the_inference_base_is_bound_to_the_project(
             datetime(2023, 1, 1, 10, minute, tzinfo=UTC),
         )
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4834,7 +4822,7 @@ async def test_an_unsanitised_legacy_name_does_not_split_against_its_sanitised_t
     )
     for photo in (legacy, clean):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, legacy, "Eiffel​turm")
     await _add_landmark_detection(db_session, clean, "Eiffelturm")
 
@@ -4861,7 +4849,7 @@ async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
     )
     for photo in (overlong, normal):
         await _add_score(db_session, photo, cluster_key="cluster-0")
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, overlong, "A" * (MAX_LANDMARK_NAME_LENGTH + 1))
     await _add_landmark_detection(db_session, normal, "Eiffelturm")
 
@@ -4959,7 +4947,7 @@ async def _one_photo_run(
         db_session, project, "a.jpg", f"etag-{uuid4()}", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
     # Der Regelfall seit Spec 0428: ein Ausschuss-Ueberlebender traegt die Modellbewertung aus
     # dem Cloud-Teilschritt, und erst damit entsteht ueberhaupt ein Qualitaetswert.
     await _add_album_suitability(db_session, photo)
@@ -5141,7 +5129,7 @@ async def test_a_recognised_landmark_strengthens_the_building_motif(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
     client = RecordingLandmarkClient(LandmarkDetection(name="Tal-Kapelle", confidence=0.95))
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
@@ -5171,7 +5159,7 @@ async def test_a_local_run_does_not_overwrite_an_existing_cloud_header(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
     cloud_time = datetime(2026, 9, 1, 8, 0, 0)
     cloud_vector = dict.fromkeys(MOTIF_REGISTRY, 0.0) | {"aktivitaet": 0.77, "menschen": 0.33}
     await upsert_assessment(
@@ -5216,7 +5204,7 @@ async def test_a_correction_survives_the_criterion_run_and_still_wins(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
     user = User(username="daniel", password_hash="hashed-value")
     db_session.add(user)
     await db_session.flush()
@@ -5323,7 +5311,7 @@ async def test_a_second_run_replaces_the_local_vector_without_duplicating_rows(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
 
     for detector_size in (16, _MOTIF_TEST_IMAGE_SIZE):
         await run_criterion_scoring(
@@ -5360,7 +5348,7 @@ async def test_an_ausschuss_photo_gets_no_motif_header(
     await _add_score(db_session, survivor)
     await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
     for photo in (survivor, rejected):
-        _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+        write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
 
     await run_criterion_scoring(
         db_session,
@@ -5466,7 +5454,7 @@ class TestWhatIsNotMeasurable:
         photo = await _add_photo(
             db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
         )
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         content = self._content(
             tmp_path,
@@ -5489,7 +5477,7 @@ class TestWhatIsNotMeasurable:
         photo = await _add_photo(
             db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
         )
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         content = self._content(tmp_path, photo, face_detector=None, face_landmarker=None)
 
@@ -5504,7 +5492,7 @@ class TestWhatIsNotMeasurable:
         photo = await _add_photo(
             db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
         )
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         content = self._content(
             tmp_path,
@@ -5522,7 +5510,7 @@ class TestWhatIsNotMeasurable:
         photo = await _add_photo(
             db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
         )
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
 
         content = self._content(
             tmp_path,
@@ -5577,7 +5565,7 @@ async def _prepare_photo(
     scoring_run = await _add_successful_scoring_run(session, project)
     photo = await _add_photo(session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC))
     await _add_score(session, photo)
-    _write_display_variant(tmp_path, photo, image if image is not None else _flat_image())
+    write_display_variant(tmp_path, photo, image if image is not None else _flat_image())
     return project, scoring_run, photo
 
 
@@ -5652,7 +5640,7 @@ class TestTheStaleRowOfANoLongerMeasurableCriterion:
             db_session, broken_project, "b.jpg", "etag-2", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, broken_photo)
-        _write_display_variant(tmp_path, broken_photo, _flat_image())
+        write_display_variant(tmp_path, broken_photo, _flat_image())
         stale_of_broken = await _add_stale_criterion(db_session, broken_photo, criterion_key)
         stale_value, stale_source, stale_time = (
             stale_of_broken.value,
@@ -5800,7 +5788,7 @@ class TestTheQualityScoreOfTheRankingStep:
                 datetime(2023, 1, 1, 0, index, tzinfo=UTC),
             )
             await _add_score(db_session, photo)
-            _write_display_variant(tmp_path, photo, _flat_image())
+            write_display_variant(tmp_path, photo, _flat_image())
             photos.append(photo)
         await _add_album_suitability(db_session, photos[0], level=5)
         await _add_album_suitability(db_session, photos[2], level=2)
@@ -5837,7 +5825,7 @@ class TestTheQualityScoreOfTheRankingStep:
             db_session, with_project, "a.jpg", "etag-2", datetime(2023, 1, 1, tzinfo=UTC)
         )
         await _add_score(db_session, with_photo)
-        _write_display_variant(tmp_path, with_photo, _flat_image())
+        write_display_variant(tmp_path, with_photo, _flat_image())
         await _add_album_suitability(db_session, with_photo, level=3)
 
         run_without = await self._run(db_session, without[0], without[1], tmp_path)
@@ -5882,7 +5870,7 @@ class TestTheLandmarkEstimateCountsWhatTheRunSends:
             session, project, path, etag, datetime(2023, 1, 1, 0, 0, second, tzinfo=UTC)
         )
         await _add_score(session, photo, **score)  # type: ignore[arg-type]
-        _write_display_variant(cache_dir, photo, _flat_image())
+        write_display_variant(cache_dir, photo, _flat_image())
         return photo
 
     async def _run(
@@ -6055,7 +6043,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
             gps_lon=GARMISCH[1],
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
         )
@@ -6085,7 +6073,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
             gps_lon=GARMISCH[1],
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {
                 place_cell(*GARMISCH): PlaceAnswer(
@@ -6122,7 +6110,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
                 gps_lon=coords[1],
             )
             await _add_score(db_session, photo)
-            _write_display_variant(tmp_path, photo, _flat_image())
+            write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {
                 place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen"),
@@ -6161,7 +6149,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         for photo in (with_gps, without_gps):
             await _add_score(db_session, photo)
-            _write_display_variant(tmp_path, photo, _flat_image())
+            write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
         )
@@ -6190,7 +6178,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         )
         for photo in (with_gps, without_gps):
             await _add_score(db_session, photo)
-            _write_display_variant(tmp_path, photo, _flat_image())
+            write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
         )
@@ -6241,7 +6229,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
             gps_lon=GARMISCH[1],
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         client = RecordingLandmarkClient()
 
         run = await run_landmark_phase(
@@ -6277,7 +6265,7 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
             gps_lon=GARMISCH[1],
         )
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _flat_image())
+        write_display_variant(tmp_path, photo, _flat_image())
         resolver = _RecordingResolverFactory(
             {place_cell(*GARMISCH): _locality_answer("Unverwechselbarshausen")}
         )
@@ -6391,7 +6379,7 @@ async def _landmark_photo(
         gps_lon=None if coords is None else coords[1],
     )
     await _add_score(session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
     return photo
 
 
@@ -6917,7 +6905,7 @@ async def test_the_local_motif_basis_reaches_the_run_without_moving_a_boundary(
             _MOTIF_GROUPING_BASE + timedelta(minutes=index),
         )
         await _add_score(db_session, photo)
-        _write_display_variant(
+        write_display_variant(
             tmp_path, photo, _flat_image() if index < 2 else _animal_marked_image()
         )
         photos.append(photo)
@@ -6966,7 +6954,7 @@ async def _target_lay(
             datetime(2023, 1, 1, 10, index, tzinfo=UTC),
         )
         await _add_score(session, photo, sharpness=float(50 + index * 10))
-        _write_display_variant(cache_dir, photo, _flat_image())
+        write_display_variant(cache_dir, photo, _flat_image())
         await _add_album_suitability(session, photo)
     return project, scoring_run
 
@@ -7138,7 +7126,7 @@ async def test_the_landmark_phase_uses_the_project_model_not_the_installation_de
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
     built_models: list[str] = []
@@ -7186,7 +7174,7 @@ async def test_without_a_landmark_model_argument_the_phase_resolves_the_installa
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo, _flat_image())
+    write_display_variant(tmp_path, photo, _flat_image())
 
     client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
     built_models: list[str] = []

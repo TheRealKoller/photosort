@@ -11,16 +11,16 @@ from photosort.models import Photo
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.worker import SkipReason
 from photosort.worker.scan import classify_scan_entries
+from tests.support import opencloud_entry
 
 MODIFIED = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
 
 
 def _entry(name: str, etag: str, content_length: int = 100) -> DavEntry:
-    return DavEntry(
-        href=f"/dav/spaces/drive-1/CostaRica/{name}",
-        name=name,
-        is_collection=False,
+    return opencloud_entry(
+        name,
         etag=etag,
+        href=f"/dav/spaces/drive-1/CostaRica/{name}",
         last_modified=MODIFIED,
         content_length=content_length,
     )

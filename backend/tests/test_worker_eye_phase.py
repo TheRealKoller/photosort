@@ -49,7 +49,7 @@ from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.worker import _runs as worker_runs
 from photosort.worker import run_classification
-from tests.support import add_photo, make_project, write_display_variant
+from tests.support import add_photo, add_scoring_run, make_project, write_display_variant
 
 # ---------------------------------------------------------------------------------------------
 # Fixtures / Test-Doubles
@@ -68,15 +68,7 @@ async def _add_run(
     """`started_at` ist ausdruecklich zu setzen, sobald ein Test ZWEI Laeufe braucht: unter SQLite
     hat `CURRENT_TIMESTAMP` Sekundenaufloesung, und zwei Laeufe derselben Sekunde liessen "der
     neueste" unbestimmt - der Lauf braeche dann an seiner eigenen Bindung ab."""
-    scoring_run = ScoringRun(
-        project_id=project.id,
-        status=ScanStatus.SUCCESS,
-        **({} if started_at is None else {"started_at": started_at}),
-    )
-    session.add(scoring_run)
-    await session.commit()
-    await session.refresh(scoring_run)
-    return scoring_run
+    return await add_scoring_run(session, project, started_at=started_at)
 
 
 async def _add_photo(

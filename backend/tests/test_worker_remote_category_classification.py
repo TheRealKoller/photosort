@@ -9,7 +9,6 @@ from typing import NoReturn
 
 import httpx
 import pytest
-from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,11 +48,10 @@ from photosort.remote_classification import (
     RemoteCategoryClassificationApiError,
     RemoteClassification,
 )
-from photosort.thumbnails import display_path
 from photosort.worker import remote_categories as worker_remote_categories
 from photosort.worker import run_remote_category_classification, select_remote_category_candidates
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
-from tests.support import add_photo
+from tests.support import add_photo, write_display_variant
 from tests.support import make_project as _make_project
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
@@ -94,12 +92,6 @@ async def _add_score(
         session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=duplicate_decision))
     await session.commit()
     return score
-
-
-def _write_display_variant(cache_dir: Path, photo: Photo) -> None:
-    path = display_path(cache_dir, photo.id, photo.etag)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (160, 160), color=(100, 100, 100)).save(path, format="JPEG")
 
 
 class FakeLabelEmbedder:
@@ -258,7 +250,7 @@ async def test_consent_disabled_by_default_never_calls_the_client_builder(
     project = await _make_project(db_session)
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     run = await run_remote_category_classification(
         db_session,
@@ -281,7 +273,7 @@ async def test_enabling_consent_unlocks_the_remote_category_client(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     client = RecordingCategoryClient()
 
@@ -307,7 +299,7 @@ async def test_full_candidate_pool_has_no_pre_filter_unlike_landmark(
     for index in range(3):
         photo = await _add_photo(db_session, project, f"p{index}.jpg", f"etag-{index}")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
 
     client = RecordingCategoryClient()
 
@@ -330,10 +322,10 @@ async def test_rejected_photos_are_not_candidates(db_session: AsyncSession, tmp_
     await db_session.commit()
     survivor = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, survivor)
-    _write_display_variant(tmp_path, survivor)
+    write_display_variant(tmp_path, survivor)
     rejected = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
-    _write_display_variant(tmp_path, rejected)
+    write_display_variant(tmp_path, rejected)
 
     client = RecordingCategoryClient()
 
@@ -361,12 +353,12 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     await db_session.commit()
     already_classified = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, already_classified)
-    _write_display_variant(tmp_path, already_classified)
+    write_display_variant(tmp_path, already_classified)
     await _add_cloud_assessment(db_session, already_classified)
     await _add_album_suitability(db_session, already_classified)
     new_candidate = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, new_candidate)
-    _write_display_variant(tmp_path, new_candidate)
+    write_display_variant(tmp_path, new_candidate)
     await db_session.commit()
 
     client = RecordingCategoryClient()
@@ -398,7 +390,7 @@ async def test_a_locally_assessed_photo_is_still_a_candidate(
     await db_session.commit()
     locally_assessed = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, locally_assessed)
-    _write_display_variant(tmp_path, locally_assessed)
+    write_display_variant(tmp_path, locally_assessed)
     await _add_local_assessment(db_session, locally_assessed)
 
     client = RecordingCategoryClient()
@@ -426,7 +418,7 @@ async def _run_for_one_photo(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     run = await run_remote_category_classification(
         db_session,
@@ -526,7 +518,7 @@ async def test_a_cloud_header_replaces_an_existing_local_one(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
     await _add_local_assessment(db_session, photo)
     db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="landschaft", strength=0.4))
     await db_session.commit()
@@ -657,10 +649,10 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
     await db_session.commit()
     failing_photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, failing_photo)
-    _write_display_variant(tmp_path, failing_photo)
+    write_display_variant(tmp_path, failing_photo)
     succeeding_photo = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, succeeding_photo)
-    _write_display_variant(tmp_path, succeeding_photo)
+    write_display_variant(tmp_path, succeeding_photo)
 
     client = PerPhotoCategoryClient(
         [
@@ -709,7 +701,7 @@ async def test_failed_remote_category_call_persists_a_cloud_vision_error_row(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     client = RecordingCategoryClient(raise_error=True)
 
@@ -739,7 +731,7 @@ async def test_successful_remote_category_call_after_a_previous_failure_clears_t
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     await run_remote_category_classification(
         db_session,
@@ -776,7 +768,7 @@ async def test_repeated_remote_category_failures_upsert_the_same_error_row(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     class _RaisingClient:
         def __init__(self, message: str) -> None:
@@ -819,7 +811,7 @@ async def test_remote_category_error_message_is_capped_at_500_characters(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     overlong_message = "x" * 600
 
@@ -878,7 +870,7 @@ async def test_calls_are_limited_by_the_concurrency_setting(
     for index in range(5):
         photo = await _add_photo(db_session, project, f"p{index}.jpg", f"etag-{index}")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
 
     client = ConcurrencyTrackingCategoryClient()
 
@@ -904,7 +896,7 @@ async def test_cancelled_error_propagates_and_fails_the_run(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     # Spec 0056/ADR 0034: ein CancelledError durchlaeuft die separate, dem continue-Loop
     # vorgelagerte Propagations-Schleife und erreicht die neuen logger.warning(...)-Aufrufe
@@ -939,7 +931,7 @@ async def test_embedder_build_failure_leaves_the_run_successful_with_nothing_pro
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     client = RecordingCategoryClient()
 
@@ -968,10 +960,10 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
 
     photo_a = await _add_photo(db_session, project_a, "a.jpg", "etag-1")
     await _add_score(db_session, photo_a)
-    _write_display_variant(tmp_path, photo_a)
+    write_display_variant(tmp_path, photo_a)
     photo_b = await _add_photo(db_session, project_b, "b.jpg", "etag-2")
     await _add_score(db_session, photo_b)
-    _write_display_variant(tmp_path, photo_b)
+    write_display_variant(tmp_path, photo_b)
 
     await run_remote_category_classification(
         db_session,
@@ -1173,7 +1165,7 @@ class TestTheAlbumSuitabilityIsPersisted:
         await db_session.commit()
         photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
         await _add_cloud_assessment(db_session, photo)
 
         classification = RemoteClassification(
@@ -1280,7 +1272,7 @@ class TestTheWidenedCandidateSelection:
         await db_session.commit()
         photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
 
         answers = [
             RemoteClassification(motif_strengths=_vector(), fine_labels=("Hund", "Wiese")),
@@ -1317,7 +1309,7 @@ class TestTheWidenedCandidateSelection:
         await db_session.commit()
         photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
         await _add_cloud_assessment(db_session, photo)
         client = RecordingCategoryClient(
             RemoteClassification(
@@ -1353,10 +1345,10 @@ async def test_a_structurally_invalid_response_skips_only_that_photo(
     await db_session.commit()
     broken = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, broken)
-    _write_display_variant(tmp_path, broken)
+    write_display_variant(tmp_path, broken)
     intact = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, intact)
-    _write_display_variant(tmp_path, intact)
+    write_display_variant(tmp_path, intact)
 
     client = PerPhotoCategoryClient(
         [
@@ -1389,7 +1381,7 @@ async def test_a_second_run_does_not_create_a_second_header(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     for _ in range(2):
         run = await run_remote_category_classification(
@@ -1435,7 +1427,7 @@ async def _cost_setup(db_session: AsyncSession, tmp_path: Path, *, photo_count: 
     for index in range(photo_count):
         photo = await _add_photo(db_session, project, f"{index}.jpg", f"etag-{index}")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
     return project
 
 
@@ -1545,7 +1537,7 @@ async def test_an_early_return_without_cloud_consent_records_zero_not_null(
     project = await _make_project(db_session)
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     run = await run_remote_category_classification(
         db_session,
@@ -1782,7 +1774,7 @@ async def test_every_written_header_carries_the_full_eight_row_vector(
     for index, path in enumerate(("a.jpg", "b.jpg", "c.jpg")):
         photo = await _add_photo(db_session, project, path, f"etag-{index}")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
 
     client = PerPhotoCategoryClient(
         [
@@ -1819,7 +1811,7 @@ async def test_a_failed_photo_gets_no_header_and_stays_a_candidate(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     run = await run_remote_category_classification(
         db_session,
@@ -2171,7 +2163,7 @@ async def _run_with_real_category_client(
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     client = AnthropicCategoryClient(
         api_key="sk-test-not-a-real-secret",
@@ -2257,7 +2249,7 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         await db_session.commit()
         photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
         await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo)
+        write_display_variant(tmp_path, photo)
         client = PerPhotoCategoryClient(
             [RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=("Hund",))]
         )
@@ -2354,7 +2346,7 @@ async def test_the_categorization_uses_the_project_model_not_the_installation_de
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
+    write_display_variant(tmp_path, photo)
 
     usage = TokenUsage(input_tokens=1_200, output_tokens=300)
     built_models: list[str] = []

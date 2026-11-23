@@ -30,11 +30,10 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
-    ScanStatus,
     ScoringRun,
     User,
 )
-from tests.support import add_photo, make_project
+from tests.support import add_photo, add_scoring_run, make_project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
 
@@ -69,10 +68,7 @@ async def _photo(
 
 
 async def _successful_run(session: AsyncSession, project: Project) -> ScoringRun:
-    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS, started_at=_BASE)
-    session.add(run)
-    await session.flush()
-    return run
+    return await add_scoring_run(session, project, started_at=_BASE, flush=True)
 
 
 def _url(project_id: int, **params: int) -> str:

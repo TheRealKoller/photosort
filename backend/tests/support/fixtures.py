@@ -197,6 +197,7 @@ async def add_successful_run(
     status: ScanStatus = ScanStatus.SUCCESS,
     started_at: datetime | None = None,
     finished_at: datetime | None = None,
+    last_progress_at: datetime | None = None,
     flush: bool = True,
 ) -> CriterionScoringRun:
     """Ein erfolgreicher Kriterien-Lauf samt seinem Scoring-Lauf (`scoring_run_id`)."""
@@ -208,6 +209,7 @@ async def add_successful_run(
         status=status,
         **({} if started_at is None else {"started_at": started_at}),
         **({} if finished_at is None else {"finished_at": finished_at}),
+        **({} if last_progress_at is None else {"last_progress_at": last_progress_at}),
     )
     session.add(run)
     if flush:

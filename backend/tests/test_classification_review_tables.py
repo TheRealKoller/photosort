@@ -28,7 +28,7 @@ from photosort.models import (
     ScanStatus,
     User,
 )
-from tests.support import add_photo, make_project
+from tests.support import add_photo, make_project, make_user
 
 REVIEW_TABLES = (
     "classification_reviews",
@@ -161,11 +161,7 @@ async def _make_project(session: AsyncSession) -> Project:
 
 
 async def _make_user(session: AsyncSession) -> User:
-    user = User(username="anleger", password_hash="x")
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-    return user
+    return await make_user(session)
 
 
 async def _add_photo(session: AsyncSession, project: Project) -> Photo:

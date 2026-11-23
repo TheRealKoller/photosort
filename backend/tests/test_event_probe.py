@@ -89,7 +89,7 @@ from photosort.place_dataset import extract_line, write_extracts
 from photosort.selection import carried_motifs, effective_target
 from photosort.worker._criterion import ranking as worker_ranking
 from tests.import_closure import import_closure, module_file
-from tests.support import add_photo, make_project_id
+from tests.support import add_photo, add_successful_run, make_project_id
 from tests.write_guard import write_statements
 
 NOW = datetime(2026, 7, 20, 10, 0, 0)
@@ -177,14 +177,7 @@ async def _successful_run(
 
     Ein Event je Rangzeile: Block A rechnet die Gliederung ohnehin neu, die Event-Zeile traegt
     hier nur den Fremdschluessel."""
-    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS)
-    session.add(scoring_run)
-    await session.flush()
-    run = CriterionScoringRun(
-        project_id=project_id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
-    )
-    session.add(run)
-    await session.flush()
+    run = await add_successful_run(session, project_id)
     event = Event(
         criterion_scoring_run_id=run.id, position=1, started_at=NOW, ended_at=NOW, place_kind=None
     )

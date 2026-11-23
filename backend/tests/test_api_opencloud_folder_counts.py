@@ -17,18 +17,14 @@ from photosort.api.opencloud import FOLDER_COUNT_LIMIT, count_images_up_to_limit
 from photosort.main import app
 from photosort.opencloud.client import Drive, OpenCloudClient, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
+from tests.support import opencloud_entry
 
 WEBDAV_URL = "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
 
 
 def _entry(name: str, is_collection: bool = False) -> DavEntry:
-    return DavEntry(
-        href=f"/dav/spaces/x/CostaRica/{name}",
-        name=name,
-        is_collection=is_collection,
-        etag="etag",
-        last_modified=None,
-        content_length=None,
+    return opencloud_entry(
+        name, is_collection=is_collection, href=f"/dav/spaces/x/CostaRica/{name}"
     )
 
 
