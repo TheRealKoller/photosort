@@ -34,7 +34,7 @@ import {
   SETTINGS_LINK_LABEL,
 } from '../utils/albumDraftTexts'
 import { AlbumDraftPage } from './AlbumDraftPage'
-import { makePhoto } from '../test/fixtures'
+import { makePhoto, makeProject } from '../test/fixtures'
 import { makeQueryClient, queryWrapper, withProviders } from '../test/render'
 
 vi.mock('../api/photos')
@@ -46,34 +46,17 @@ vi.mock('../api/persons')
 const USER_ID = 7
 
 function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
-  return {
-    id: 1,
-    name: 'Costa Rica',
-    opencloud_drive_id: 'drive-1',
+  return makeProject({
     opencloud_path: '/CostaRica',
     created_at: '2026-07-01T10:00:00',
-    last_scan: null,
-    last_scoring_run: null,
-    last_criterion_scoring_run: null,
-    last_export_run: null,
     category_selection_enabled: false,
     cloud_vision_detection_enabled: true,
     cloud_vision_consent_at: '2026-07-01T10:00:00',
-    model_choice: {
-      category_method: 'cloud',
-      category_provider: 'mistral',
-      category_model: 'ministral-3b-2512',
-      landmark_provider: 'anthropic',
-      landmark_model: 'claude-haiku-4-5',
-    },
     selection_target: 3,
     effective_selection_target: 3,
     has_selection_proposal: true,
-    photo_count: 0,
-    taken_at_earliest: null,
-    taken_at_latest: null,
     ...overrides,
-  }
+  })
 }
 
 function makeToken(username: string): string {

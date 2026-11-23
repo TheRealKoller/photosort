@@ -8,13 +8,14 @@ import { storePhotoPersons } from './usePhotoPersons'
 import { PERSON_GROUP_PAGE_SIZE, usePersonGroupQuery } from './usePersonGroupQuery'
 import { usePhotoSequenceQuery } from './usePhotos'
 import { makeQueryClient, queryWrapper } from '../test/render'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('../api/photos')
 
 const ANNA = 7
 
 function photo(id: number, persons: PhotoPersonOut[]): PhotoOut {
-  return { id, relative_path: `${id}.jpg`, persons } as unknown as PhotoOut
+  return makePhoto({ id, relative_path: `${id}.jpg`, persons })
 }
 
 /** Ein Server-Stub, der wie der echte Endpunkt filtert: Ein Foto ohne den Namen fällt heraus, und

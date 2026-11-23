@@ -10,6 +10,7 @@ import type { PersonFace, PersonOrigin, PhotoListOut, PhotoOut } from '../api/ty
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
 import { PersonPhotoGroup } from './PersonPhotoGroup'
 import { makeQueryClient, withQuery } from '../test/render'
+import { makePhoto } from '../test/fixtures'
 
 vi.mock('../api/persons')
 vi.mock('../api/photos')
@@ -17,11 +18,11 @@ vi.mock('../api/photos')
 const ANNA = { id: 7, name: 'Anna' } as const
 
 function photo(id: number, origin: PersonOrigin = 'recognized', face: PersonFace = null): PhotoOut {
-  return {
+  return makePhoto({
     id,
     relative_path: `reise/p${id}.jpg`,
     persons: [{ person_id: ANNA.id, origin, face }],
-  } as unknown as PhotoOut
+  })
 }
 
 function listOf(items: PhotoOut[], total = items.length): PhotoListOut {
