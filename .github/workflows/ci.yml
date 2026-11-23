@@ -168,6 +168,10 @@ jobs:
         with:
           name: coverage-shard-${{ matrix.shard }}
           path: backend/.coverage.shard-*
+          # `actions/upload-artifact` schliesst versteckte Dateien seit v4.4 standardmaessig aus.
+          # COVERAGE_FILE beginnt mit einem Punkt - ohne diese Zeile findet der Glob nichts und
+          # `if-no-files-found: error` macht den Schritt nach gruenem Testschritt rot.
+          include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
 
@@ -830,6 +834,8 @@ jobs:
           config=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml config --format json)
 
           # Zwei Gegenproben im selben Schritt, je eine pro Fehlerklasse - ohne sie waere "alles
+          # gruen" nicht von "die Pruefung findet gar nichts mehr" zu unterscheiden.
+          #
           # (a) eine ungebundene Veroeffentlichung: faellt ueber die host_ip-Bedingung.
           printf 'services:\n  frontend:\n    ports: !override\n      - "8099:80"\n' > /tmp/e2e-probe-unbound.yml
           # (b) eine NAIV ueberlagerte ports-Liste ohne "!override": Compose ERGAENZT sie, es
@@ -839,6 +845,7 @@ jobs:
 
           for probe in /tmp/e2e-probe-unbound.yml /tmp/e2e-probe-appended.yml; do
             broken=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml -f "$probe" config --format json)
+            if check_bindings "$broken" > /dev/null 2>&1; then
               echo "Gegenprobe fehlgeschlagen: $probe wurde NICHT als Fehler gemeldet." >&2
               exit 1
             fi
