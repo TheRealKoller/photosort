@@ -1,6 +1,5 @@
 """Kriterien-Lauf: Sehenswuerdigkeits-Namen in Ereignissen, Mengen-Schaetzung, grober Ortshinweis,
 das Register.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
 """
 
 from __future__ import annotations

@@ -1,6 +1,4 @@
-"""Foto-API: die drei Endauswahl-Felder auf jedem Lesepfad, Albumauswahl, Entscheidungen.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: die drei Endauswahl-Felder auf jedem Lesepfad, Albumauswahl, Entscheidungen."""
 
 from __future__ import annotations
 

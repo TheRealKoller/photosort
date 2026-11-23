@@ -1,4 +1,4 @@
-"""Gemeinsame Bausteine der Demo-Zustands-Tests (frueher Modul-Hilfen von test_demo_state.py)."""
+"""Gemeinsame Bausteine der Demo-Zustands-Tests."""
 
 from __future__ import annotations
 

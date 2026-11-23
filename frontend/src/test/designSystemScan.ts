@@ -3,7 +3,7 @@
  * (specs/features/0320-dark-utility-register.md; Werte in decisions/0055-dark-utility-register-
  * fundament.md und specs/architecture/0005-board-dark-utility-register.md). Die Pruefungen selbst
  * liegen je Regelgruppe in `src/designSystem.*.contract.test.ts` und teilen sich diesen
- * Dateizugriff, den :root-Parser und die Fundstellen-Helfer (Spec 0651).
+ * Dateizugriff, den :root-Parser und die Fundstellen-Helfer .
  *
  * WARUM DIESER DESIGN-VERTRAG UEBERHAUPT EXISTIERT: Die uebrigen Frontend-Tests selektieren
  * konventionsgemaess ueber Rollen, `aria-*` und semantische `data-*` und sind gegenueber einer
@@ -335,7 +335,7 @@ export function tsxFiles(): typeof sourceFiles {
  * Testdateien: dort stehen Klassennamen als Zeichenketten in Assertionen (z.B. `input.test.tsx`
  * haelt `focus:border-[1.5px]` fest), und eine Regel, die dort anschlaegt, zwingt dazu, genau die
  * Zusicherung zu loeschen, die sie absichern soll. Ebenfalls nicht dazu gehoeren die gemeinsamen
- * Testbausteine unter `src/test/` (Spec 0651): sie sind Testcode, und die Menge der Produktivdateien
+ * Testbausteine unter `src/test/` sind Testcode, und die Menge der Produktivdateien
  * bleibt damit dieselbe wie vor dem Umbau.
  */
 export function productionTsxFiles(): typeof sourceFiles {

@@ -1,6 +1,5 @@
 """Demo-Zustands-Seeder: reine Erzeuger ohne Datenbank (Namen, Spezifikationen, Demo-Bilder, Foto-
 Kennung).
-(Aufgeteilt aus test_demo_state.py, Spec 0651.)
 """
 
 from __future__ import annotations

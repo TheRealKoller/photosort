@@ -1,6 +1,5 @@
 """Kriterien-Lauf: Waechter, bester Versuch der Inhaltskriterien, Motiv-Gruppierung, Zielgroesse und
 Vorschlag.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
 """
 
 from __future__ import annotations

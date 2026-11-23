@@ -1,6 +1,5 @@
 """Foto-API: die zusaetzlichen Motiv-Felder, Vorhandensein, die vier Foto-Zustaende, Motivstaerken in
 einer Abfrage.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
 """
 
 from __future__ import annotations

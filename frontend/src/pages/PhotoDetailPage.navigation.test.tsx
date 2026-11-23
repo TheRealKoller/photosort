@@ -1,5 +1,5 @@
 /*
- * Foto-Detailseite - Teil: Navigation: Laden, Blaettern, Scrollstand (Spec 0651; gemeinsamer Unterbau in src/test/photoDetailPage.tsx).
+ * Foto-Detailseite - Teil: Navigation: Laden, Blaettern, Scrollstand - gemeinsamer Unterbau: src/test/photoDetailPage.tsx.
  */
 import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

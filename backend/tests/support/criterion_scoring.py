@@ -1,6 +1,4 @@
-"""Gemeinsame Bausteine der Kriterien-Lauf-Tests (frueher Modul-Hilfen von
-test_worker_criterion_scoring.py).
-"""
+"""Gemeinsame Bausteine der Kriterien-Lauf-Tests."""
 
 from __future__ import annotations
 

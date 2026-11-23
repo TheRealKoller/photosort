@@ -1,4 +1,4 @@
-"""Doppelgaenger, die frueher je Testdatei neu ausgeschrieben wurden.
+"""Doppelgaenger, die gemeinsam wurden.
 
 `FakeEnqueuer` traegt alle bisherigen Zusagen der drei Fassungen: die Aufrufe als
 `(funktion, positionsargumente)` UND die Schluesselwort-Argumente getrennt. Wer nur die Aufrufe

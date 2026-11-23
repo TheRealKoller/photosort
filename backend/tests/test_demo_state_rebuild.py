@@ -1,7 +1,6 @@
 """Demo-Zustands-Seeder: Schutzpruefung und `rebuild_demo_state` gegen die Datenbank - die sieben
 Zustaende, Seitenverhaeltnis, Vorschaubilder, Idempotenz, Unberuehrtes, Personen,
 Produktionsgroesse.
-(Aufgeteilt aus test_demo_state.py, Spec 0651.)
 """
 
 from __future__ import annotations

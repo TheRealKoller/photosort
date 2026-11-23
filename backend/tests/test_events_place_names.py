@@ -1,6 +1,5 @@
 """Ereignis-Gruppierung: Ortsname eines Ereignisses, sein Rueckhalt in den Fotos und die
 Namensvergabe ueber die Ereignisse eines Laufs.
-(Aufgeteilt aus test_events.py, Spec 0651.)
 """
 
 from __future__ import annotations

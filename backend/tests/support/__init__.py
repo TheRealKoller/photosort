@@ -1,7 +1,7 @@
 """Gemeinsame Testbausteine des Backends - die EINE Fundstelle.
 
 `specs/architecture/0002-testkonzept.md` nennt dieses Paket als Fundstelle fuer Testdaten,
-Doppelgaenger und den Migrations-Harness. Jede Abweichung zwischen frueheren Kopien ist hier ein
+Doppelgaenger und den Migrations-Harness. Jede Abweichung zwischen Aufrufern ist hier ein
 Schluesselwort-Parameter; dateilokal bleibt nur, was inhaltliche Zusicherung eines einzelnen
 Tests ist.
 """

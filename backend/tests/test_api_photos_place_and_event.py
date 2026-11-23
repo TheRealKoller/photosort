@@ -1,6 +1,4 @@
-"""Foto-API: Ort, Cluster-Ort, Ereignis, Laufbindung des Orts, Abfragezahl.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: Ort, Cluster-Ort, Ereignis, Laufbindung des Orts, Abfragezahl."""
 
 from __future__ import annotations
 

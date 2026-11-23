@@ -1,6 +1,4 @@
-"""Foto-API: der Albumentwurf und das Vorschlags-Flag.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: der Albumentwurf und das Vorschlags-Flag."""
 
 from __future__ import annotations
 

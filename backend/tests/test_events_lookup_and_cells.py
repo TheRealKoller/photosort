@@ -1,6 +1,5 @@
 """Ereignis-Gruppierung: Ereignis zu einer Zeit, die Rundung an genau einer Stelle, Zellen eines
 gebauten Ereignisses.
-(Aufgeteilt aus test_events.py, Spec 0651.)
 """
 
 from __future__ import annotations

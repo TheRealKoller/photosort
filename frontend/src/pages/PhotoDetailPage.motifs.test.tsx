@@ -1,5 +1,5 @@
 /*
- * Foto-Detailseite - Teil: Motive und Eye-Auswertung (Spec 0651; gemeinsamer Unterbau in src/test/photoDetailPage.tsx).
+ * Foto-Detailseite - Teil: Motive und Eye-Auswertung - gemeinsamer Unterbau: src/test/photoDetailPage.tsx.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

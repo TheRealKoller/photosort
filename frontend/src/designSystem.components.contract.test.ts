@@ -1,7 +1,7 @@
 // @vitest-environment node
 /*
  * Design-Vertrag "Dark Utility Register" - Teil: Navigationselement, Fortschritt, Hoehen-Token, Typoskala, Kompilier-Pruefung.
- * Rahmen, Begruendung und Selbstausschluss: src/test/designSystemScan.ts (Spec 0320, Spec 0651).
+ * Rahmen, Begruendung und Selbstausschluss: src/test/designSystemScan.ts .
  */
 
 import { compile } from '@tailwindcss/node'

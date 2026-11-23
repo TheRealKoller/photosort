@@ -1,6 +1,5 @@
 """Demo-Zustands-Seeder: Endauswahl, Nacharbeitsprotokoll, Gewichtssatz, Albumentwurf-Zustaende,
 abgeschlossene Klassifizierungspruefung.
-(Aufgeteilt aus test_demo_state.py, Spec 0651.)
 """
 
 from __future__ import annotations

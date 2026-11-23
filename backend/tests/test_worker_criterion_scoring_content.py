@@ -1,6 +1,4 @@
-"""Kriterien-Lauf: Inhaltskriterien (Tier, Landschaft, Gesicht) bis zum Ende-zu-Ende-Lauf.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
-"""
+"""Kriterien-Lauf: Inhaltskriterien (Tier, Landschaft, Gesicht) bis zum Ende-zu-Ende-Lauf."""
 
 from __future__ import annotations
 

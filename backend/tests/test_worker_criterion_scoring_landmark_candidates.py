@@ -1,6 +1,5 @@
 """Kriterien-Lauf: Auswahl der Sehenswuerdigkeits-Kandidaten, Einwilligung, Szenen-Klassifikator
 genau einmal je Foto.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
 """
 
 from __future__ import annotations

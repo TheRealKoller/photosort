@@ -1,6 +1,4 @@
-"""Foto-API: Kriterienwerte und Cloud-Vision-Status.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: Kriterienwerte und Cloud-Vision-Status."""
 
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
-"""Ereignis-Gruppierung: Ortsausfluege, Rueckwaertskompatibilitaet ohne Koordinaten.
-(Aufgeteilt aus test_events.py, Spec 0651.)
-"""
+"""Ereignis-Gruppierung: Ortsausfluege, Rueckwaertskompatibilitaet ohne Koordinaten."""
 
 from __future__ import annotations
 

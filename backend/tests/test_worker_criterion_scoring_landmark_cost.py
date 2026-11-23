@@ -1,6 +1,5 @@
 """Kriterien-Lauf: Kosten und Modell der Sehenswuerdigkeits-Phase, Live-Zaehler, Buchfuehrung,
 Ratenbegrenzung, Drosselungs-Zusammenfassung.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
 """
 
 from __future__ import annotations

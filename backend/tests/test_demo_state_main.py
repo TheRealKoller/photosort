@@ -1,6 +1,5 @@
 """Demo-Zustands-Seeder: `main()` - Verdrahtung, Exit-Codes, Schutzabbruch ohne Vorzustandsaenderung;
 kein Aufrufpfad aus der laufenden Anwendung.
-(Aufgeteilt aus test_demo_state.py, Spec 0651.)
 """
 
 from __future__ import annotations

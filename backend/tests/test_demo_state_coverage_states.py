@@ -1,6 +1,5 @@
 """Demo-Zustands-Seeder: Cloud-Bilanz, Kopfzeilen-Zustaende, Bezirksregel, Kamera-, Motiv- und
 Albumtauglichkeits-Zustaende, Albumentwurf.
-(Aufgeteilt aus test_demo_state.py, Spec 0651.)
 """
 
 from __future__ import annotations

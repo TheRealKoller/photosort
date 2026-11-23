@@ -1,5 +1,5 @@
 /*
- * Entwurfsseite - Teil: Grossansicht und Leerzustaende (Spec 0651; gemeinsamer Unterbau in src/test/albumDraftPage.tsx).
+ * Entwurfsseite - Teil: Grossansicht und Leerzustaende - gemeinsamer Unterbau: src/test/albumDraftPage.tsx.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { InitialEntry, Location, NavigateFunction } from 'react-router'

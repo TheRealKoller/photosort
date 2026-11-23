@@ -1,5 +1,5 @@
 /*
- * Foto-Detailseite - Teil: Bewertung, Cloud-Vision-Status, Reihenfolge, Aufnahmezeit (Spec 0651; gemeinsamer Unterbau in src/test/photoDetailPage.tsx).
+ * Foto-Detailseite - Teil: Bewertung, Cloud-Vision-Status, Reihenfolge, Aufnahmezeit - gemeinsamer Unterbau: src/test/photoDetailPage.tsx.
  */
 import { screen, within } from '@testing-library/react'
 import * as photosApi from '../api/photos'

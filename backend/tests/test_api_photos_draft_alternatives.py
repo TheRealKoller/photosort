@@ -1,6 +1,4 @@
-"""Foto-API: Entwurfsalternativen und ihre Schluessel.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: Entwurfsalternativen und ihre Schluessel."""
 
 from __future__ import annotations
 

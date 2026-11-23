@@ -1,6 +1,5 @@
 """Ereignis-Gruppierung: Ortsableitung, Form, die Trennsignale (Zeitluecke, Dauer, Schritt,
 Ausdehnung), Standardsignale, korrigierte Zeit und uebernommene Orte.
-(Aufgeteilt aus test_events.py, Spec 0651.)
 """
 
 from __future__ import annotations

@@ -1,6 +1,4 @@
-"""Ereignis-Gruppierung: die Trennursache je Grenze (Spec 0506, ADR 0117 Punkt 4).
-(Aufgeteilt aus test_events.py, Spec 0651.)
-"""
+"""Ereignis-Gruppierung: die Trennursache je Grenze (Spec 0506, ADR 0117 Punkt 4)."""
 
 from __future__ import annotations
 

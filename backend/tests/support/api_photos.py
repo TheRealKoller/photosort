@@ -1,4 +1,4 @@
-"""Gemeinsame Bausteine der Foto-API-Tests (frueher Modul-Hilfen von test_api_photos.py)."""
+"""Gemeinsame Bausteine der Foto-API-Tests."""
 
 from __future__ import annotations
 

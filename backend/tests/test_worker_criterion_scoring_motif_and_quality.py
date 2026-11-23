@@ -1,6 +1,4 @@
-"""Kriterien-Lauf: lokale Motivbewertung, Nicht-Messbares, Altzeile, Qualitaetswert des Rangschritts.
-(Aufgeteilt aus test_worker_criterion_scoring.py, Spec 0651.)
-"""
+"""Kriterien-Lauf: lokale Motivbewertung, Nicht-Messbares, Altzeile, Qualitaetswert des Rangschritts."""
 
 from __future__ import annotations
 

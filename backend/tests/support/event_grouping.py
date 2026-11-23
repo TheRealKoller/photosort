@@ -1,4 +1,4 @@
-"""Gemeinsame Bausteine der Ereignis-Gruppierungstests (frueher Modul-Hilfen von test_events.py)."""
+"""Gemeinsame Bausteine der Ereignis-Gruppierungstests."""
 
 from __future__ import annotations
 

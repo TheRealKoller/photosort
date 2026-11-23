@@ -1,6 +1,5 @@
 """Ereignis-Gruppierung: Stufe 3, das Zusammenlegen zu kleiner Segmente (Spec 0506, ADR 0117 Punkt
 3).
-(Aufgeteilt aus test_events.py, Spec 0651.)
 """
 
 from __future__ import annotations

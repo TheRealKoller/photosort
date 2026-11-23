@@ -1,5 +1,5 @@
 /*
- * Entwurfsseite - Teil: Personenfilter und Zustaende (Spec 0651; gemeinsamer Unterbau in src/test/albumDraftPage.tsx).
+ * Entwurfsseite - Teil: Personenfilter und Zustaende - gemeinsamer Unterbau: src/test/albumDraftPage.tsx.
  */
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

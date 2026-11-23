@@ -1,6 +1,4 @@
-"""Foto-API: Albumtauglichkeit im Foto-Ausgang, Quelle der Stufe, Auge-Ergebnis.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
-"""
+"""Foto-API: Albumtauglichkeit im Foto-Ausgang, Quelle der Stufe, Auge-Ergebnis."""
 
 from __future__ import annotations
 

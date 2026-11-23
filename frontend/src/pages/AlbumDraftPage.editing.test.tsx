@@ -1,5 +1,5 @@
 /*
- * Entwurfsseite - Teil: Streichen, Tauschen, Hinzufuegen, Kopf und Reihen (Spec 0651; gemeinsamer Unterbau in src/test/albumDraftPage.tsx).
+ * Entwurfsseite - Teil: Streichen, Tauschen, Hinzufuegen, Kopf und Reihen - gemeinsamer Unterbau: src/test/albumDraftPage.tsx.
  */
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

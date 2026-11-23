@@ -1,6 +1,4 @@
-"""Ereignis-Gruppierung: die Motivwechsel-Regel und ihre Sprecher-Fotos.
-(Aufgeteilt aus test_events.py, Spec 0651.)
-"""
+"""Ereignis-Gruppierung: die Motivwechsel-Regel und ihre Sprecher-Fotos."""
 
 from __future__ import annotations
 

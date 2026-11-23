@@ -1,5 +1,5 @@
 /*
- * Foto-Detailseite - Teil: Maximal-Fixture (AK4) und Ort (S2) (Spec 0651; gemeinsamer Unterbau in src/test/photoDetailPage.tsx).
+ * Foto-Detailseite - Teil: Maximal-Fixture (AK4) und Ort (S2) - gemeinsamer Unterbau: src/test/photoDetailPage.tsx.
  */
 import { screen } from '@testing-library/react'
 import * as photosApi from '../api/photos'

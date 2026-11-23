@@ -1,6 +1,6 @@
 """Fabriken fuer gemeinsame Testdaten des Backends.
 
-Jede frueher je Testdatei ausgeschriebene Zeile steht hier genau einmal; die Abweichungen der
+Jede Zeile steht hier genau einmal; die Abweichungen der
 Aufrufer sind Schluesselwort-Parameter, deren Vorgabe der haeufigste Aufrufer setzt. Reine
 Datenerzeugung, deshalb ohne eigene Tests - geprueft wird sie ueber jeden Aufrufer.
 """
@@ -32,7 +32,7 @@ from photosort.models import (
 from photosort.opencloud.webdav_xml import DavEntry
 from tests.support.fakes import FakeOpenCloudClient
 
-# Der eine feste Bezugsmoment: frueher stand er in jeder Testdatei als eigenes Moduldatum.
+# Der eine feste Bezugsmoment aller Testdaten.
 DEFAULT_MOMENT = datetime(2023, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 
 

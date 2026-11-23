@@ -1,6 +1,5 @@
 """Foto-API: Auflistung, Standardreihenfolge, Kamerafilter, korrigierte Zeit, Seitenverhaeltnis auf
 jedem Lesepfad.
-(Aufgeteilt aus test_api_photos.py, Spec 0651.)
 """
 
 from __future__ import annotations
