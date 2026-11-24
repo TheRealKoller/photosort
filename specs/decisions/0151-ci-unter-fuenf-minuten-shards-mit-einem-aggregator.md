@@ -21,7 +21,7 @@ selben Job ist ausgereizt. Jede Beschleunigung muss die volle Testmenge, die Cov
 
 `backend` und `e2e` werden Aggregatoren: `needs` auf alle Shards, `if: always()`, ausdrückliche
 Prüfung `needs.<job>.result == 'success'` → rot. Die Arbeit liegt in den Matrix-Jobs `backend-test`
-(8 Shards) und `e2e-shard` (3 Shards), die nicht erforderlich sind.
+(5 Shards) und `e2e-shard` (2 Shards), die nicht erforderlich sind.
 
 Grund: Der Check-Name eines Jobs ist sein Schlüssel. Ein Matrix-Job mit dem Schlüssel `backend`
 hieße `backend (1)`; der Required-Kontext `backend` bliebe auf „Expected" stehen und jeder Merge
@@ -46,7 +46,7 @@ Grenze, weil der CI-Runner rund 2,4-mal langsamer ist als der Entwicklungsrechne
 liegen die gemessenen Gruppen bei 25–32 s (Maximum/Mittel 1,14); das ergibt je Shard rund 75–80 s
 Testzeit auf CI — und damit Reserve ohne einen weiteren Mechanismus.
 
-### 3. e2e: drei Shards mit je eigenem Prüfstack
+### 3. e2e: zwei Shards mit je eigenem Prüfstack
 
 `npm test -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}`. Jeder Shard startet seinen
 eigenen Compose-Prüfstack und seedet ihn selbst; `workers: 1`, `retries: 0`, `forbidOnly: true`
@@ -56,7 +56,7 @@ bleiben unverändert und bleiben per Assertion in `e2e/tests/toolchain.spec.ts` 
 ### 4. Images: Buildx-Cache nach `type=gha`, ein Schreiber
 
 Neu entstehen `docker-compose.ci-cache.yml` (`cache_from`, Scope `photosort-images`) und
-`docker-compose.ci-cache-write.yml` (`cache_to`, `mode=min`). Gelesen wird der Cache von allen
+`docker-compose.ci-cache-write.yml` (`cache_to`, `mode=min`). Gelesen wird der Cache von beiden
 e2e-Shards und von `docker-compose-check`; geschrieben **nur** von `docker-compose-check`, und nur
 in Läufen, die kein Fork-Pull-Request sind. Ein Schreiber je Lauf verhindert konkurrierende
 Exporte; die Fork-Bedingung hält fremde Pull-Request-Läufe aus dem Cache, den `main` und spätere
