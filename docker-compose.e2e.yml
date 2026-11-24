@@ -47,6 +47,11 @@ services:
       retries: 10
 
   backend:
+    build:
+      args:
+        # Schlankes Profil: die Oberflaechenpruefung fuehrt keine Klassifizierung aus. Das
+        # Produktionsimage (Profil `full`) baut und prueft `docker-compose-check`.
+        PHOTOSORT_PROFILE: slim
     environment:
       DATABASE_URL: postgresql+psycopg://photosort:e2e-only-postgres-password@postgres:5432/photosort
       REDIS_URL: redis://redis:6379/0

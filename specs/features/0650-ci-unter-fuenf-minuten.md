@@ -92,7 +92,15 @@ kein Fork-Pull-Request sind. Beide Jobs richten den Buildx-Builder ein
 `docker-compose-check` ersetzen die Cache-Overlays das `--build` nicht: Gebaut wird weiterhin, nur
 aus dem Cache.
 
-**Backend-Image.** `backend/Dockerfile` wird geschichtet: apt-Pakete → `pyproject.toml` (und
+**Backend-Image.** `backend/Dockerfile` trägt ein Profil (`PHOTOSORT_PROFILE`): `full` ist das
+Produktionsimage (alle Abhängigkeiten, Modell-Assets); `slim` lässt die ML-Pakete und den
+Asset-Download weg. Der e2e-Prüfstack baut `slim` — die Oberflächenprüfung führt keine
+Klassifizierung aus und braucht weder TensorFlow noch MediaPipe; die API-Fläche ist dieselbe. Das
+Produktionsimage (`full`) baut und prüft weiterhin `docker-compose-check` (Migration, Login,
+nginx-Proxy). Das Archiv wiegt dadurch ~950 MB statt ~1,7 GB, und der Cache-Import je e2e-Shard
+halbiert sich.
+
+`backend/Dockerfile` wird geschichtet: apt-Pakete → `pyproject.toml` (und
 `uv.lock` als Schichtschlüssel) → Modell-Manifest, Fetch-Skript und Asset-Download → Fremdpakete
 aus `[project].dependencies` (per `tomllib`, `pip install -r`) → `src`, `alembic`, `scripts` →
 `pip install --no-deps .`. Das Image löst weiterhin frisch aus `pyproject.toml` auf; ein
@@ -228,6 +236,10 @@ Qualitätsgates. `pip install uv` bleibt ungepinnt (vorbestehend, außerhalb des
   Blöcke erzeugte Gruppen mit 153 und 3577 Tests bei gleicher Dauersumme.
 - **Kein Test umgebaut.** Die Beschleunigung kommt aus Zerlegung und Cache; die Klausel zu
   umgebauten Tests bleibt ungenutzt.
+- **Produktentscheidung (Daniel): schlankes e2e-Prüfimage.** Derselbe Code ohne ML-Pakete und
+  Modell-Assets, weil e2e keine Klassifizierung ausführt. Das Produktionsimage bleibt durch
+  `docker-compose-check` geprüft; die Zusicherung „e2e startet das Produktionsimage" aus Spec 0174
+  gilt bewusst nicht mehr.
 - **Kein manueller Branch-Protection-Schritt.** `backend` und `e2e` bleiben die geforderten
   Kontexte; sie sind nach dem Umbau die Aggregatoren.
 
