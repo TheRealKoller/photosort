@@ -306,11 +306,12 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN \
-            build --print > "$RUNNER_TEMP/bake.json"
+            build --print > bake-ci.json
       - name: Images bauen (Buildx-Bake, Image-Cache)
         uses: docker/bake-action@v7
         with:
-          files: ${{ runner.temp }}/bake.json
+          source: .
+          files: bake-ci.json
           load: true
           set: |
             *.cache-from=type=gha,scope=photosort-images
@@ -991,11 +992,12 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml \
-            build --print > "$RUNNER_TEMP/bake.json"
+            build --print > bake-ci.json
       - name: Images bauen (Buildx-Bake, Image-Cache lesen)
         uses: docker/bake-action@v7
         with:
-          files: ${{ runner.temp }}/bake.json
+          source: .
+          files: bake-ci.json
           load: true
           set: |
             *.cache-from=type=gha,scope=photosort-images
