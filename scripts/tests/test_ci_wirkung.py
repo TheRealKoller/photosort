@@ -53,6 +53,7 @@ OVERLAY_ZEILE = re.compile(
     r"^(services:"
     r"|  (backend|worker|frontend):"
     r"|    build:"
+    r"|    image: photosort-ci-(backend|frontend)"
     r"|      (cache_from|cache_to):"
     r"|        - type=gha,scope=photosort-images(,mode=min)?)$"
 )
@@ -979,7 +980,7 @@ def _overlay_befunde(datei: str, text: str) -> list[Befund]:
                     nummer,
                     "cache-und-artefakte",
                     "Das Cache-Overlay ist nicht inhaltsgeschlossen - erlaubt sind nur "
-                    "`services.*.build.cache_from`/`cache_to` mit Scope-Literal.",
+                    "`services.*.image`, `build.cache_from`/`cache_to` mit Scope-Literal.",
                 )
             )
         for treffer in re.finditer(r"scope=([^,\s]+)", zeile):

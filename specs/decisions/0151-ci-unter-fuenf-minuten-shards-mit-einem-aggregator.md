@@ -53,15 +53,21 @@ eigenen Compose-Prüfstack und seedet ihn selbst; `workers: 1`, `retries: 0`, `f
 bleiben unverändert und bleiben per Assertion in `e2e/tests/toolchain.spec.ts` gebunden. Das
 `setup`-Projekt läuft in jedem Shard, weil jeder Shard seinen eigenen Anmeldezustand braucht.
 
-### 4. Images: Buildx-Cache nach `type=gha`, ein Schreiber
+### 4. Images: ein Bau, ein Archiv, ein Cache-Schreiber
 
-Neu entstehen `docker-compose.ci-cache.yml` (`cache_from`, Scope `photosort-images`) und
-`docker-compose.ci-cache-write.yml` (`cache_to`, `mode=min`). Gelesen wird der Cache von beiden
-e2e-Shards und von `docker-compose-check`; geschrieben **nur** von `docker-compose-check`, und nur
-in Läufen, die kein Fork-Pull-Request sind. Ein Schreiber je Lauf verhindert konkurrierende
-Exporte; die Fork-Bedingung hält fremde Pull-Request-Läufe aus dem Cache, den `main` und spätere
-Pull Requests lesen. Beide bauenden Jobs richten den Buildx-Builder ein
-(`docker/setup-buildx-action`), weil `type=gha` den `docker-container`-Treiber verlangt.
+Neu entstehen `docker-compose.ci-cache.yml` (`build.cache_from`, Scope `photosort-images`, feste
+`image`-Namen `photosort-ci-backend`/`-frontend`) und `docker-compose.ci-cache-write.yml`
+(`cache_to`, `mode=min`). Der Job `images` baut Backend- und Frontend-Image **einmal**
+(`docker/bake-action`, Definition aus `docker compose build --print`), schreibt den Cache und legt
+beide als komprimiertes Archiv `stack-images` ab (ein Tag Aufbewahrung). `docker-compose-check` und
+beide e2e-Shards laden nur dieses Archiv. Geschrieben wird der Cache **nur** von `images`, und nur
+in Läufen, die kein Fork-Pull-Request sind.
+
+Grund für einen Bau statt eines Cache-Imports je Job: Bei zwei bis vier gleichzeitigen Lesern traf
+der Buildx-Cache je Lauf in einem Shard nur teilweise — Manifest und frühe Schichten `CACHED`, die
+beiden großen `pip`-Schichten neu gebaut. Der Gesamtlauf schwankte dadurch zwischen 286 s und
+417 s. Das Archiv ist ein Blob je Verbraucher statt eines Cache-Imports; die festen Image-Namen
+lassen dasselbe Backend-Image den `worker` und beide Compose-Projekte bedienen.
 
 ### 5. Das Backend-Image trennt Fremdpakete vom Quellcode
 
