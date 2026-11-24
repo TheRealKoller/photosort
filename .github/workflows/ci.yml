@@ -263,19 +263,14 @@ jobs:
       - name: Test
         run: npm test
 
-  # Ein Bau, viele Verbraucher: `images` baut Backend- und Frontend-Image einmal, schreibt den
-  # Image-Cache und legt beide als Archiv ab; `docker-compose-check` und beide e2e-Shards laden
-  # dasselbe Archiv. Grund: bei zwei bis vier gleichzeitigen Cache-Lesern traf der Cache nur
-  # teilweise, und ein kalter e2e-Shard kostete dann ~390 s statt ~250 s.
-  #
-  # Der Fork-Ausschluss gilt hier und nur hier: dieser Job ist der einzige Cache-Schreiber.
-  images:
+  docker-compose-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       # `type=gha` verlangt den `docker-container`-Treiber; der Standardtreiber des Runners kann
       # den Cache weder lesen noch schreiben.
-      - name: Buildx-Builder fuer den Image-Cache einrichten (images)
+      - name: Buildx-Builder fuer den Image-Cache einrichten (docker-compose-check)
         uses: docker/setup-buildx-action@v3
       # Geschrieben wird der Image-Cache nur in Laeufen, die kein Fork-Pull-Request sind: eine
       # `$GITHUB_ENV`-Bedingung, kein `if:` am Build-Schritt. Ein Fork-PR-Autor wuerde sonst
@@ -301,10 +296,12 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN config -q
-      # Gebaut wird ueber den Bake-Weg: `docker compose build --print` liefert die Bau-Definition
-      # (Kontext, Dockerfile, Argumente, Tags) aus derselben Compose-Konfiguration; gebaut wird sie
-      # mit `docker/bake-action`, nicht mit einem `run:`-Schritt: `type=gha` braucht
-      # `ACTIONS_RUNTIME_TOKEN`/`ACTIONS_RESULTS_URL`, und die reicht GitHub nur an Aktionen durch.
+      # Gebaut wird ueber den Bake-Weg, nicht ueber `up --build`: `docker compose build --print`
+      # liefert die Bau-Definition (Kontext, Dockerfile, Argumente, Tags) aus derselben
+      # Compose-Konfiguration. Gebaut wird sie mit `docker/bake-action`, nicht mit einem
+      # `run:`-Schritt: `type=gha` braucht `ACTIONS_RUNTIME_TOKEN`/`ACTIONS_RESULTS_URL`, und die
+      # reicht GitHub nur an Aktionen durch, nicht an `run:`-Schritte (belegt: im Lauf davor
+      # kein Cache-Import, kein `buildkit`-Eintrag im Actions-Cache).
       - name: Bau-Definition aus Compose drucken
         run: |
           set -euo pipefail
@@ -315,35 +312,10 @@ jobs:
         with:
           source: .
           files: bake-ci.json
-          targets: backend,frontend
           load: true
           set: |
             *.cache-from=type=gha,scope=photosort-images
             ${{ env.CACHE_BAKE_SCHREIBEN }}
-      # Das Archiv ist die Verteilform: ein Blob statt eines Cache-Imports je Shard. Die
-      # Aufbewahrung von einem Tag haelt den Speicherbedarf klein.
-      - name: Images als Archiv bereitstellen
-        run: |
-          set -euo pipefail
-          docker save photosort-ci-backend photosort-ci-frontend | gzip -1 > stack-images.tar.gz
-          ls -lh stack-images.tar.gz
-      - uses: actions/upload-artifact@v4
-        with:
-          name: stack-images
-          path: stack-images.tar.gz
-          retention-days: 1
-
-  docker-compose-check:
-    needs: [images]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Images laden
-        uses: actions/download-artifact@v4
-        with:
-          name: stack-images
-      - name: Images entpacken
-        run: gunzip -c stack-images.tar.gz | docker load
       - name: Validate docker-compose.yml
         run: docker compose config -q
       - name: Validate docker-compose.yml + docker-compose.demo.yml overlay
@@ -474,7 +446,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0013-$RANDOM"
 
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml up -d backend worker
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d backend worker
 
           # "docker compose up" blockiert wegen worker's "depends_on: backend: condition:
           # service_healthy" bereits selbst, bis backend healthy ist - diese Wartschleife ist
@@ -560,7 +532,7 @@ jobs:
 
           # Bewusst "--no-deps": der SPA-Fallback ist rein nginx-seitig und haengt nicht
           # von backend/postgres/redis ab (siehe Teststrategie, Spec 0016).
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml up -d --no-deps frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps frontend
 
           echo "Waiting for frontend to respond..."
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
@@ -631,7 +603,7 @@ jobs:
           # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
           rm -f .env
           trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml up -d --no-deps frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d --no-deps frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
           for _ in $(seq 1 30); do
@@ -676,7 +648,7 @@ jobs:
           export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
           export SECRET_KEY="ci-only-secret-key-not-for-production-0049-$RANDOM"
 
-          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml up -d backend worker frontend
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN up -d backend worker frontend
 
           base_url="http://localhost:${FRONTEND_PORT:-8080}"
 
@@ -833,7 +805,6 @@ jobs:
   # auf, waehrend `workers: 1`, `retries: 0` und `forbidOnly: true` unveraendert bleiben. Das
   # `setup`-Projekt laeuft in jedem Shard, weil jeder Shard seinen eigenen Anmeldezustand braucht.
   e2e-shard:
-    needs: [images]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1022,14 +993,22 @@ jobs:
         # vorgesehen (docs/setup.md, .claude/skills/browse-app/SKILL.md).
         run: npx playwright install --with-deps chromium
 
-      # Die Images kommen als ein Archiv aus dem Job `images`: ein Blob statt eines Cache-Imports
-      # je Shard, und beide Shards laden dasselbe.
-      - name: Images laden
-        uses: actions/download-artifact@v4
+      # Bauen ueber den Bake-Weg wie im Job `docker-compose-check`, mit `docker/bake-action` (nur
+      # Aktionen bekommen den Cache-Token); hier wird der GHA-Cache nur gelesen (geschrieben wird
+      # er nur in `docker-compose-check`, und nur in Nicht-Fork-Laeufen).
+      - name: Bau-Definition aus Compose drucken
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml \
+            build --print > bake-ci.json
+      - name: Images bauen (Buildx-Bake, Image-Cache lesen)
+        uses: docker/bake-action@v7
         with:
-          name: stack-images
-      - name: Images entpacken
-        run: gunzip -c stack-images.tar.gz | docker load
+          source: .
+          files: bake-ci.json
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=photosort-images
 
       - name: Pruefstack starten
         run: |

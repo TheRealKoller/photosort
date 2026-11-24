@@ -84,14 +84,13 @@ strategy.job-total }}` aus. `workers: 1`, `retries: 0`, `forbidOnly: true` bleib
 Aggregator `e2e` prüft die Shard-Ergebnisse. Die stackgebundenen statischen Nachweise
 (Projektname, Portbindungen, Köder-`.env`) laufen in jedem Shard vor dem Stackstart.
 
-**Images.** Neu `docker-compose.ci-cache.yml` (`build.cache_from`, Scope `photosort-images`, feste
-`image`-Namen) und `docker-compose.ci-cache-write.yml` (`build.cache_to`, `mode=min`). Der Job
-`images` baut Backend- und Frontend-Image einmal über `docker/bake-action` (Definition aus
-`docker compose build --print`), schreibt den Cache und legt beide als Archiv `stack-images` ab;
-`docker-compose-check` und beide e2e-Shards laden dieses Archiv und starten den Stack ohne
-`--build`. Geschrieben wird der Cache nur in `images` und nur in Läufen, die kein Fork-Pull-Request
-sind. Grund: Ein Cache-Import je Job traf bei mehreren gleichzeitigen Lesern nur teilweise, und ein
-kalter e2e-Shard kostete dann rund 390 s.
+**Images.** Neu `docker-compose.ci-cache.yml` (`build.cache_from`, Scope `photosort-images`) und
+`docker-compose.ci-cache-write.yml` (`build.cache_to`, `mode=min`). Beide e2e-Shards und
+`docker-compose-check` lesen; geschrieben wird nur in `docker-compose-check` und nur in Läufen, die
+kein Fork-Pull-Request sind. Beide Jobs richten den Buildx-Builder ein
+(`docker/setup-buildx-action`), weil `type=gha` den `docker-container`-Treiber verlangt. In
+`docker-compose-check` ersetzen die Cache-Overlays das `--build` nicht: Gebaut wird weiterhin, nur
+aus dem Cache.
 
 **Backend-Image.** `backend/Dockerfile` wird geschichtet: apt-Pakete → `pyproject.toml` (und
 `uv.lock` als Schichtschlüssel) → Modell-Manifest, Fetch-Skript und Asset-Download → Fremdpakete
@@ -105,7 +104,7 @@ Lock-Refresh verwirft die Fremdpaket-Schicht.
 |---|---|
 | `.github/workflows/ci.yml` | Matrix-Jobs `backend-test`/`e2e-shard`, Aggregatoren `backend`/`e2e`, Buildx-Setup, Cache-Overlays, Coverage-Upload/-Combine |
 | `backend/Dockerfile` | Schichtung nach Entscheidung 5 der ADR |
-| `docker-compose.ci-cache.yml`, `docker-compose.ci-cache-write.yml` (neu), Job `images` | feste `image`-Namen, `cache_from`/`cache_to`, Archiv `stack-images` |
+| `docker-compose.ci-cache.yml`, `docker-compose.ci-cache-write.yml` (neu) | `cache_from`/`cache_to` für `backend`, `worker`, `frontend` |
 | `backend/pyproject.toml`, `backend/uv.lock` | dev-Dependency `pytest-split` |
 | `backend/.test_durations` (neu) | einmalig erzeugte Dauerdatei |
 | `scripts/tests/test_ci_wirkung.py`, `mutationen.py`, `waechter_aussagen.json` | Gate-, Vollständigkeits-, Required-Kontext- und Cache-Invarianten |
