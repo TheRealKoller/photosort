@@ -78,14 +78,14 @@ Shard-Ergebnisse, lädt die Datensätze über ihre Namen, führt `coverage combi
 `backend/.test_durations` (`pytest --store-durations`); `least_duration` verteilt Tests einzeln nach
 gemessener Dauer und hält die Testzahl je Shard gleich.
 
-**e2e.** `e2e-shard` als Matrix über `shard: [1, 2]`; jeder Shard startet seinen eigenen
+**e2e.** `e2e-shard` als Matrix über `shard: [1, 2, 3]`; jeder Shard startet seinen eigenen
 Compose-Prüfstack, seedet ihn und führt `npm test -- --shard=${{ matrix.shard }}/${{
 strategy.job-total }}` aus. `workers: 1`, `retries: 0`, `forbidOnly: true` bleiben unverändert. Der
 Aggregator `e2e` prüft die Shard-Ergebnisse. Die stackgebundenen statischen Nachweise
 (Projektname, Portbindungen, Köder-`.env`) laufen in jedem Shard vor dem Stackstart.
 
 **Images.** Neu `docker-compose.ci-cache.yml` (`build.cache_from`, Scope `photosort-images`) und
-`docker-compose.ci-cache-write.yml` (`build.cache_to`, `mode=min`). Beide e2e-Shards und
+`docker-compose.ci-cache-write.yml` (`build.cache_to`, `mode=min`). Alle e2e-Shards und
 `docker-compose-check` lesen; geschrieben wird nur in `docker-compose-check` und nur in Läufen, die
 kein Fork-Pull-Request sind. Beide Jobs richten den Buildx-Builder ein
 (`docker/setup-buildx-action`), weil `type=gha` den `docker-container`-Treiber verlangt. In
@@ -123,7 +123,7 @@ ausgewiesen. Vorher-Werte: dieselbe Methode auf den letzten zehn erfolgreichen `
 `pytest --collect-only -q` gesamt (heute 6677) gegen die Vereinigung der Shard-Listen; Schnitt leer,
 Vereinigung vollständig. Im CI-Lauf ergänzend `passed+skipped` je Shard; der eine erwartete Skip
 (`test_eye_mapping.py::test_every_photo_type_exists_in_eye_meta`) bleibt derselbe. e2e: Vereinigung
-der `--list --reporter=json`-Ausgaben beider Shards gleich der Gesamtliste (138 Tests); der
+der `--list --reporter=json`-Ausgaben aller drei Shards gleich der Gesamtliste (138 Tests); der
 gemeinsame `setup`-Fall (Anmeldung) ist der einzige Schnitt und gewollt, weil jeder Shard seinen
 eigenen Sitzungszustand braucht.
 

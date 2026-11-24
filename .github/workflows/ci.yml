@@ -801,15 +801,17 @@ jobs:
           echo "e2e-shard: ${{ needs.e2e-shard.result }}"
           test "${{ needs.e2e-shard.result }}" = "success"
 
-  # Zwei Shards, jeder mit eigenem Pruefstack und eigenem Seed: Der Browseranteil teilt sich so
-  # auf, waehrend `workers: 1`, `retries: 0` und `forbidOnly: true` unveraendert bleiben. Das
-  # `setup`-Projekt laeuft in jedem Shard, weil jeder Shard seinen eigenen Anmeldezustand braucht.
+  # Drei Shards, jeder mit eigenem Pruefstack und eigenem Seed: Der Browseranteil teilt sich so
+  # auf (47/48/45 Faelle), waehrend `workers: 1`, `retries: 0` und `forbidOnly: true`
+  # unveraendert bleiben. Das `setup`-Projekt laeuft in jedem Shard, weil jeder Shard seinen
+  # eigenen Anmeldezustand braucht. Zwei Shards liessen den langsameren bei rund 290 s (Median
+  # der warmen Laeufe), also ohne Reserve gegen die 300-s-Grenze.
   e2e-shard:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
