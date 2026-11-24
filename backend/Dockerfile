@@ -31,10 +31,11 @@ COPY pyproject.toml uv.lock ./
 
 
 # Profil der Laufzeitabhaengigkeiten: `full` (Voreinstellung) installiert alles - das ist das
-# Produktionsimage, gebaut und geprueft in `docker-compose-check`. `slim` laesst die ML-Pakete
-# weg (TensorFlow, MediaPipe, OpenCV, onnxruntime, tokenizers) und laedt die Modell-Assets nicht:
-# beides braucht ausschliesslich der Worker fuer die Klassifizierung, und der e2e-Pruefstack
-# fuehrt keine Klassifizierung aus. Die API-Flaeche ist in beiden Profilen dieselbe.
+# Produktionsimage, gebaut und geprueft in `docker-compose-check`. `slim` laesst TensorFlow weg
+# (NIMA-Aesthetik, nur im Worker; ~600 MB). Alles andere bleibt: `photosort.face_analysis` braucht
+# MediaPipe, OpenCV und die beiden Gesichts-Assets, und die API bietet die Erkennung fuer
+# "Ohne Namen" an. Der e2e-Pruefstack fuehrt keine Klassifizierung aus, braucht aber diese
+# Endpunkte.
 ARG PHOTOSORT_PROFILE=full
 #
 # Manifest, Fetch-Skript und Modell-Assets bekommen eine eigene Schicht vor den Fremdpaketen: der
@@ -47,11 +48,11 @@ ARG PHOTOSORT_PROFILE=full
 # `modell-assets-geprueft` in scripts/tests/test_ci_wirkung.py.
 COPY src/photosort/model_assets.py src/photosort/model_assets.py
 COPY scripts/fetch_model_assets.py scripts/fetch_model_assets.py
-RUN if [ "$PHOTOSORT_PROFILE" = "slim" ]; then echo "Profil slim: keine Modell-Assets"; else python scripts/fetch_model_assets.py; fi
+RUN python scripts/fetch_model_assets.py
 #
 # Diese Schicht haengt nur an pyproject.toml/uv.lock und dem Profil, nicht an src/ - eine
 # Quellcode-Aenderung installiert sie nicht neu.
-RUN python -c "import pathlib, tomllib; ml = ('tensorflow', 'mediapipe', 'opencv-contrib-python', 'onnxruntime', 'tokenizers'); slim = '$PHOTOSORT_PROFILE' == 'slim'; deps = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']; behalten = [d for d in deps if not (slim and d.split('[')[0].split('>')[0].split('=')[0].strip().lower() in ml)]; pathlib.Path('/tmp/requirements.txt').write_text('\n'.join(behalten) + '\n'); print('Profil', '$PHOTOSORT_PROFILE', '-', len(behalten), 'von', len(deps), 'Paketen')"
+RUN python -c "import pathlib, tomllib; ml = ('tensorflow',); slim = '$PHOTOSORT_PROFILE' == 'slim'; deps = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']; behalten = [d for d in deps if not (slim and d.split('[')[0].split('>')[0].split('=')[0].strip().lower() in ml)]; pathlib.Path('/tmp/requirements.txt').write_text('\n'.join(behalten) + '\n'); print('Profil', '$PHOTOSORT_PROFILE', '-', len(behalten), 'von', len(deps), 'Paketen')"
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Erst jetzt der Quellcode. Die bereits heruntergeladenen Assets bleiben beim Zusammenfuehren

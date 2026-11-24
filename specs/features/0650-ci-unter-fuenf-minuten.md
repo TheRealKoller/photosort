@@ -93,8 +93,8 @@ kein Fork-Pull-Request sind. Beide Jobs richten den Buildx-Builder ein
 aus dem Cache.
 
 **Backend-Image.** `backend/Dockerfile` trägt ein Profil (`PHOTOSORT_PROFILE`): `full` ist das
-Produktionsimage (alle Abhängigkeiten, Modell-Assets); `slim` lässt die ML-Pakete und den
-Asset-Download weg. Der e2e-Prüfstack baut `slim` — die Oberflächenprüfung führt keine
+Produktionsimage (alle Abhängigkeiten, Modell-Assets); `slim` lässt TensorFlow weg (NIMA-Ästhetik des Workers, ~600 MB); MediaPipe, OpenCV und die
+Modell-Assets bleiben, weil die API die Gesichtserkennung für „Ohne Namen" anbietet. Der e2e-Prüfstack baut `slim` — die Oberflächenprüfung führt keine
 Klassifizierung aus und braucht weder TensorFlow noch MediaPipe; die API-Fläche ist dieselbe. Das
 Produktionsimage (`full`) baut und prüft weiterhin `docker-compose-check` (Migration, Login,
 nginx-Proxy). Das Archiv wiegt dadurch ~950 MB statt ~1,7 GB, und der Cache-Import je e2e-Shard

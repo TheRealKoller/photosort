@@ -66,8 +66,9 @@ Pull Requests lesen. Beide bauenden Jobs richten den Buildx-Builder ein
 ### 5. Das Backend-Image trennt Fremdpakete vom Quellcode und trägt ein Profil
 
 Das Profil (`PHOTOSORT_PROFILE`) trennt das Produktionsimage (`full`) vom e2e-Prüfimage (`slim`):
-`slim` lässt die ML-Pakete und den Modell-Asset-Download weg, weil die Oberflächenprüfung keine
-Klassifizierung ausführt. Das Produktionsimage baut und prüft weiterhin `docker-compose-check`. Der
+`slim` lässt TensorFlow weg (~600 MB, NIMA-Ästhetik des Workers), weil die Oberflächenprüfung
+keine Klassifizierung ausführt. MediaPipe, OpenCV und die Modell-Assets bleiben: die API bietet
+die Gesichtserkennung für „Ohne Namen" an, und die e2e-Specs rufen sie auf. Das Produktionsimage baut und prüft weiterhin `docker-compose-check`. Der
 Grund ist die Größe: 1,7 GB gegen 0,95 GB entscheiden über den Cache-Import je e2e-Shard.
 
 `backend/Dockerfile` kopiert vor der Fremdpaket-Schicht nur `pyproject.toml` — und `uv.lock` als
