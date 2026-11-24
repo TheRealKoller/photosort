@@ -1107,31 +1107,24 @@ def _cache_und_artefakte(bestand: Bestand, work: tuple[Workflow, ...]) -> list[B
                     "`$GITHUB_ENV`-Bedingung.",
                 )
             )
-    # Das Schreib-Literal (`cache-to=type=gha…`) steht an genau einer Stelle, und zwar im
-    # Schreibpfad-Schritt hinter dem Fork-Ausschluss. Der Bake-Aufruf selbst darf es nicht
-    # tragen: ein Literal am Build-Schritt schriebe auch fuer Fork-Pull-Requests.
+    # Das Schreib-Literal (`cache-to=type=gha…`) steht an genau einer Stelle: auf der Zeile, die es
+    # hinter dem Fork-Ausschluss nach `$GITHUB_ENV` schreibt. Ein Literal am Build-Schritt
+    # (`run:` oder `with: set:` der Bake-Aktion) schriebe auch fuer Fork-Pull-Requests.
     literale = [
-        (job, schritt, nummer)
+        (job, nummer, zeile)
         for workflow in work
         for job in workflow.jobs
-        for schritt in job.schritte
-        for nummer, zeile in enumerate(schritt.run.split("\n"), schritt.run_zeile + 1)
-        if "cache-to=type=gha" in zeile
+        for nummer, zeile in enumerate(job.roh.split("\n"), job.zeile)
+        if "cache-to=type=gha" in zeile and not zeile.lstrip().startswith("#")
     ]
-    erlaubt = {(job.key, schritt.zeile) for job, schritt in schreib_stellen}
-    ausserhalb = [
-        (job, schritt, nummer)
-        for job, schritt, nummer in literale
-        if (job.key, schritt.zeile) not in erlaubt
-    ]
+    ausserhalb = [(job, nummer) for job, nummer, zeile in literale if "GITHUB_ENV" not in zeile]
     if len(literale) != 1 or ausserhalb:
         if ausserhalb:
-            ort_job, ort_schritt, ort_nummer = ausserhalb[0]
+            ort_job, ort_nummer = ausserhalb[0]
         elif literale:
-            ort_job, ort_schritt, ort_nummer = literale[0]
+            ort_job, ort_nummer, _ = literale[0]
         else:
-            ort_job, ort_schritt = schreib_stellen[0]
-            ort_nummer = ort_schritt.run_zeile
+            ort_job, ort_nummer = work[0].jobs[0], 1
         befunde.append(
             befund(
                 ort_job.datei,

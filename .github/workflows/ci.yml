@@ -298,23 +298,23 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN config -q
       # Gebaut wird ueber den Bake-Weg, nicht ueber `up --build`: `docker compose build --print`
       # liefert die Bau-Definition (Kontext, Dockerfile, Argumente, Tags) aus derselben
-      # Compose-Konfiguration, `docker buildx bake` baut sie mit dem GHA-Cache. Der direkte
-      # `up --build`-Weg hat die Cache-Attribute im Runner nicht an Buildx weitergegeben (belegt:
-      # keine `buildkit`-Eintraege im Actions-Cache, kein Cache-Import im Log) - und damit die
-      # beiden langen Jobs ohne Beschleunigung gelassen. Die `--set`-Angaben halten den Scope
-      # unabhaengig davon, ob die gedruckte Definition die Cache-Attribute enthaelt.
-      - name: Images bauen (Buildx-Bake, Image-Cache)
+      # Compose-Konfiguration. Gebaut wird sie mit `docker/bake-action`, nicht mit einem
+      # `run:`-Schritt: `type=gha` braucht `ACTIONS_RUNTIME_TOKEN`/`ACTIONS_RESULTS_URL`, und die
+      # reicht GitHub nur an Aktionen durch, nicht an `run:`-Schritte (belegt: im Lauf davor
+      # kein Cache-Import, kein `buildkit`-Eintrag im Actions-Cache).
+      - name: Bau-Definition aus Compose drucken
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml $CACHE_SCHREIBEN \
             build --print > "$RUNNER_TEMP/bake.json"
-          args=()
-          if [ -n "${CACHE_BAKE_SCHREIBEN:-}" ]; then
-            args=(--set "$CACHE_BAKE_SCHREIBEN")
-          fi
-          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \
-            --set '*.cache-from=type=gha,scope=photosort-images' \
-            "${args[@]}"
+      - name: Images bauen (Buildx-Bake, Image-Cache)
+        uses: docker/bake-action@v7
+        with:
+          files: ${{ runner.temp }}/bake.json
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=photosort-images
+            ${{ env.CACHE_BAKE_SCHREIBEN }}
       - name: Validate docker-compose.yml
         run: docker compose config -q
       - name: Validate docker-compose.yml + docker-compose.demo.yml overlay
@@ -984,15 +984,21 @@ jobs:
         # vorgesehen (docs/setup.md, .claude/skills/browse-app/SKILL.md).
         run: npx playwright install --with-deps chromium
 
-      # Bauen ueber den Bake-Weg wie im Job `docker-compose-check`; hier wird der GHA-Cache nur
-      # gelesen (geschrieben wird er nur in `docker-compose-check`, und nur in Nicht-Fork-Laeufen).
-      - name: Images bauen (Buildx-Bake, Image-Cache lesen)
+      # Bauen ueber den Bake-Weg wie im Job `docker-compose-check`, mit `docker/bake-action` (nur
+      # Aktionen bekommen den Cache-Token); hier wird der GHA-Cache nur gelesen (geschrieben wird
+      # er nur in `docker-compose-check`, und nur in Nicht-Fork-Laeufen).
+      - name: Bau-Definition aus Compose drucken
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.ci-cache.yml \
             build --print > "$RUNNER_TEMP/bake.json"
-          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \
-            --set '*.cache-from=type=gha,scope=photosort-images'
+      - name: Images bauen (Buildx-Bake, Image-Cache lesen)
+        uses: docker/bake-action@v7
+        with:
+          files: ${{ runner.temp }}/bake.json
+          load: true
+          set: |
+            *.cache-from=type=gha,scope=photosort-images
 
       - name: Pruefstack starten
         run: |

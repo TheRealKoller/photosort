@@ -274,13 +274,15 @@ MUTATIONEN: tuple[Mutation, ...] = (
         waechter="ci",
         datei=CI,
         alt=(
-            '          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \\\n'
-            "            --set '*.cache-from=type=gha,scope=photosort-images'\n"
+            "          set: |\n"
+            "            *.cache-from=type=gha,scope=photosort-images\n"
+            "            ${{ env.CACHE_BAKE_SCHREIBEN }}\n"
         ),
         neu=(
-            '          docker buildx bake -f "$RUNNER_TEMP/bake.json" --load \\\n'
-            "            --set '*.cache-from=type=gha,scope=photosort-images' \\\n"
-            "            --set '*.cache-to=type=gha,scope=photosort-images,mode=min'\n"
+            "          set: |\n"
+            "            *.cache-from=type=gha,scope=photosort-images\n"
+            "            *.cache-to=type=gha,scope=photosort-images,mode=min\n"
+            "            ${{ env.CACHE_BAKE_SCHREIBEN }}\n"
         ),
         invariante="cache-und-artefakte",
     ),

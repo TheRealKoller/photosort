@@ -80,7 +80,7 @@ MINDESTZAHL_JOBS = 5
 MINDESTSCHRITTE_JE_JOB = 5
 PFLICHT_JOBS = ("backend", "frontend", "demo-scripts", "docker-compose-check", "e2e")
 PFLICHT_PAKETSAETZE = ("frontend", "e2e")
-ERWARTETE_SCHRITTZAHL = {"frontend": 9, "e2e": 18}
+ERWARTETE_SCHRITTZAHL = {"frontend": 9, "e2e": 19}
 ERWARTETER_INSTALLATIONSINDEX = {"frontend": 2, "e2e": 6}
 
 
