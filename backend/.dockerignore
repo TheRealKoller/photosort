@@ -7,3 +7,13 @@ __pycache__/
 .coverage
 htmlcov/
 tests/
+
+# Die drei Modell-Assets laedt ausschliesslich `RUN python scripts/fetch_model_assets.py` im
+# Dockerfile - SHA256-geprueft, vor dem finalen Projekt-Install. Ein lokaler Arbeitsbaum haelt
+# dieselben Dateien unter src/photosort/assets/; ohne diesen Ausschluss ueberschriebe
+# `COPY src ./src` den geprueften Download mit einer ungeprueften Kopie, und zwar im Image - kein
+# Test und kein Check saehe das. Gehalten von `modell-assets-geprueft` in
+# scripts/tests/test_ci_wirkung.py.
+src/photosort/assets/label_embedder.onnx
+src/photosort/assets/face_detection_yunet_2023mar.onnx
+src/photosort/assets/face_recognition_sface_2021dec.onnx

@@ -1,0 +1,24 @@
+# Schreibhaelfte des Image-Build-Caches (ADR 0151 Punkt 4). Diese Datei haengt NUR in Laeufen
+# hinter dem Fork-Ausschluss: ein Fork-Pull-Request-Autor duerfte sonst Schichten in den Cache
+# legen, den `main` und spaetere Pull Requests lesen - ohne dass ein Check rot wuerde. Gesetzt wird
+# das ueber `$GITHUB_ENV` in `docker-compose-check`, nie ueber ein `if:` am Build-Schritt, weil ein
+# uebersprungener Schritt die Pruefung stillschweigend ausliesse.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml \
+#       -f docker-compose.ci-cache-write.yml build backend
+#
+# `mode=min` haelt den Export klein: nur die Schichten, die der naechste Build wirklich braucht.
+# Rein additiv und inhaltsgeschlossen: ausschliesslich `build.cache_to`.
+services:
+  backend:
+    build:
+      cache_to:
+        - type=gha,scope=photosort-images,mode=min
+  worker:
+    build:
+      cache_to:
+        - type=gha,scope=photosort-images,mode=min
+  frontend:
+    build:
+      cache_to:
+        - type=gha,scope=photosort-images,mode=min

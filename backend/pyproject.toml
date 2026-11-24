@@ -73,6 +73,10 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.6",
+    # Shard-Zerlegung der CI (ADR 0151): `--splits`/`--group --splitting-algorithm=
+    # least_duration` verteilt die Tests aus `backend/.test_durations` einzeln nach gemessener
+    # Dauer und haelt die Testzahl je Shard gleich. Lokal bleibt `pytest -n auto` unveraendert.
+    "pytest-split>=0.11",
     "pytest-asyncio>=0.24",
     "aiosqlite>=0.20",
     "ruff==0.16.4",

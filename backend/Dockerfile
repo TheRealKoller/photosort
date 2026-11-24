@@ -23,21 +23,52 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgles2 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml alembic.ini ./
+# Schichtschluessel: `pyproject.toml` traegt die Abhaengigkeitsliste, `uv.lock` deren Aufloesung.
+# `uv.lock` ist NUR Schluessel, keine Installationsquelle - das Image loest weiterhin frisch aus
+# [project].dependencies auf. Ein Lock-Refresh verwirft damit die Fremdpaket-Schicht, ohne dass
+# die Installation an den Lock gekoppelt waere.
+COPY pyproject.toml uv.lock ./
+
+
+# Profil der Laufzeitabhaengigkeiten: `full` (Voreinstellung) installiert alles - das ist das
+# Produktionsimage, gebaut und geprueft in `docker-compose-check`. `slim` laesst TensorFlow weg
+# (NIMA-Aesthetik, nur im Worker; ~600 MB). Alles andere bleibt: `photosort.face_analysis` braucht
+# MediaPipe, OpenCV und die beiden Gesichts-Assets, und die API bietet die Erkennung fuer
+# "Ohne Namen" an. Der e2e-Pruefstack fuehrt keine Klassifizierung aus, braucht aber diese
+# Endpunkte.
+ARG PHOTOSORT_PROFILE=full
+#
+# Manifest, Fetch-Skript und Modell-Assets bekommen eine eigene Schicht vor den Fremdpaketen: der
+# Download haengt nicht an `src/` und bleibt im Cache, solange sich Manifest und Skript nicht
+# aendern. Das Skript liest das Manifest ueber seinen Dateipfad, nicht ueber das installierte
+# Paket; die Dateien werden per SHA256 geprueft und erst nach bestandener Pruefung geschrieben.
+# Der spaetere `COPY src ./src` bringt KEINE `.onnx`-Datei mehr mit: backend/.dockerignore
+# schliesst genau die drei Ziele des Manifests aus. Das ist die einzige Absicherung dagegen, dass
+# eine lokal vorhandene, ungepruefte Kopie den Download ueberschreibt - gehalten von
+# `modell-assets-geprueft` in scripts/tests/test_ci_wirkung.py.
+COPY src/photosort/model_assets.py src/photosort/model_assets.py
+COPY scripts/fetch_model_assets.py scripts/fetch_model_assets.py
+RUN python scripts/fetch_model_assets.py
+#
+# Diese Schicht haengt nur an pyproject.toml/uv.lock und dem Profil, nicht an src/ - eine
+# Quellcode-Aenderung installiert sie nicht neu.
+RUN python -c "import pathlib, tomllib; ml = ('tensorflow',); slim = '$PHOTOSORT_PROFILE' == 'slim'; deps = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']; behalten = [d for d in deps if not (slim and d.split('[')[0].split('>')[0].split('=')[0].strip().lower() in ml)]; pathlib.Path('/tmp/requirements.txt').write_text('\n'.join(behalten) + '\n'); print('Profil', '$PHOTOSORT_PROFILE', '-', len(behalten), 'von', len(deps), 'Paketen')"
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Erst jetzt der Quellcode. Die bereits heruntergeladenen Assets bleiben beim Zusammenfuehren
+# erhalten und sind beim folgenden Projekt-Install Teil von [tool.setuptools.package-data].
 COPY src ./src
+COPY alembic.ini ./
 COPY alembic ./alembic
 COPY scripts ./scripts
-
-# Modelldateien aus dem Manifest src/photosort/model_assets.py, per SHA256 geprueft und erst nach
-# bestandener Pruefung am Zielpfad (scripts/fetch_model_assets.py). Muss vor "pip install ."
-# liegen, damit [tool.setuptools.package-data] sie ins installierte Paket nimmt.
-RUN python scripts/fetch_model_assets.py
 
 # Zweite Absicherung neben der Zuweisung in label_embedding.py: onnxruntime sendet sonst unter
 # Linux Telemetrie an Microsoft. Gilt fuer backend und worker, die beide dieses Image nutzen.
 ENV ORT_DISABLE_TELEMETRY=1
 
-RUN pip install --no-cache-dir .
+# --no-deps: die Fremdpakete liegen bereits aus der Schicht oben im Image. Der Projekt-Install
+# nimmt nur noch Paket und Asset-Daten aus dem Quellbaum.
+RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8000
 

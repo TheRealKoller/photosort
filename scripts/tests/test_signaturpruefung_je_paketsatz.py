@@ -80,7 +80,7 @@ MINDESTZAHL_JOBS = 5
 MINDESTSCHRITTE_JE_JOB = 5
 PFLICHT_JOBS = ("backend", "frontend", "demo-scripts", "docker-compose-check", "e2e")
 PFLICHT_PAKETSAETZE = ("frontend", "e2e")
-ERWARTETE_SCHRITTZAHL = {"frontend": 9, "e2e": 17}
+ERWARTETE_SCHRITTZAHL = {"frontend": 9, "e2e": 20}
 ERWARTETER_INSTALLATIONSINDEX = {"frontend": 2, "e2e": 6}
 
 
@@ -569,8 +569,30 @@ def workflow_defaults_befunde(text: str) -> list[str]:
 # --- Werkzeug fuer die Gegenproben: Mutationen am echten Text ----------------------------------
 
 
+def _traegt_paketsatz(job: Job, name: str) -> bool:
+    """Wird in `job` ein `npm ci` im Verzeichnis `name` ausgefuehrt?"""
+    return any(
+        schritt.ist_installation and job.wirksames_verzeichnis(schritt) == name
+        for schritt in job.schritte
+    )
+
+
 def _job(text: str, name: str) -> Job:
-    for job in jobs_aus_text(text):
+    """Der Job `name`; sonst der Job, der den Paketsatz in `name` installiert.
+
+    Seit der Shard-Zerlegung (ADR 0151) heisst der e2e-Traeger `e2e-shard`, waehrend `e2e` der
+    Aggregator ist. Die Gegenproben nennen weiter den Paketsatz; der Traeger wird darueber
+    gefunden, nicht ueber eine gepflegte Job-Liste. Der Praefix-Zweig traegt die Mutation, die dem
+    Installationsschritt das Arbeitsverzeichnis entfernt - der Traeger bleibt derselbe.
+    """
+    jobs = jobs_aus_text(text)
+    for job in jobs:
+        if _traegt_paketsatz(job, name):
+            return job
+    for job in jobs:
+        if job.name.startswith(name) and any(schritt.ist_installation for schritt in job.schritte):
+            return job
+    for job in jobs:
         if job.name == name:
             return job
     raise ValueError(f"Kein Job {name!r} in {CI_WORKFLOW_NAME} - der Leser sieht ihn nicht.")
@@ -695,9 +717,14 @@ def test_der_leser_findet_die_jobs_dieses_workflows() -> None:
 def test_der_leser_findet_die_schritte_jedes_jobs(job_name: str) -> None:
     job = _job(ci_text(), job_name)
 
-    assert len(job.schritte) >= MINDESTSCHRITTE_JE_JOB, (
+    # Aggregatoren tragen weniger Schritte als die Installationsjobs; die exakte Zahl der beiden
+    # Paketsatz-Jobs prueft der naechste Test. Hier geht es nur um einen kaputten Leser.
+    mindestens = (
+        MINDESTSCHRITTE_JE_JOB if any(schritt.ist_installation for schritt in job.schritte) else 2
+    )
+    assert len(job.schritte) >= mindestens, (
         f"Job {job_name!r}: nur {len(job.schritte)} Schritte gelesen, erwartet mindestens "
-        f"{MINDESTSCHRITTE_JE_JOB}. Ein Leser, der Schritte verliert, macht die "
+        f"{mindestens}. Ein Leser, der Schritte verliert, macht die "
         "Nachbarschaftspruefung leer-gruen."
     )
     assert all(schritt.schluessel for schritt in job.schritte), (
