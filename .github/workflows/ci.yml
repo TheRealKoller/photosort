@@ -978,6 +978,14 @@ jobs:
         # Typfehler faellt dann bestenfalls zur Laufzeit auf, schlimmstenfalls gar nicht.
         # Bewusst vor den teuren Schritten (Browser, Images, Stack) - er kostet Sekunden.
         run: npm run typecheck
+      # Der Browser-Download kostet je Shard 16-29 s. Der Cache schluesselt ueber das Lockfile,
+      # also ueber die Playwright-Version; die apt-Abhaengigkeiten holt `--with-deps` weiterhin
+      # (wenige Sekunden), nur der ~170-MB-Download entfaellt.
+      - name: Playwright-Browser-Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
       - name: Chromium installieren
         working-directory: e2e
         # --with-deps ausschliesslich hier im CI-Job: es installiert als root per apt-get eine aus
