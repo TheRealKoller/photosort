@@ -2,9 +2,6 @@
 #
 # Uebernimmt den aktuellen Stand von main in den gerade ausgecheckten Feature-Branch.
 #
-# Aufgerufen von .claude/skills/ship-feature/SKILL.md an zwei Zeitpunkten (Schritt 6 vor dem
-# Push, Schritt 8 als erste Handlung vor der Finalisierung).
-#
 # Keine Argumente: "origin" und "main" stehen als Literale hier, gearbeitet wird im Repositorium
 # des aktuellen Arbeitsverzeichnisses auf dem aktuell ausgecheckten Branch. Das Ziel wird nie aus
 # dem Ablageort dieser Datei abgeleitet - kein "cd $(dirname "$0")".
@@ -20,16 +17,12 @@
 # Dieses Skript fasst refs/heads/main NIE an - es liest ihn nicht und schreibt ihn erst recht
 # nicht. Geholt wird ausschliesslich in den Remote-Tracking-Namensraum, gemerged wird der
 # Tracking-Ref, und die Vergleichsbasis der Review-Phase ist entsprechend "origin/main...HEAD".
-# Grund: Hintergrund-Laeufe arbeiten in einem eigenen Arbeitsbaum unter .claude/worktrees/,
-# waehrend der Haupt-Checkout meist main ausgecheckt hat. "git fetch origin main:main"
-# verweigert in dieser Lage gemessen den Dienst (Exit 128) - die Verweigerung gilt dem Ref, nicht
-# dem Verzeichnis, und sie tritt auf, sobald main in irgendeinem Arbeitsbaum desselben
-# Repositoriums ausgecheckt ist. Das Ausweichen ueber "git update-ref refs/heads/main" scheidet
-# aus: Der Ref wanderte, waehrend Index und Arbeitsbaum des Haupt-Checkouts stehen blieben.
+# Hintergrund-Laeufe arbeiten in einem eigenen Arbeitsbaum, waehrend der Haupt-Checkout meist
+# main ausgecheckt hat: Ein Fetch nach refs/heads/main scheitert dann an diesem Ref, und ein
+# verschobener Ref liesse Index und Arbeitsbaum des Haupt-Checkouts zurueck.
 #
 # Die Refspec steht ausgeschrieben und voll qualifiziert da, nicht als "git fetch origin main":
-# Ein lokaler Branch namens "origin/main" wuerde einen unqualifizierten Namen sonst auf sich
-# ziehen (gemessen: git loest dann auf refs/heads/origin/main auf und warnt nur), und die
+# Ein lokaler Branch namens "origin/main" zoege den unqualifizierten Namen auf sich, und die
 # No-Op-Rechnung meldete "bereits enthalten" fuer einen Stand, den dieses Skript nie geholt hat.
 # Das fuehrende "+" der Refspec ist kein "--force" auf einen Branch: Es betrifft ausschliesslich
 # einen Ref unterhalb von refs/remotes/ und ist gegenueber dem Remote rein lesend. Weil es die
@@ -38,9 +31,7 @@
 #
 # Was dieses Skript nie tut (zugesichert durch scripts/tests/test_main_abgleich_verdrahtung.py):
 # es schreibt nichts zum Remote zurueck, es schreibt keine bestehenden Commits um, es schreibt
-# keinen Ref unterhalb von refs/heads/, und es checkt main nie aus. Es enthaelt deshalb weder
-# einen Push noch ein Rebase, weder ein Nachbessern des letzten Commits noch ein hartes
-# Zuruecksetzen.
+# keinen Ref unterhalb von refs/heads/, und es checkt main nie aus.
 #
 # Alle Entscheidungen fallen an Exit-Codes und Dateizustaenden, nie an Ausgabetexten von git -
 # die sind uebersetzbar und formulierungsabhaengig. Jedes Kommando, dessen Rueckgabe ausgewertet
@@ -49,7 +40,7 @@
 
 set -euo pipefail
 
-# Sicherheitskonzept, Bedrohung 1: "keine Argumente" bindet das Ziel nicht. Mit gesetztem
+# "keine Argumente" bindet das Ziel nicht. Mit gesetztem
 # GIT_DIR/GIT_WORK_TREE meldet git den Branch eines *anderen* Repositoriums, und ueber
 # GIT_CONFIG_COUNT laesst sich core.hooksPath unterschieben. GIT_AUTHOR_*/GIT_COMMITTER_* und
 # GIT_CONFIG_GLOBAL bleiben ausdruecklich stehen (Identitaet bzw. Test-Isolation).
@@ -70,7 +61,7 @@ readonly EXIT_KONFLIKT=20
 readonly EXIT_VORBEDINGUNG=30
 
 # Selbst erzeugter Text, nie rohe git-Ausgabe: Die Meldung landet im Chat-Bericht und in einer
-# SendMessage; ein credential-behafteter Remote waere darin ein Secret-Leck (Bedrohung 5).
+# SendMessage; ein credential-behafteter Remote waere darin ein Secret-Leck.
 abbruch() {
     printf 'merge-main-into-branch: %s\n' "$1" >&2
     exit "$EXIT_VORBEDINGUNG"
@@ -116,8 +107,7 @@ tracking_vorher="$(git rev-parse --verify --quiet "$TRACKING_REF" || true)"
 
 # Ein Fehlschlag hat hier noch zwei moegliche Ursachen (Remote nicht erreichbar, dort kein main).
 # Unterschieden werden sie bewusst nicht: Das ginge nur ueber den Meldungstext von git, und der
-# ist uebersetzbar. Die dritte frueher genannte Ursache ("lokal nicht vorspulbar") kann diese
-# Zeile wegen des "+" nicht mehr ausloesen; sie wird stattdessen gemessen.
+# ist uebersetzbar.
 if ! git fetch --quiet "$REMOTE" "+refs/heads/$HAUPTZWEIG:$TRACKING_REF" >/dev/null 2>&1; then
     abbruch "'$HAUPTZWEIG' konnte nicht von '$REMOTE' geholt werden: Remote nicht erreichbar oder '$HAUPTZWEIG' dort nicht vorhanden. Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
 fi
@@ -129,10 +119,9 @@ if ! git rev-parse --verify --quiet "$TRACKING_REF" >/dev/null 2>&1; then
     abbruch "'$TRACKING_REF' existiert auch nach dem Holen nicht. Hier wurde nichts uebernommen, und es gibt nichts zu messen - bitte von Hand ansehen."
 fi
 
-# Umschreib-Pruefung: gemessen statt geraten. Nur mit einem gemerkten Vorher-Stand gibt es
-# ueberhaupt etwas zu vergleichen - "" ist kein Ref, und `merge-base --is-ancestor "" <ref>`
-# liefert gemessen 128. Ein ungeprueft eingesetzter leerer Wert machte jeden frischen Klon zu
-# einem falschen Exit 30, also genau zu der Fehlmeldung, gegen die dieses Skript umgebaut wurde.
+# Umschreib-Pruefung: Nur mit einem gemerkten Vorher-Stand gibt es ueberhaupt etwas zu
+# vergleichen - "" ist kein Ref, und `merge-base --is-ancestor "" <ref>` liefert Rueckgabe 128.
+# Ein ungeprueft eingesetzter leerer Wert machte jeden frischen Klon zu einem falschen Exit 30.
 if [[ -n "$tracking_vorher" ]]; then
     umschreib_rueckgabe=0
     git merge-base --is-ancestor "$tracking_vorher" "$TRACKING_REF" >/dev/null 2>&1 ||
@@ -148,8 +137,8 @@ if [[ -n "$tracking_vorher" ]]; then
 fi
 
 # Der No-Op wird gerechnet, nicht gelesen - und ausschliesslich Rueckgabe 0 heisst "enthalten".
-# Rueckgabe 1 heisst "nicht enthalten", 128 heisst "unbekanntes Objekt/kaputtes Repositorium"
-# (Bedrohung 2: still falsch sein kann allein dieser Ausgang).
+# Rueckgabe 1 heisst "nicht enthalten", 128 heisst "unbekanntes Objekt/kaputtes Repositorium";
+# still falsch sein kann allein der Ausgang 0.
 vorfahre_rueckgabe=0
 git merge-base --is-ancestor "$TRACKING_REF" HEAD >/dev/null 2>&1 || vorfahre_rueckgabe=$?
 
@@ -187,14 +176,11 @@ if [[ -n "$konfliktpfade" ]]; then
     exit "$EXIT_KONFLIKT"
 fi
 
-# Kein Pfad im Konfliktzustand - zwei verschiedene Lagen, und die Meldung darf sie nicht
-# verwechseln (sie ist der Text, den der Ablauf unveraendert an Daniel weitergibt):
-#   (a) Der Merge hat begonnen und wurde abgelehnt (pre-merge-commit-Hook, commit.gpgsign ohne
-#       Schluessel). MERGE_HEAD existiert, `git merge --abort` nimmt ihn zurueck.
-#   (b) Der Merge hat gar nicht erst begonnen - gemessen etwa, wenn eine unversionierte Datei mit
-#       einer neu auf `main` entstandenen kollidiert (Rueckgabe 2). MERGE_HEAD existiert nie, und
-#       `git merge --abort` scheiterte hier mit "There is no merge to abort". Es gibt nichts
-#       zurueckzunehmen; genau das ist die Zusage, dass git selbst verweigert.
+# Kein Pfad im Konfliktzustand - zwei Lagen, die die Meldung nicht verwechseln darf (sie geht
+# unveraendert an Daniel): (a) Merge begonnen und abgelehnt (Hook oder Signatur) - MERGE_HEAD
+# existiert, `git merge --abort` nimmt ihn zurueck; (b) Merge gar nicht begonnen (etwa eine
+# unversionierte Datei kollidiert mit einer neu auf `main` entstandenen) - MERGE_HEAD existiert
+# nie, es gibt nichts zurueckzunehmen.
 # Unterschieden wird an der Existenz von MERGE_HEAD, nicht an einem Ausgabetext.
 if [[ -e "$git_verzeichnis/MERGE_HEAD" ]]; then
     if ! git merge --abort >/dev/null 2>&1; then
