@@ -122,3 +122,7 @@ Ein Feld, das die Oberfläche als geschlossene Menge führt, ist auch im Server 
   Seitentests bleiben unverändert.
 - Die Struktur-Verträge, die Quelldateien namentlich prüfen, führen die beim Teilen entstehenden
   Bausteine in ihren Dateilisten — die Zusicherung bleibt dieselbe.
+- `openapi-typescript` deklariert TypeScript `^5.x`, das Frontend fährt TypeScript 6. Ein
+  `overrides`-Eintrag in `frontend/package.json` zieht den Peer dieses Pakets auf die
+  Projektversion (`"$typescript"`); `npm ci` läuft dadurch ohne Flags. Dass die Ausgabe unter
+  TypeScript 6 stimmt, belegt `npm run api:check` bei jedem Lauf.
