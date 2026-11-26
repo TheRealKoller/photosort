@@ -22,8 +22,8 @@ import {
   AUSSCHUSS_AUTO_EMPTY_TEXT,
   AUSSCHUSS_EMPTY_TEXT,
   AUSSCHUSS_MISSING_ENTRY_TEXT,
-  AusschussStepPage,
-} from './AusschussStepPage'
+} from '../../utils/ausschussTexts'
+import { AusschussStepPage } from './AusschussStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 import {
   AUSSCHUSS_CONFIRM_LABEL,

@@ -671,14 +671,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'dieselbe Begruendung wie beim Blaettern innerhalb der Gruppe',
     },
     {
-      file: 'src/pages/pipeline/AusschussStepPage.tsx',
+      file: 'src/components/AusschussRecognition.tsx',
       snippet: '<Button asChild variant="outline" size="sm" className="h-11 sm:h-8">',
       reason:
         'der Zaehler der automatisch entschiedenen Gruppen (Spec 0639) - im Durchgang durch den ' +
         'Ausschuss ein Ziel in Daumenreichweite, dieselbe Begruendung wie die Gruppen-Navigation',
     },
     {
-      file: 'src/pages/pipeline/AusschussStepPage.tsx',
+      file: 'src/components/AusschussOverview.tsx',
       snippet: '<Button asChild variant="ghost" size="sm" className="h-11 sm:h-8">',
       reason:
         'der Rueckweg aus der gefilterten Ansicht (Spec 0639) - steht an derselben Stelle wie ' +
