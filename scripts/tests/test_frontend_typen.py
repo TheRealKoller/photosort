@@ -230,9 +230,7 @@ def pruefe(bestand: Bestand) -> list[Befund]:
         befunde.append(befund(ARTEFAKT, 1, "schemabezug-belegt", "backend/openapi.json fehlt."))
         artefakt_text = "{}"
     if schema is None:
-        befunde.append(
-            befund(SCHEMA, 1, "beschreibung-am-typ", "api/generated/schema.d.ts fehlt.")
-        )
+        befunde.append(befund(SCHEMA, 1, "beschreibung-am-typ", "api/generated/schema.d.ts fehlt."))
         schema = ""
 
     # 1. Kein interface in types.ts.
