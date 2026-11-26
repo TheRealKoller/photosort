@@ -1,10 +1,9 @@
 """Bereinigung verwaister Bildkopien nach jedem erfolgreichen Scan.
 
 Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `photosort.worker`: die async-Klammer um den
-Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenbankabfrage, und
-`photosort.worker` ist bereits gross genug. Die reine, DB-freie Mechanik darunter
-(`collect_cache_entries`/`delete_orphaned_entries`) lebt in `thumbnails.py`, wo auch die
-Pfadbildung liegt, die das Muster wiedererkennt.
+Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenbankabfrage.
+Die reine, DB-freie Mechanik darunter (`collect_cache_entries`/`delete_orphaned_entries`) lebt in
+`thumbnails.py`, wo auch die Pfadbildung liegt, die das Muster wiedererkennt.
 
 `cache_key` ist `sha256(f"{photo_id}:{etag}")`. Dieselbe Rechnung, die eine alte Fassung
 unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos/`,
@@ -41,8 +40,7 @@ VOR dem Commit der Foto-Zeile (`_process_scan_block`: Zeile anlegen/`flush()` ->
 Thumbnail -> Commit erst nach dem ganzen Block). In diesem Fenster ist die Datei da und die Zeile
 fuer uns unsichtbar - eine rein datenbankbasierte Bereinigung loeschte genau das, was der andere
 Scan gerade erzeugt. Eine Datei, deren Zeile noch nicht committet ist, wurde zwangslaeufig eben
-erst geschrieben: Jugend schuetzt. Ein Scan committet spaetestens je Block
-(`settings.scan_download_concurrency`, Vorgabe 4); eine Stunde liegt um Groessenordnungen darueber.
+erst geschrieben: Jugend schuetzt.
 
 Bewusst eine KONSTANTE und keine Umgebungsvariable: ein Korrektheitsabstand, kein
 Betriebsparameter. Als Einstellung luede der Wert dazu ein, ihn auf 0 zu setzen und damit das
@@ -69,7 +67,7 @@ async def cleanup_orphaned_cache(session: AsyncSession, cache_dir: Path) -> Cach
     Commit.
 
     Beide Dateiteile laufen ueber `asyncio.to_thread`, damit die Event-Loop bei mehreren tausend
-    `stat`-/`unlink`-Aufrufen nicht blockiert - dasselbe Muster wie bei `measure_cache_usage`.
+    `stat`-/`unlink`-Aufrufen nicht blockiert.
 
     Abschluss ist GENAU EINE INFO-Zeile aus reinen Zahlen. Pfade stehen ausschliesslich in der
     WARNING-Zeile eines Einzelfehlers und nie in einer HTTP-Antwort.

@@ -23,7 +23,7 @@ def enable_sqlite_foreign_keys(dbapi_connection: Any, connection_record: Any) ->
     SQLite setzt Fremdschluessel nur bei gesetztem Pragma durch, und zwar JE VERBINDUNG; Postgres
     setzt sie immer durch. Ohne diesen Handler waere die Testdatenbank nachsichtiger als die
     Zieldatenbank: eine fehlende ORM-Kaskade, eine falsche Loeschreihenfolge und eine verwaiste
-    Kindzeile blieben unsichtbar (Spec 0350, ADR 0122).
+    Kindzeile blieben unsichtbar.
 
     Bewusst eine benannte, oeffentliche Funktion statt eines Lambdas: `tests/test_seed.py` baut
     seine synchrone Engine selbst und schliesst denselben Handler an, damit die Durchsetzung

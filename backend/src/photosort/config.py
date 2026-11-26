@@ -45,23 +45,21 @@ class Settings(BaseSettings):
 
     # Erlaubte Frontend-Origins für CORS - komma-getrennt, kein Wildcard "*". Defaults decken
     # lokale Entwicklung ab (Vite-Dev-Server auf 5173, das über docker-compose gebaute
-    # nginx-Frontend auf FRONTEND_PORT-Default 8080); in Produktion über CORS_ALLOWED_ORIGINS auf
-    # die tatsächliche(n) Frontend-Origin(s) setzen.
+    # nginx-Frontend auf FRONTEND_PORT-Default 8080); die tatsächliche(n) Origin(s) kommen in
+    # Produktion aus CORS_ALLOWED_ORIGINS.
     cors_allowed_origins: str = "http://localhost:5173,http://localhost:8080"
 
     def cors_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
     # Feature-Flag für die lokale Kriterien-Bewertung + Kategorie-Kuratierung; es deckt trotz
-    # seines Namens auch POST /classify ab. Default AN (anders als bei einem Cloud-Feature): rein
-    # lokale, kostenlose Verarbeitung, kein Grund für einen restriktiven Default.
+    # seines Namens auch POST /classify ab. Default AN: rein lokale, kostenlose Verarbeitung.
     category_selection_enabled: bool = True
 
     # Obergrenze für die begrenzte Parallelisierung von Download + Thumbnail-Erzeugung in Phase
     # 2b des Scans. Echter Betriebsparameter (Überlastschutz für den
-    # Einzelnutzer-Homeserver-OpenCloud), deshalb ein env-überschreibbares Settings-Feld statt
-    # einer reinen Modul-Konstante wie worker/scan.py::SCAN_COMMIT_BATCH_SIZE (reiner
-    # Test-Kalibrierungswert). `Field(ge=1)`: eine fehlerhafte .env-Konfiguration (0/negativ)
+    # Einzelnutzer-Homeserver-OpenCloud), deshalb ein env-überschreibbares Settings-Feld.
+    # `Field(ge=1)`: eine fehlerhafte .env-Konfiguration (0/negativ)
     # fällt bereits beim Prozessstart auf, statt sich erst mitten im nächsten Scan-Lauf als
     # range(step=0)-Crash zu äußern - photosort.worker verlässt sich direkt auf diesen validierten Wert,
     # ohne eigenen Laufzeit-Clamp.
@@ -69,19 +67,16 @@ class Settings(BaseSettings):
 
     # Obergrenze für die begrenzte Parallelisierung der pro-Unterordner-Bilddatei-Zählung im
     # Ordner-Browser. Echter Betriebsparameter wie scan_download_concurrency oben, deshalb
-    # ebenfalls ein Settings-Feld statt einer Modul-Konstante wie
-    # api/opencloud.py::FOLDER_COUNT_LIMIT (reiner Anzeige-/UX-Wert ohne Tuning-Bedarf).
+    # ebenfalls ein Settings-Feld.
     # `Field(ge=1)` fällt beim Prozessstart auf, statt sich als Semaphore(0)-Deadlock zu äußern.
     opencloud_folder_count_concurrency: int = Field(default=4, ge=1)
 
-    # Exakt das opencloud_app_token-Muster: Secret nur über Env-Variable, nie eingecheckt, kein
-    # Format-Check.
+    # Secret nur über Env-Variable, nie eingecheckt, kein Format-Check.
     anthropic_api_key: str = ""
 
     # Obergrenze für die begrenzte Parallelisierung der Cloud-Vision-Aufrufe in
     # run_criterion_scoring - bewusst deutlich konservativer als scan_download_concurrency:
-    # reales Geld pro Anfrage und ein fremdes Rate-Limit, nicht nur ein selbst betriebener
-    # OpenCloud-Server. `Field(ge=1)` wie bei den Concurrency-Feldern oben.
+    # reales Geld pro Anfrage und ein fremdes Rate-Limit. `Field(ge=1)`.
     landmark_api_concurrency: int = Field(default=2, ge=1)
 
     # Wählbare Cloud-Provider-Option - reine Betreiber-/Deployment-Entscheidung, kein
@@ -95,16 +90,16 @@ class Settings(BaseSettings):
     # Element seiner Registry), NICHT "kein Modell".
     #
     # Der Name erbt bewusst die Ungenauigkeit von `landmark_provider` daneben: beide gelten für
-    # BEIDE Cloud-Anteile - Sehenswürdigkeits-Erkennung UND Kategorie-Vorschläge, nicht nur für
-    # landmark. Ein Umbenennen wäre für den Betrieb breaking.
+    # BEIDE Cloud-Anteile - Sehenswürdigkeits-Erkennung UND Kategorie-Vorschläge. Ein Umbenennen
+    # wäre für den Betrieb breaking.
     #
-    # `str` + Validator statt `Literal`, anders als bei landmark_provider: die zulässigen Werte
-    # hängen vom eingestellten Anbieter ab, das lässt sich in einem Feld-`Literal` nicht
-    # ausdrücken. Die Startvalidierung unten liefert dafür dieselbe Zusicherung.
+    # `str` + Validator statt `Literal`: die zulässigen Werte hängen vom eingestellten Anbieter ab,
+    # das lässt sich in einem Feld-`Literal` nicht ausdrücken. Die Startvalidierung unten liefert
+    # dafür dieselbe Zusicherung.
     landmark_model: str = ""
 
     def resolved_landmark_model(self) -> str:
-        """Das tatsächlich zu verwendende Modell (Muster `resolved_rate_limit_storage_uri()`).
+        """Das tatsächlich zu verwendende Modell.
 
         EINMAL je Cloud-Phase aufzurufen und der Wert dann durchzureichen: Client-Bau,
         Kostenrechnung und Modellspalte des Laufs müssen strukturell denselben Wert benutzen,
@@ -152,31 +147,29 @@ class Settings(BaseSettings):
             )
         return value
 
-    # Exakt das anthropic_api_key-Muster (Secret nur über Env-Variable, nie eingecheckt, kein
-    # Format-Check) - der Wert wird wie jedes andere Settings-Feld beim Prozessstart eingelesen,
-    # aber nur verwendet (build_landmark_client()), wenn landmark_provider == "mistral".
+    # Secret nur über Env-Variable, nie eingecheckt, kein Format-Check; der Wert wird wie jedes
+    # andere Settings-Feld beim Prozessstart eingelesen, aber nur verwendet
+    # (build_landmark_client()), wenn landmark_provider == "mistral".
     mistral_api_key: str = ""
 
-    # Der Pfad des vorbereiteten GeoNames-Auszugs, aus dem die Ortsauflösung liest (ADR 0105
-    # Punkt 3). Vorgabe ist das eigene Docker-Volume `place_dataset`: im Backend-Dienst
-    # schreibbar, im Worker nur lesend eingehängt - genau ein Schreiber, und der operative Pfad
-    # ist keiner.
+    # Der Pfad des vorbereiteten GeoNames-Auszugs, aus dem die Ortsauflösung liest. Vorgabe ist
+    # das eigene Docker-Volume `place_dataset`: im Backend-Dienst schreibbar, im Worker nur lesend
+    # eingehängt - genau ein Schreiber, und der operative Pfad ist keiner.
     #
     # Betriebseinstellung wie `photo_cache_dir`, nie ein Wert aus Datenbank oder Request. Fehlt
     # die Datei oder weicht sie von ihrem Hash ab, wird kein Auflöser gebaut, es entsteht kein
     # Ersatzweg, und die Events behalten Nummer und Zeitspanne - ein arbeitsfähiger Zustand, kein
     # Startfehler. Erzeugt werden die Auszüge einmal je Volume über
-    # `python -m photosort.place_dataset`. Der zweite, der Sehenswürdigkeitsauszug (Spec 0529),
+    # `python -m photosort.place_dataset`. Der zweite, der Sehenswürdigkeitsauszug,
     # liegt als GESCHWISTERDATEI neben dieser (`geonames.landmark_dataset_path`) - dieselbe
     # Quelle, derselbe Durchgang, aber eine eigene Datei mit eigener Hashprüfung und eigenen
     # Grund-Token; er hat keine eigene Betriebseinstellung.
     place_dataset_path: str = "/data/place-dataset/geonames-auszug.txt.gz"
 
     # Obergrenze für die begrenzte Parallelisierung der Cloud-Aufrufe der
-    # Remote-Kategorie-Klassifizierung - analog landmark_api_concurrency. Bewusst ein eigenes
-    # Setting statt dessen Wiederverwendung: ein eigenständiger Job mit eigener Kandidatenmenge
-    # (kompletter Ausschuss-Bestand statt eines Vorfilter-Ergebnisses) soll unabhängig davon
-    # tunbar bleiben.
+    # Remote-Kategorie-Klassifizierung. Bewusst ein eigenes Setting: ein eigenständiger Job mit
+    # eigener Kandidatenmenge (kompletter Ausschuss-Bestand statt eines Vorfilter-Ergebnisses)
+    # soll unabhängig tunbar bleiben.
     remote_category_classification_concurrency: int = Field(default=2, ge=1)
 
     # Die ANFRAGERATE an den Anbieter, für BEIDE Cloud-Teilschritte gemeinsam. Sie muss ein
@@ -185,14 +178,14 @@ class Settings(BaseSettings):
     # Versuchszahl, Wartebudget, Staffel und Deckel bleiben aus demselben Grund Modulkonstanten
     # in cloud_vision.py - sie hängen an der Watchdog-Rechnung, nicht an einer Kontostufe.
     #
-    # `0` heißt "Voreinstellung des eingestellten Anbieters" (Muster von `LANDMARK_MODEL`).
+    # `0` heißt "Voreinstellung des eingestellten Anbieters".
     # ACHTUNG, UNTERSCHIED ZU `LANDMARK_MODEL=`: ein LEERER Wert ist für ein Zahlenfeld ein
     # Startfehler, kein "nicht gesetzt" - `.env.example` trägt deshalb `=0` und sagt das
-    # ausdrücklich. `ge=0` analog den Concurrency-Feldern oben: eine fehlerhafte .env fällt beim
+    # ausdrücklich. `ge=0`: eine fehlerhafte .env fällt beim
     # Prozessstart auf, nicht mitten im nächsten kostenpflichtigen Lauf.
     cloud_vision_requests_per_minute: int = Field(default=0, ge=0)
 
-    # Eye als dritte Laufwahl (Spec 0609 / ADR 0138). `eye_enabled` ist die EINE Quelle der
+    # Eye als dritte Laufwahl. `eye_enabled` ist die EINE Quelle der
     # Laufwahl in der Oberflaeche und der einzige Grund fuer ein 403 auf `mode=eye`; der Wert
     # kommt NIE aus einer Lebendpruefung, sonst wuerde das Laden der Projektliste zur
     # Erreichbarkeitssonde. `eye_service_url` zeigt auf den Sidecar im Compose-Netz - der Dienst
@@ -206,7 +199,7 @@ class Settings(BaseSettings):
         """Nur `http` und `https`, mit Host - und ohne Schraegstrich am Ende.
 
         Der Wert landet in `httpx.AsyncClient(base_url=...)`; ein Schema wie `file:` oder `ftp:`
-        waere ein zweiter Weg zu Daten, den niemand vorgesehen hat (S3). Der Schraegstrich wird
+        waere ein zweiter Weg zu Daten, den niemand vorgesehen hat. Der Schraegstrich wird
         entfernt, damit der Aufrufer Pfade immer mit fuehrendem Schraegstrich anhaengen kann,
         ohne dass die Adresse zwei enthaelt. Die Meldung nennt den Feldnamen und keinen Wert -
         sie erscheint im Startup-Traceback."""
@@ -220,7 +213,7 @@ class Settings(BaseSettings):
         return value.rstrip("/")
 
     def resolved_cloud_vision_requests_per_minute(self, provider: str) -> int:
-        """Die tatsächlich zu verwendende Anfragerate (Muster `resolved_landmark_model()`).
+        """Die tatsächlich zu verwendende Anfragerate.
 
         Gibt NIEMALS `0` zurück: aus dem Rückgabewert bildet cloud_vision_throttle.py zur
         MODUL-IMPORTZEIT den Mindestabstand `60 / rate`. Eine `0` von hier wäre ein
