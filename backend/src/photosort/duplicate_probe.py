@@ -9,7 +9,7 @@ Gemessen wird auf DENSELBEN Signaturen wie der Scoring-Lauf: der grobe dHash aus
 Variante, die Schaerfe aus ``PhotoScore``. Drei Laeufe ueber DIESELBE Teilmenge:
 
 * **Vorher** - die alte, transitive Union-Find-Gruppierung ueber dHash-Abstand ``<= 6``.
-* **Nachher** - ``scoring.py::assign_duplicate_groups`` (Stand Spec 0637).
+* **Nachher** - ``scoring.py::assign_duplicate_groups``.
 * **Gegenlauf** - dasselbe Verfahren, aber ohne die Herkunft der Aufnahmezeit zu pruefen: So
   viele Gruppen entstehen, wenn man eine aus dem Dateidatum abgeleitete Zeit wie eine Messung
   behandelt.
@@ -122,7 +122,7 @@ def summarise(groups: Sequence[Sequence[int]], moments: dict[int, datetime]) -> 
 
 def old_transitive_groups(photos: Sequence[ProbePhoto]) -> list[list[int]]:
     """Die abgeloeste Gruppierung, eingefroren als Referenz: alle Paare ueber dHash ``<= 6``,
-    transitiv per Union-Find zusammengefasst. Genau die Bruecke, die Spec 0637 verbietet."""
+    transitiv per Union-Find zusammengefasst."""
     parent = {photo.photo_id: photo.photo_id for photo in photos}
 
     def find(value: int) -> int:
