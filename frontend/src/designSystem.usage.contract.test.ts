@@ -157,12 +157,12 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
    * zwei Kacheln - die Utility der Liste muss dieselbe Zahl setzen.
    */
   it('setzt die Duplikatliste als flex-wrap mit dem gerechneten Zwischenraum (Spec 0638)', () => {
-    const page = sourceFiles.find((file) =>
-      file.path.endsWith('src/pages/DuplicateComparePage.tsx'),
+    const grid = sourceFiles.find((file) =>
+      file.path.endsWith('src/components/DuplicateGroupGrid.tsx'),
     )
-    expect(page, 'DuplicateComparePage.tsx muss im Pruefsatz liegen').toBeDefined()
+    expect(grid, 'DuplicateGroupGrid.tsx muss im Pruefsatz liegen').toBeDefined()
 
-    const listClasses = stripComments(page?.content ?? '').match(
+    const listClasses = stripComments(grid?.content ?? '').match(
       /const GRID_LIST_CLASSES = '([^']*)'/,
     )
     expect(listClasses, 'Die Liste muss ihre Klassen in GRID_LIST_CLASSES fuehren').not.toBeNull()
@@ -184,13 +184,13 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     const tile = sourceFiles.find((file) =>
       file.path.endsWith('src/components/DuplicatePhotoTile.tsx'),
     )
-    const page = sourceFiles.find((file) =>
-      file.path.endsWith('src/pages/DuplicateComparePage.tsx'),
+    const grid = sourceFiles.find((file) =>
+      file.path.endsWith('src/components/DuplicateGroupGrid.tsx'),
     )
     expect(tile, 'DuplicatePhotoTile.tsx muss im Pruefsatz liegen').toBeDefined()
-    expect(page, 'DuplicateComparePage.tsx muss im Pruefsatz liegen').toBeDefined()
+    expect(grid, 'DuplicateGroupGrid.tsx muss im Pruefsatz liegen').toBeDefined()
     const tileCode = stripComments(tile?.content ?? '')
-    const pageCode = stripComments(page?.content ?? '')
+    const gridCode = stripComments(grid?.content ?? '')
 
     // Die Kachel: ihre Klassen stehen im ersten Literal des `cn` direkt hinter der gerechneten
     // Breite; der Rahmen kommt aus den Zustaenden.
@@ -198,7 +198,7 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
       /width: imageWidth \+ DUPLICATE_TILE_INSET_X_PX \}\}\s*className=\{cn\(\s*'([^']*)'/,
     )?.[1]
     // Der Platzhalter: das `li` mit derselben gerechneten Breite.
-    const skeletonClasses = pageCode.match(
+    const skeletonClasses = gridCode.match(
       /width: size\.width \+ DUPLICATE_TILE_INSET_X_PX \}\}\s*className="([^"]*)"/,
     )?.[1]
     expect(tileClasses, 'Kachelklassen hinter der gerechneten Breite').toBeDefined()
