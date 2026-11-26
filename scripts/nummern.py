@@ -179,6 +179,11 @@ def zuteilung_je_kontrahent(
     Nummer ab der Basis, die **kein** Kontrahent fuehrt und die in diesem Lauf noch niemand
     bekommen hat.
 
+    **Gezaehlt wird nicht:** Wer nur die Anzahl der von rangniedrigeren Kontrahenten gefuehrten
+    Nummern auf die Basis addiert, vergaebe Nummern, die andere Branches bereits fuehren, sobald
+    ab der Basis eine Luecke liegt - und eine Luecke entsteht ohne jede Handvergabe, etwa wenn
+    ein Branch ohne Arbeitsbaum und ohne `origin`-Gegenstueck aus der Kontrahentenmenge faellt.
+
     Die Zuteilung haengt nur an der Kontrahentenmenge, nicht daran, wer fragt: Jede Seite
     errechnet dieselbe Abbildung, ohne Nachricht und ohne Wartepunkt.
     """
