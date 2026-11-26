@@ -2,7 +2,7 @@
 
 ZWEI AUFRUFER, EIN WEG: der Lauf (`worker/_criterion/ranking.py`) und das rein lesende
 Messkommando (`event_probe.py`). Eine zweite, nachbildende Fassung maesse etwas anderes, als der
-Lauf tatsaechlich tut, waehrend beide fuer sich gruen blieben (ADR 0117 Punkt 5).
+Lauf tatsaechlich tut, waehrend beide fuer sich gruen blieben.
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
 ``DELETE``, kein ``commit``, kein ``flush``. ``tests/test_event_probe.py`` haelt das mit einem
@@ -15,7 +15,7 @@ Auflage gegen eine lueckenlose Zusage.
 Die Import-Graph-Zusage von ``place_probe.py`` gilt hier AUSDRUECKLICH NICHT: dieses Modul liegt
 per Konstruktion im Graphen von ``photosort.worker``, und genau diese Richtung pinnt eine Gegenprobe.
 
-LOGGING-AUFLAGE (S8) fuer jede kuenftige Logzeile dieses Moduls: weder eine Koordinate noch ein
+LOGGING-AUFLAGE fuer jede kuenftige Logzeile dieses Moduls: weder eine Koordinate noch ein
 Orts- oder Sehenswuerdigkeit-Name gehoert hinein, nur ein festes Grund-Token und eine Id.
 """
 
@@ -58,9 +58,8 @@ def _plain_strengths(
 
     Die Abwesenheit der Kopfzeile ist ein eigener Zustand ("noch nicht klassifiziert") und
     ausdruecklich nicht dasselbe wie eine Kopfzeile ohne getragenes Motiv. Ein `.get(photo_id, {})`
-    an der Aufrufstelle - wie es der Auswahlvorschlag richtigerweise tut - liesse beide
-    zusammenfallen, und ein unklassifiziertes Foto zerrisse dann ein Event, statt uebergangen zu
-    werden."""
+    an der Aufrufstelle liesse beide zusammenfallen, und ein unklassifiziertes Foto zerrisse dann
+    ein Event, statt uebergangen zu werden."""
     if effective is None:
         return None
     return {motif_key: value.strength for motif_key, value in effective.items()}
@@ -79,9 +78,9 @@ async def _landmark_names(
     In-Memory-Variante koppelte die Benennung still an die Frage, ob im SELBEN Lauf Geld ausgegeben
     wurde.
 
-    Dies ist zugleich die EINZIGE Quelle von `events.landmark_name` (Sicherheitsauflage M9).
+    Dies ist zugleich die EINZIGE Quelle von `events.landmark_name`.
 
-    DIE GRENZE WIRKT HIER, an der LESESTELLE, nicht an der Schreibstelle (ADR 0107 Punkt 2): Die
+    DIE GRENZE WIRKT HIER, an der LESESTELLE, nicht an der Schreibstelle: Die
     Erkennungszeile wird unveraendert vollstaendig geschrieben - die Antwort ist bezahlt -, und ob
     aus ihr ein verwendbarer Name wird, entscheidet `usable_landmark_name`. Eine spaetere Aenderung
     der Grenze wirkt dadurch beim naechsten Neuaufbau der Gruppierung, ohne einen einzigen erneuten
@@ -92,10 +91,10 @@ async def _landmark_names(
     das Foto faellt auf Ortsname bzw. Koordinate zurueck, und es entsteht kein Anzeigezustand und
     kein Hinweis auf die Vermutung.
 
-    SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN (Muss-Kriterium des Sicherheitskonzepts,
-    Abschnitt "Standortdaten"): `usable_landmark_name` wendet `sanitize_landmark_name` hier ein
+    SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN: `usable_landmark_name` wendet
+    `sanitize_landmark_name` hier ein
     ZWEITES Mal an, obwohl `landmark.py::landmark_detection_from_json` sie bereits an der Quelle
-    anwendet, und zwar auf den kanonischen Namen EBENSO wie auf den Rohnamen (S9). Sie ist die
+    anwendet, und zwar auf den kanonischen Namen EBENSO wie auf den Rohnamen. Sie ist die
     einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
     keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie
     hier zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling
@@ -126,13 +125,13 @@ async def read_event_inputs(
     """Die Kandidaten eines Laufs samt ihrer Inferenzbasis - der EINZIGE Datenbankzugriff dieses
     Moduls, und er liest ausschliesslich.
 
-    SICHERHEIT (M5): Die Inferenzbasis ist JEDES Foto DIESES Projekts - die Bindung an
+    SICHERHEIT: Die Inferenzbasis ist JEDES Foto DIESES Projekts - die Bindung an
     `Photo.project_id` steht ausgeschrieben. Ohne sie erbte ein Foto Koordinaten aus einem fremden
     Projekt, und die Event-Grenzen in Projekt A haengten an Fotos aus Projekt B. Ausdruecklich
     NICHT auf die Kandidatenmenge eingeschraenkt: ein aussortiertes Foto traegt eine ebenso
     gueltige Koordinate.
 
-    SICHERHEIT (S4): Namens-, Staerke- und Ausschlussabfrage bleiben auf `photo_ids` eingeschraenkt
+    SICHERHEIT: Namens-, Staerke- und Ausschlussabfrage bleiben auf `photo_ids` eingeschraenkt
     und duerfen die Menge, die `build_events` sieht, NIE erweitern - anders als die Inferenzbasis
     oben, deren Bezugsmenge bewusst das ganze Projekt ist.
 
