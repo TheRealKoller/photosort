@@ -8,15 +8,14 @@ from math import atan2, cos, radians, sin, sqrt
 from PIL import Image, ImageFilter, ImageStat
 
 # Schwellenwerte für Phase A. Benannte Konstanten statt Magic Numbers, aber NICHT gegen echte
-# Kamerafotos kalibriert (kein Korpus im Repo) - nur die Logik "Wert unter/über Schwelle ->
-# erwartetes Verhalten" ist getestet. Tatsaechliche Kalibrierung bleibt manueller Smoke-Test mit
-# echten Projektfotos vor dem Merge.
+# Kamerafotos kalibriert (kein Korpus im Repo): getestet ist die Logik "Wert unter/über Schwelle
+# -> erwartetes Verhalten", die Kalibrierung selbst bleibt ein manueller Smoke-Test.
 
 # Laplace-Kernel-Varianz unterhalb dieses Werts gilt als "zu unscharf fuer eine Empfehlung". Der
 # Wert liegt bewusst niedrig: erfasst werden soll nur eindeutiges Verwackeln/Fehlfokus.
 SHARPNESS_REJECT_THRESHOLD = 15.0
 
-# --- Duplikaterkennung: drei Stufen, alle Vergleiche inklusiv (ADR 0145) -----------------------
+# --- Duplikaterkennung: drei Stufen, alle Vergleiche inklusiv -----------------------------------
 #
 # Die Zahlen sind Startwerte; ein Kalibrierlauf bestaetigt oder verschiebt sie. Bewusst eigene
 # Namen je Zahl und kein Settings-/Env-Wert: ein Laufzeithebel waere ein Schalter an der Grenze,
@@ -50,11 +49,6 @@ TIME_CLUSTER_GAP = timedelta(hours=1)
 # Haversine-Distanz, ab der ein neues Cluster beginnt - gleichrangig neben TIME_CLUSTER_GAP.
 # Dokumentierte, UNKALIBRIERTE Modulkonstante wie TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD,
 # bewusst kein Settings-/Env-Wert (die sind im Projekt Infrastruktur-Parametern vorbehalten).
-#
-# 500 m liegt sicher oberhalb der Streuung eines einzelnen Ortsbesuchs (Umherlaufen plus
-# GPS-Ungenauigkeit, Groessenordnung 100-300 m) und unterhalb des Abstands zweier
-# innerstaedtischer Sehenswuerdigkeiten. Bewusst in Kauf genommene Kehrseite: Aufnahmen aus einem
-# fahrenden Fahrzeug erzeugen viele kleine Cluster.
 #
 # ACHTUNG: die Schwelle begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den
 # DURCHMESSER eines Clusters - ein Spaziergang in 400-m-Schritten teilt nie und kann Kilometer
@@ -165,7 +159,7 @@ class PhotoFingerprint:
     taken_at_trusted: bool
     # Aufloesung des Originals in Pixeln (`Photo.pixel_count`). `None` heisst "unbekannt" und ist
     # ein regulaerer Zustand: Der Fingerabdruck sortiert dann in Durchgang 1 zuletzt, und der Lauf
-    # entscheidet die Gruppe nicht automatisch (ADR 0146 Punkt 1). Eine Schaetzung ist untersagt.
+    # entscheidet die Gruppe nicht automatisch. Eine Schaetzung ist untersagt.
     pixel_count: int | None = None
 
 
@@ -309,10 +303,10 @@ def _edge_kind(left: PhotoFingerprint, right: PhotoFingerprint) -> str | None:
 class DuplicateAssignment:
     """Das Ergebnis EINES Duplikat-Durchlaufs in zwei Aussagen.
 
-    `duplicate_of` ist der Stern `verlierer -> gewinner` wie bisher. `identical_winners` nennt die
-    Gewinner der Sterne, die Durchgang 1 ueber AUSSCHLIESSLICH identische Kanten gebaut hat -
-    genau deren Verlierer darf der Lauf automatisch entscheiden (ADR 0146 Punkt 1/3). Die Menge
-    ist bewusst nicht aus `duplicate_of` ableitbar: Ein aehnlicher Stern hat auch einen Gewinner,
+    `duplicate_of` ist der Stern `verlierer -> gewinner`. `identical_winners` nennt die Gewinner
+    der Sterne, die Durchgang 1 ueber AUSSCHLIESSLICH identische Kanten gebaut hat - genau deren
+    Verlierer darf der Lauf automatisch entscheiden. Die Menge ist bewusst nicht aus
+    `duplicate_of` ableitbar: Ein aehnlicher Stern hat auch einen Gewinner,
     aber keinen automatischen Anspruch."""
 
     duplicate_of: dict[int, int]
@@ -337,19 +331,19 @@ def _identical_winner_order(fingerprint: PhotoFingerprint) -> tuple[object, ...]
 def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> DuplicateAssignment:
     """Die Duplikatgruppen als STERN um je einen Gewinner: `loser -> winner`.
 
-    ZWEI DURCHGAENGE (ADR 0146 Punkt 1):
+    ZWEI DURCHGAENGE:
     * Durchgang 1 baut Sterne ausschliesslich ueber identische Kanten, sortiert nach
       `_identical_winner_order`. Diese Sterne sind bauartbedingt vollstaendig identisch; ihre
       Gewinner stehen in `identical_winners` und sind fuer Durchgang 2 verbraucht, damit ein
       aehnliches Kettenmitglied den Stern nicht nachtraeglich erweitert (keine teilweise
       automatische Gruppe).
-    * Durchgang 2 ist der bisherige Stern ueber die verbliebenen freien Fotos nach
-      `(-sharpness, photo_id)`; hier mischen sich identische und aehnliche Kanten wie zuvor,
-      aber ein Stern aus Durchgang 1 waechst nicht mehr.
+    * Durchgang 2 ist der Stern ueber die verbliebenen freien Fotos nach `(-sharpness, photo_id)`;
+      hier mischen sich identische und aehnliche Kanten, aber ein Stern aus Durchgang 1 waechst
+      nicht mehr.
 
     HARTE STUFE-1-GRENZE in beiden Durchgaengen: Nur Paare aus `candidate_pairs` werden geprueft
     - ein Paar mit grober Hamming-Distanz ueber `DUPLICATE_CANDIDATE_HAMMING` ist kein Kandidat
-    und wird nicht einmal angesehen (ADR 0145).
+    und wird nicht einmal angesehen.
 
     Aufgenommen werden nur FREIE Fotos mit einer DIREKTEN Kante zum Gewinner - ein Kettenmitglied,
     das nur ueber ein anderes Mitglied haengt, bleibt ungruppiert. Fuer zwei aehnliche (nicht
@@ -433,10 +427,9 @@ def haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> 
     kein abstrakter Schwellwerttest kann ihn finden (er besteht bei jeder Einheit). Deshalb prueft
     test_scoring.py ihn gegen eine bekannte Referenzstrecke: 1 Grad Breite ist rund 111 195 m.
 
-    Haversine statt einer naiven Koordinatendifferenz aus zwei Gruenden, die beide real
-    vorkommen: die `cos(lat)`-Daempfung (dieselbe Laengendifferenz ist in Polnaehe eine deutlich
-    kuerzere Strecke als am Aequator) und der Wraparound am 180. Meridian (179.9 nach -179.9 sind
-    0,2 Grad, nicht 359,8)."""
+    Haversine statt einer naiven Koordinatendifferenz wegen der `cos(lat)`-Daempfung (dieselbe
+    Laengendifferenz ist in Polnaehe eine deutlich kuerzere Strecke als am Aequator) und wegen des
+    Wraparounds am 180. Meridian (179.9 nach -179.9 sind 0,2 Grad, nicht 359,8)."""
     lat_a_rad = radians(lat_a)
     lat_b_rad = radians(lat_b)
     delta_lat = lat_b_rad - lat_a_rad
@@ -484,7 +477,7 @@ def assign_clusters(
     Cluster-Grenze. `cluster_key` wird pro Lauf neu vergeben, ist also nur innerhalb EINES
     score_project-Laufs stabil/vergleichbar.
 
-    Zwei Feinheiten, die unabhaengig voneinander brechen und deshalb getrennt getestet sind:
+    Zwei Feinheiten, die unabhaengig voneinander brechen:
 
     1. **Bezug ist das letzte koordinatentragende Foto des LAUFENDEN Clusters**, nicht der
        unmittelbare zeitliche Vorgaenger. Sonst unterdrueckte ein einziges Foto ohne Koordinate

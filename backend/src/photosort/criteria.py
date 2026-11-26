@@ -36,19 +36,15 @@ class CriterionDefinition:
     # sharpness/exposure/goldener_schnitt/aesthetics/symmetrie/horizont/freiraum/
     # content_landscape).
     #
-    # Es gibt KEIN zweites Attribut daneben, das dasselbe in Boolescher Form wiederholt: ein
-    # `category_eligible` war genau `presence_threshold is not None` und damit eine zweite,
-    # driftende Quelle derselben Aussage. Wer die Frage "trifft dieses Kriterium eine
-    # Inhaltsaussage" braucht, prüft `presence_threshold is not None`.
-    #
-    # KEIN Prioritäts-/Vorrangattribut: welches Motiv ein Foto trägt, entscheidet seit Spec 0427
-    # eine Stärke je Motiv und keine Rangliste.
+    # Kein zweites Attribut in Boolescher Form daneben: `presence_threshold is not None` IST die
+    # Antwort auf "trifft dieses Kriterium eine Inhaltsaussage"; ein `category_eligible` daneben
+    # driftet gegen diese Spalte. Ebenso kein Prioritäts-/Vorrangattribut: welches Motiv ein Foto
+    # trägt, entscheidet eine Stärke je Motiv, keine Rangliste.
     presence_threshold: float | None = None
 
 
-# Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert
-# nur 0.0/1.0, 0.5 trennt beide Fälle eindeutig) - zugleich die presence_threshold
-# dieses Kriteriums: Wiederverwendung einer bestehenden Konstante, keine neue Kalibrierung.
+# Schwelle, ab der content_people als "Gesicht erkannt" gilt: compute_content_people liefert nur
+# 0.0/1.0, 0.5 trennt beide Fälle eindeutig - zugleich die presence_threshold dieses Kriteriums.
 _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 
 # Presence-Schwellen für tier/gebaeude: beide Scores sind entweder exakt 0.0 (nichts erkannt)
@@ -70,10 +66,10 @@ _ESSEN_TRINKEN_PRESENCE_THRESHOLD = 0.01
 _LANDSCHAFT_PRESENCE_THRESHOLD = 0.01
 
 # Die Confidence-Schwelle des `landmark`-Kriteriums steht NICHT hier, sondern in
-# `landmark.py::LANDMARK_CONFIDENCE_THRESHOLD`, und wird von dort gelesen (ADR 0107 Punkt 1). Sie
-# misst dasselbe wie `landmark.py::usable_landmark_name`; zwei Maßstäbe für dasselbe Ergebnis kann
-# es nicht mehr geben, ohne dass jemand den Wert an zwei Stellen schreibt. Ein Wächter in
-# tests/test_landmark.py hält fest, dass hier kein eigenes Schwellenliteral zurückkehrt.
+# `landmark.py::LANDMARK_CONFIDENCE_THRESHOLD`, und wird von dort gelesen: sie misst dasselbe wie
+# `landmark.py::usable_landmark_name`, und zwei Maßstäbe für dasselbe Ergebnis entstehen nur,
+# wenn jemand den Wert an zwei Stellen schreibt. tests/test_landmark.py hält fest, dass hier kein
+# eigenes Schwellenliteral steht.
 
 CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "sharpness": CriterionDefinition("sharpness", "Schärfe", CriterionSource.LOCAL_HEURISTIC),
@@ -150,10 +146,9 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala
-# (scoring.py::compute_sharpness) auf [0, 1] - nicht gegen einen echten Fotokorpus kalibriert
-# (gleicher Kalibrierungs-Vorbehalt wie scoring.py::SHARPNESS_REJECT_THRESHOLD und
-# classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD). Werte darueber werden auf 1.0 geklemmt,
-# statt die Skala zu sprengen.
+# (scoring.py::compute_sharpness) auf [0, 1] - eine unkalibrierte Setzung wie
+# scoring.py::SHARPNESS_REJECT_THRESHOLD und classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD.
+# Werte darueber werden auf 1.0 geklemmt, statt die Skala zu sprengen.
 SHARPNESS_NORMALIZATION_CEILING = 200.0
 
 
@@ -244,11 +239,8 @@ def _bounding_box_area(box: SubjectBoxLike) -> float:
 
 
 def _largest_by_area[T: SubjectBoxLike](boxes: Sequence[T]) -> T:
-    # Eigene kleine generische Hilfsfunktion statt max(boxes, key=_bounding_box_area) direkt am
-    # Aufrufort - mypy --strict kann den Rueckgabetyp von max() sonst nicht praezise an den
-    # jeweils konkreten Sequenztyp (list[FaceBoundingBox] vs. Sequence[SubjectBoxLike]) binden,
-    # wenn `key` als Protocol-Parameter typisiert ist (bekannte mypy-Ungenauigkeit bei
-    # max()-Ueberladungen mit Protocol-Argumenten).
+    # Eigene generische Hilfsfunktion statt max(boxes, key=_bounding_box_area) am Aufrufort:
+    # mypy --strict bindet den Rueckgabetyp von max() sonst nicht an den konkreten Sequenztyp.
     return max(boxes, key=_bounding_box_area)
 
 
@@ -271,18 +263,17 @@ def _select_primary_subject(
 def compute_golden_ratio_score(
     faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike] = ()
 ) -> float | None:
-    """`goldener_schnitt`-Kriterium: reine geometrische Heuristik ohne eigenes ML-Modell,
-    wiederverwendet ausschließlich Positionsdaten aus bereits vorhandenen Detektionen - kein
-    neuer Bildverarbeitungsschritt. Bewertet, wie nah das primäre Subjekt (siehe
-    _select_primary_subject) an einem der vier Drittel-Schnittpunkte liegt, invers auf
-    [0, 1] normiert über _GOLDEN_RATIO_MAX_DISTANCE. Eine Horizont-Linien-Erkennung ist
-    bewusst nicht umgesetzt.
+    """`goldener_schnitt`-Kriterium: reine geometrische Heuristik ohne eigenes ML-Modell auf den
+    Positionsdaten bereits vorhandener Detektionen - kein neuer Bildverarbeitungsschritt, und
+    bewusst keine Horizont-Linien-Erkennung. Bewertet den Abstand des primären Subjekts (siehe
+    _select_primary_subject) zum nächsten der vier Drittel-Schnittpunkte, invers auf [0, 1]
+    normiert über _GOLDEN_RATIO_MAX_DISTANCE.
 
-    Bewusst eine reine Funktion OHNE eigenen detect_person/detect_objects-Aufruf:
-    worker/_criterion/local.py::compute_content_criteria ruft beide bereits für content_people/tier auf und
-    reicht die Ergebnislisten hier durch - ein zusätzlicher detect()-Aufruf je Foto wäre
-    reiner Compute-Overhead. Der Wiederverwendungsnachweis liegt deshalb auf
-    Worker-Integrationsebene, siehe test_worker_criterion_scoring_content.py::
+    Reine Funktion OHNE eigenen detect_person/detect_objects-Aufruf:
+    worker/_criterion/local.py::compute_content_criteria ruft beide bereits für content_people/tier
+    auf und reicht die Ergebnislisten hier durch - ein zusätzlicher detect()-Aufruf je Foto wäre
+    reiner Compute-Overhead. Der Ein-Aufruf-Nachweis liegt auf Worker-Integrationsebene, siehe
+    test_worker_criterion_scoring_content.py::
     test_detect_person_and_detect_objects_are_each_called_at_most_once_per_photo.
 
     `animals` bekommt AUSSCHLIESSLICH Tier-Erkennungen - der Aufrufer filtert die geweitete
@@ -290,12 +281,12 @@ def compute_golden_ratio_score(
     Kompositions-Subjekt wird."""
     subject = _select_primary_subject(faces, animals)
     if subject is None:
-        # KEIN Wert, nicht `0.0` (ADR 0095, Abschnitt 5): ohne erkennbares Subjekt ist dieses
-        # Kriterium für dieses Foto NICHT MESSBAR, und ein nicht messbares Kriterium wird
-        # weggelassen statt als schlechter Wert gewertet. Der `0.0`-Fallback wertete ein Foto
-        # ohne Personen doppelt ab - für das, was ihm fehlt, und für das, was es nicht ist.
-        # Der Aufrufer trägt das Kriterium dafür in `ContentCriteria.not_measurable` ein; eine
-        # Altzeile aus einem früheren Lauf wird daraufhin gelöscht.
+        # KEIN Wert, nicht `0.0`: ohne erkennbares Subjekt ist dieses Kriterium für dieses Foto
+        # NICHT MESSBAR; ein nicht messbares Kriterium wird weggelassen statt als schlechter Wert
+        # gewertet, denn der `0.0`-Fallback wertete ein Foto ohne Personen doppelt ab - für das,
+        # was ihm fehlt, und für das, was es nicht ist. Der Aufrufer trägt es in
+        # `ContentCriteria.not_measurable` ein; eine Altzeile aus einem früheren Lauf wird
+        # daraufhin gelöscht.
         return None
     distance = min(
         math.sqrt((subject.x_center - tx) ** 2 + (subject.y_center - ty) ** 2)
@@ -381,10 +372,9 @@ def compute_tier_score(objects: Sequence[ObjectDetection]) -> float:
 # Label-Datei `labels.txt` in backend/src/photosort/assets/efficientdet_lite0.tflite (die
 # .tflite-Datei enthält ihre Metadaten als angehängtes ZIP-Archiv). Mehrteilige COCO-Klassennamen
 # stehen dort mit LEERZEICHEN ("hot dog", "wine glass"), nie mit Unterstrich - genau diesen String
-# liefert mediapipe als `category_name`. Dass jeder Eintrag dort wirklich steht, hält seit ADR 0124
-# ein Test fest (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels); der Dateiname
-# kommt dort aus dem ZIP-Inventar des Assets, nicht aus diesem Kommentar - er hieß hier bis Spec
-# 0283 fälschlich `labelmap.txt`, ohne dass das auffiel.
+# liefert mediapipe als `category_name`. Ein Eintrag in falscher Schreibweise fiele stumm auf 0.0;
+# test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels hält jeden Eintrag gegen die
+# Label-Datei.
 VEHICLE_CATEGORIES = frozenset(
     {"bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat"}
 )
@@ -445,51 +435,23 @@ def compute_essen_trinken_score(objects: Sequence[ObjectDetection]) -> float:
 # classification.py dazu, warum die Filterung HIER und nicht in classify_scene selbst passiert.
 # Ein Eintrag deckt jeweils ein Motiv ab; die bloße Anwesenheit einer Klasse ist der Treffer.
 #
-# AUFNAHMEKRITERIUM (Spec 0283, AK3): Aufgenommen wird eine Bauwerksart, wenn sie ein eigenständiges
-# Bauwerk im Außenraum ist, das als Motiv für sich steht. Nicht aufgenommen werden Innenräume,
-# Ladeneinrichtungen und einzelne Bauteile wie Dächer, Mauern oder Zäune. Im Zweifel wird eine
-# Bauwerksart weggelassen statt aufgenommen.
+# AUFNAHMEKRITERIUM: Aufgenommen wird eine Bauwerksart, wenn sie ein eigenständiges Bauwerk im
+# Außenraum ist, das als Motiv für sich steht. Innenräume, Ladeneinrichtungen und einzelne Bauteile
+# wie Dächer, Mauern oder Zäune bleiben draußen; im Zweifel wird weggelassen statt aufgenommen.
 #
 # Maßgeblich für die exakte Schreibweise ist die im Asset mitgelieferte Label-Datei
 # `labels_without_background.txt` in backend/src/photosort/assets/efficientnet_lite0.tflite: jeder
-# Eintrag steht dort WÖRTLICH (ADR 0124). Ein Test hält das fest
-# (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels) - die früheren Einträge
-# `bell_cote`/`suspension_bridge`/`triumphal_arch` (Label-Datei: mit LEERZEICHEN) und `lighthouse`
-# (Label-Datei: `beacon`) entsprachen keiner Modellbezeichnung und konnten deshalb nie zutreffen; ein
-# neuer Eintrag in falscher Schreibweise fiele genauso stumm auf 0.0.
-#
-# NEU AUFGENOMMEN (Spec 0283, AK2) - jede dieser Klassen ist im Asset nachgewiesen:
-#   `steel arch bridge` - eigenständiges Brückenbauwerk; schließt die Lücke zur bereits
-#                         aufgenommenen `suspension bridge`
-#   `water tower`       - eigenständiges Bauwerk im Außenraum, weithin sichtbares Einzelmotiv
-#   `dam`               - eigenständiges Großbauwerk im Außenraum
-#   `pier`              - Seebrücke, eigenständiges Bauwerk im Außenraum
-#   `fountain`          - eigenständiger Brunnen im Außenraum
-#   `planetarium`       - eigenständiger Gebäudebau
+# Eintrag steht dort WÖRTLICH, ein Eintrag in falscher Schreibweise fiele stumm auf 0.0
+# (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels).
 #
 # GRENZFÄLLE, bewusst MIT Begründung geführt statt stillschweigend mitgeschleppt: `dome` (die
 # ImageNet-Klasse meint den Kuppelbau als Ganzes, nicht das Bauteil), `bell cote` (streng genommen
-# ein Dachaufsatz, aber die einzige Klasse, die das Modell für den Glockenturm anbietet) und
-# `library` (kann Innenräume zeigen - siehe die Lücke unten).
+# ein Dachaufsatz, aber die einzige Klasse für den Glockenturm) und `library` (kann Innenräume
+# zeigen).
 #
-# GEPRÜFT UND VERWORFEN (Auswahl aus 161 nach Bildinhalten durchsuchten Label-Kandidaten):
-#   `breakwater`, `stone wall`, `picket fence`, `chainlink fence`, `worm fence`, `tile roof`
-#                          - Mauern, Zäune, Dächer: einzelne Bauteile
-#   `bakery`, `barbershop`, `bookshop`, `butcher shop`, `confectionery`, `grocery store`,
-#   `shoe shop`, `tobacco shop`, `toyshop`, `restaurant`, `cinema`, `prison`
-#                          - Ladeneinrichtungen bzw. Innenräume; die Klassen zeigen überwiegend
-#                            Interieurs
-#   `greenhouse`           - Klasse zeigt typischerweise den Innenraum unter Glas
-#   `window screen`, `window shade`, `sliding door`, `pedestal`, `vault`, `turnstile`,
-#   `theater curtain`      - Bauteile bzw. Innenraum
-#   `megalith`             - Grenzfall mit Fehltrefferrisiko (Findlinge, Naturformationen)
-#   `cliff dwelling`, `drilling platform`, `lumbermill`, `dock`, `solar dish`
-#                          - Grenzfälle (Stätte, Industrieanlage, Bauteil einer Anlage)
-#   `yurt`, `mobile home`, `mountain tent` - Behausungen ohne ortsfestes Bauwerk
-#
-# DOKUMENTIERTE, BEWUSST AKZEPTIERTE LÜCKE (Spec 0283, AK5): ImageNet-1k hat kaum Innenraum-Klassen;
-# `living_room`, `kitchen` und `office` werden strukturell nicht erkannt. Diese Überarbeitung nimmt
-# deshalb keine Innenraum-Klasse auf - nur Außenarchitektur wird zuverlässig erfasst.
+# DOKUMENTIERTE, BEWUSST AKZEPTIERTE LÜCKE: ImageNet-1k hat kaum Innenraum-Klassen; `living_room`,
+# `kitchen` und `office` werden strukturell nicht erkannt. Aufgenommen wird deshalb nur
+# Außenarchitektur.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -543,7 +505,7 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
 
 
 # Kuratierte Allow-Liste natürlicher ImageNet-1k-Szenenklassen - dasselbe Muster wie
-# ARCHITECTURE_CATEGORIES oben, ebenfalls ohne modell-ladenden Test.
+# ARCHITECTURE_CATEGORIES oben.
 #
 # Maßgeblich für die exakte Schreibweise ist die im gebündelten Modell-Asset mitgelieferte
 # Label-Datei `labels_without_background.txt` in
@@ -553,9 +515,8 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
 # "coral_reef") - genau diesen String liefert mediapipe als `category_name`.
 #
 # Dokumentierte, bewusst akzeptierte Lücke: ImageNet-1k kennt KEINE Klassen für Wald, Wiese oder
-# Feld - solche Landschaften werden strukturell nicht als `landschaft` erkannt und landen im
-# "nicht erkannt"-Zustand. Eine Nachkalibrierung bleibt eine reine Listen-/Konstanten-Änderung
-# ohne Architektur-Eingriff.
+# Feld - solche Landschaften werden strukturell nicht als `landschaft` erkannt. Eine
+# Nachkalibrierung bleibt eine reine Listen-/Konstanten-Änderung ohne Architektur-Eingriff.
 LANDSCAPE_SCENE_CATEGORIES = frozenset(
     {
         "alp",
@@ -572,11 +533,10 @@ LANDSCAPE_SCENE_CATEGORIES = frozenset(
 )
 
 # Inhaltliche Konfidenzschwelle des landschaft-Kriteriums - bewusst deutlich niedriger als
-# SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5, gebaeude): ein Landschaftsfoto verteilt
-# seine Modellkonfidenz typischerweise über mehrere benachbarte Szenenklassen ("alp"/
-# "valley"/"promontory" am selben Bergpanorama), eine Architektur-Klasse konzentriert sie.
-# Dokumentierte, nicht gegen einen Fotokorpus kalibrierte Setzung, austauschbar ohne
-# Architektur-Änderung.
+# SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5, gebaeude): ein Landschaftsfoto verteilt seine
+# Modellkonfidenz typischerweise über mehrere benachbarte Szenenklassen ("alp"/"valley"/
+# "promontory" am selben Bergpanorama), eine Architektur-Klasse konzentriert sie. Unkalibrierte
+# Setzung, austauschbar ohne Architektur-Änderung.
 LANDSCHAFT_LABEL_MIN_CONFIDENCE = 0.25
 
 
@@ -658,29 +618,25 @@ FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
 def compute_freiraum_score(orientation: FaceOrientation | None) -> float | None:
     """`freiraum`-Kriterium: reine Score-Berechnung aus einer bereits vorhandenen
     FaceOrientation, OHNE eigenen detect_face_orientation-Aufruf (Trennung analog
-    compute_tier_score/compute_gebaeude_score) - worker/_criterion/local.py::compute_content_criteria ruft
-    detect_face_orientation genau einmal auf und reicht das Ergebnis hier durch.
+    compute_tier_score/compute_gebaeude_score) - worker/_criterion/local.py::compute_content_criteria
+    ruft detect_face_orientation genau einmal auf und reicht das Ergebnis hier durch.
 
-    Drei bewusst UNTERSCHIEDLICHE Antworten, jeder Fall einzeln beantwortet statt nach
-    einem einheitlichen Schema - bedeutet die Abwesenheit eines Signals ein schlechtes Foto
-    oder nur ein nicht messbares?
-    1. Kein Gesicht erkannt (`orientation is None`) -> KEIN Wert (`None`), nicht `0.0` - analog
-       goldener_schnitt und aus demselben Grund (ADR 0095, Abschnitt 5): dieses Kriterium
-       bewertet die Rahmung eines GESICHTS, ohne erkanntes Gesicht ist es für dieses Foto nicht
-       messbar. Der Aufrufer trägt es in `ContentCriteria.not_measurable` ein, eine Altzeile
-       wird gelöscht. Die beiden folgenden Fallbacks bleiben Werte: sie sind messbar und
-       neutral.
-    2. Nahezu frontaler Blick (`|yaw| < FREIRAUM_YAW_DEADZONE_DEGREES`) -> 0.5 (neutral) -
-       kein klares Richtungssignal. Der Vergleich ist bewusst `<`, NICHT `<=`: ein Yaw EXAKT
-       an der Deadzone-Grenze zählt als AUSSERHALB, nicht als neutral.
-    3. Sonst: `score = clip(looking_space / (looking_space + opposite_space), 0, 1)` -
-       `looking_space` ist der verfügbare Bildraum auf der dem Gesicht zugewandten Seite
-       (Vorzeichenkonvention siehe FaceOrientation.yaw_degrees-Docstring in
-       classification.py: positiver Yaw -> Blick Richtung steigendem x ->
-       looking_space = 1 - max_x, negativer Yaw -> looking_space = min_x), `opposite_space`
-       die Gegenseite. Zusätzlicher 0-Schutz, gleiche Argumentationsklasse wie die
-       Deadzone: füllt das Gesicht die VOLLE Bildbreite (`min_x == 0`, `max_x == 1`), sind
-       beide Räume 0 - neutraler Fallback 0.5 statt ZeroDivisionError."""
+    Drei bewusst UNTERSCHIEDLICHE Antworten, jeder Fall einzeln beantwortet statt nach einem
+    einheitlichen Schema - bedeutet die Abwesenheit eines Signals ein schlechtes Foto oder nur ein
+    nicht messbares?
+    1. Kein Gesicht erkannt (`orientation is None`) -> KEIN Wert (`None`), nicht `0.0`: dieses
+       Kriterium bewertet die Rahmung eines GESICHTS, ohne erkanntes Gesicht ist es für dieses Foto
+       nicht messbar (wie goldener_schnitt). Der Aufrufer trägt es in
+       `ContentCriteria.not_measurable` ein, eine Altzeile wird gelöscht. Die beiden folgenden
+       Fallbacks bleiben Werte: sie sind messbar und neutral.
+    2. Nahezu frontaler Blick (`|yaw| < FREIRAUM_YAW_DEADZONE_DEGREES`) -> 0.5 (neutral) - kein
+       klares Richtungssignal. Der Vergleich ist bewusst `<`, NICHT `<=`: ein Yaw EXAKT an der
+       Deadzone-Grenze zählt als AUSSERHALB, nicht als neutral.
+    3. Sonst: `score = clip(looking_space / (looking_space + opposite_space), 0, 1)`, mit
+       `looking_space` als Bildraum auf der dem Gesicht zugewandten Seite (positiver Yaw -> Blick
+       Richtung steigendem x) und `opposite_space` als Gegenseite. Zusätzlicher 0-Schutz: füllt
+       das Gesicht die VOLLE Bildbreite (`min_x == 0`, `max_x == 1`), sind beide Räume 0 -
+       neutraler Fallback 0.5 statt ZeroDivisionError."""
     if orientation is None:
         return None
     if abs(orientation.yaw_degrees) < FREIRAUM_YAW_DEADZONE_DEGREES:

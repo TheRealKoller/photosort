@@ -16,14 +16,14 @@ Der letzte Faktor ist eine SCHRUMPFUNG GEGEN DIE NEUTRALLAGE: Bei `n_k = 0` ergi
 Startwert, der Nullzustand faellt ohne Sonderfall heraus. Die Division wird trotzdem JE KRITERIUM
 vor ihrer Ausfuehrung abgefangen und nicht je Ableitung - ein Kriterium ohne Stimmen kann neben
 einem mit Stimmen stehen, und ein `NaN` aus `0/0` vergiftete danach jeden Qualitaetswert aller
-Projekte, ohne einen Fehler zu erzeugen (S12).
+Projekte, ohne einen Fehler zu erzeugen.
 
 NUR VORZEICHEN werden verglichen, nie Betraege: Sonst waere ein Kriterium mit gestauchtem
 Wertebereich strukturell benachteiligt.
 
 ITERIERT WIRD UEBER DEN UEBERGEBENEN SCHLUESSELSATZ, nie ueber die vorliegenden Messwerte:
 `photo_criterion_scores` traegt Kriterien mit Inhaltsaussage, die `quality.py` bewusst nicht
-gewichtet, und der umgekehrte Weg braechte eines davon in den Qualitaetswert (G2).
+gewichtet, und der umgekehrte Weg braechte eines davon in den Qualitaetswert.
 
 DIE FALLZAHL IST UNGEWICHTET, die Stimmenzahl gewichtet. Eine gewichtete Zahl als Fallzahl
 behauptete Korrekturen, die niemand vorgenommen hat.
@@ -136,7 +136,7 @@ def count_motif_errors(corrections: Iterable[MotifCorrectionRecord]) -> dict[Mot
 
 class ExchangeKind(enum.StrEnum):
     """Die drei Tauschklassen. Sie sind DISJUNKT und ERSCHOEPFEND und werden nirgends summiert:
-    `UNDETERMINED` ist kein Restposten, sondern eine eigene ausgewiesene Klasse (D3)."""
+    `UNDETERMINED` ist kein Restposten, sondern eine eigene ausgewiesene Klasse."""
 
     WITHIN_LEVEL = "within_level"
     ACROSS_LEVEL = "across_level"
@@ -159,9 +159,8 @@ def preferred_lower_rated(quality: float | None, replaced_quality: float | None)
     """Wurde beim Austausch das SCHLECHTER bewertete Bild vorgezogen? `None` heisst "nicht
     vergleichbar" - Gleichstand oder ein fehlender Wert.
 
-    Der Gleichstand wird keiner der beiden Seiten zugeschlagen (D4): `False` hiesse hier "ein
-    besser bewertetes Bild vorgezogen", und das ist eine Aussage, die ein Gleichstand nicht
-    traegt."""
+    Der Gleichstand wird keiner der beiden Seiten zugeschlagen: `False` hiesse hier "ein besser
+    bewertetes Bild vorgezogen", und das ist eine Aussage, die ein Gleichstand nicht traegt."""
     if quality is None or replaced_quality is None or quality == replaced_quality:
         return None
     return quality < replaced_quality
@@ -184,9 +183,9 @@ class ExchangeStats:
 
     `quality_incomparable_count` haelt die Paare mit gleichem und die mit fehlendem
     Qualitaetswert. Sie gehen in `preferred_lower_rated_count` NICHT ein und werden auch nicht
-    seinem Gegenstueck zugeschlagen (D4): Ohne diese eigene Zahl laese sich ein gestiegener
-    Anteil "schlechteres Bild vorgezogen" nicht von einem gewachsenen Anteil unvergleichbarer
-    Paare unterscheiden."""
+    seinem Gegenstueck zugeschlagen: Ohne diese eigene Zahl laese sich ein gestiegener Anteil
+    "schlechteres Bild vorgezogen" nicht von einem gewachsenen Anteil unvergleichbarer Paare
+    unterscheiden."""
 
     count: int = 0
     preferred_lower_rated_count: int = 0
@@ -196,9 +195,9 @@ class ExchangeStats:
 def summarize_exchanges(records: Iterable[ExchangeRecord]) -> dict[ExchangeKind, ExchangeStats]:
     """Die Austausche je Klasse - mit einem Eintrag je Klasse, auch fuer die ohne Vorkommen.
 
-    DIE DREI KLASSEN WERDEN HIER NICHT SUMMIERT und tauchen auch als Summe nirgends auf (D3). Sie
-    sind disjunkt und erschoepfend, ihre Summe waere also die Gesamtzahl der Austausche - eine
-    Zahl, die die Aussage ueber die lokalen Kriterien mit der ueber die Modellstufe mischte."""
+    DIE DREI KLASSEN WERDEN HIER NICHT SUMMIERT und tauchen auch als Summe nirgends auf. Sie sind
+    disjunkt und erschoepfend, ihre Summe waere also die Gesamtzahl der Austausche - eine Zahl,
+    die die Aussage ueber die lokalen Kriterien mit der ueber die Modellstufe mischte."""
     counts = dict.fromkeys(ExchangeKind, 0)
     lower_rated = dict.fromkeys(ExchangeKind, 0)
     incomparable = dict.fromkeys(ExchangeKind, 0)
@@ -247,7 +246,7 @@ class FinalDecisionRecord:
 
 def final_decision_pairs(records: Iterable[FinalDecisionRecord]) -> list[PreferencePair]:
     """Die Paare aus der gemeinsamen Endauswahl: je `(Lauf, Ereignis, Stufe)` jedes aufgenommene
-    gegen jedes herausgenommene Foto (G5).
+    gegen jedes herausgenommene Foto.
 
     DIE GRUPPIERUNG UEBER DAS EINGEFRORENE EREIGNIS HAELT DIE GEGENUEBERSTELLUNG LOKAL - ohne sie
     verglichen wir einen Sonnenuntergang von Tag 1 gegen ein Abendessen von Tag 5, und die
@@ -285,12 +284,12 @@ class CriterionAgreement:
     """Die Bilanz EINES Kriteriums ueber alle Paare.
 
     `case_count` ist die UNGEWICHTETE Zahl der auswertbaren Paare - beide Fotos tragen den
-    Messwert, Gleichstand eingeschlossen (D5). `votes` ist die GEWICHTETE Stimmenzahl `n_k` und
-    zaehlt den Gleichstand ausdruecklich NICHT mit: Ein Paar kann auswertbar sein und trotzdem
-    nicht abstimmen, und genau dieser Unterschied ist der zweite entartete Weg des Verfahrens.
+    Messwert, Gleichstand eingeschlossen. `votes` ist die GEWICHTETE Stimmenzahl `n_k` und zaehlt
+    den Gleichstand ausdruecklich NICHT mit: Ein Paar kann auswertbar sein und trotzdem nicht
+    abstimmen, und genau dieser Unterschied ist der zweite entartete Weg des Verfahrens.
 
     `agreement` ist bei `votes == 0` exakt `0.0` und damit die Neutrallage - nie ein `NaN` aus
-    einer Division durch null (S12)."""
+    einer Division durch null."""
 
     case_count: int
     votes: float
@@ -337,9 +336,9 @@ def derive_weights(
 
     DER SCHLUESSELSATZ DES ERGEBNISSES IST EXAKT DER DES STARTWERTS, in beide Richtungen: Ein
     Startwertschluessel ohne Bilanz behaelt seinen Wert, ein der Startwerttabelle unbekannter
-    Bilanzschluessel wird verworfen (G2). Ein `{**baseline, **derived}` besaesse nur die erste
-    Haelfte - und genau das ist der Weg, auf dem ein Kriterium mit Inhaltsaussage in den
-    Qualitaetswert geriete.
+    Bilanzschluessel wird verworfen. Ein `{**baseline, **derived}` besaesse nur die erste Haelfte
+    - und genau das ist der Weg, auf dem ein Kriterium mit Inhaltsaussage in den Qualitaetswert
+    geriete.
 
     Bei `votes == 0` steht der Startwert IDENTISCH im Ergebnis, nicht sein Produkt mit `1.0`: Der
     Nullzustand ist der Startwert und nicht etwas, das ihm bis auf Rundung gleicht."""

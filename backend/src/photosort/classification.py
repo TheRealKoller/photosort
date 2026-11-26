@@ -13,10 +13,9 @@ from PIL import Image, ImageFilter, ImageStat
 # run_criterion_scoring-Job importiert.
 
 # Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als
-# "flächig/uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness, nur pro Kachel
-# statt über das gesamte Bild. Dieselbe Größenordnung wie scoring.SHARPNESS_REJECT_THRESHOLD
-# (15.0): beide messen dieselbe zugrunde liegende Eigenschaft (lokaler Kantenkontrast). Nicht
-# gegen einen echten Fotokorpus kalibriert, es gibt keinen im Repo.
+# "flächig/uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness, nur pro Kachel.
+# Größenordnung wie scoring.SHARPNESS_REJECT_THRESHOLD (15.0); beide messen lokalen
+# Kantenkontrast. Unkalibriert - es gibt keinen Fotokorpus im Repo.
 UNIFORM_TILE_VARIANCE_THRESHOLD = 15.0
 
 # Kachelraster für compute_uniform_area_fraction.
@@ -24,40 +23,33 @@ _UNIFORM_TILE_GRID = 8
 
 
 # Mindest-Konfidenz einer mediapipe-Gesichtserkennung, ab der detect_person ein Gesicht als
-# tatsaechlich erkannt wertet - eigene, explizite Schwelle, nie ein blindes Verlassen auf den
-# Detector selbst (der intern ebenfalls ein min_detection_confidence fuehrt), damit die
-# Entscheidungslogik unabhaengig von der konkreten Detector-Konfiguration testbar bleibt (siehe
-# FakeFaceDetector in test_classification.py).
+# erkannt wertet - eigene explizite Schwelle, nie ein blindes Verlassen auf den Detector selbst
+# (der intern ebenfalls ein min_detection_confidence führt), damit die Entscheidungslogik
+# unabhängig von der Detector-Konfiguration testbar bleibt (FakeFaceDetector).
 FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
 # SICHERHEIT: gepinnte, direkt im Repository eingecheckte .tflite-Modelldatei - kein
 # Laufzeit-Download vom Worker aus einer externen CDN-URL und kein Download-Schritt waehrend
 # `docker build`. Die Datei ist wie ein normales Code-Asset committet und damit ueber die
-# Git-Historie reproduzierbar. Quelle: offizielles mediapipe-Modell-Repository
-# (https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/
-# blaze_face_short_range.tflite, sha256 b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380
-# b0152f). "assets/" statt "models/" als Verzeichnisname, um keine Namenskollision mit dem
-# bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
+# Git-Historie reproduzierbar. "assets/" statt "models/" als Verzeichnisname, um keine
+# Namenskollision mit dem bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
+
 FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test - eine
 # versehentliche Beschaedigung oder Ersetzung der Binaerdatei faellt sonst erst auf, wenn die
-# Erkennungsguete spuerbar leidet. Bricht in
-# tests/test_classification.py::TestFaceDetectorModelAsset (ein Fall).
+# Erkennungsguete spuerbar leidet (tests/test_classification.py::TestFaceDetectorModelAsset).
 FACE_DETECTOR_MODEL_SHA256 = "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
 
 def laplace_edges_without_border_artifact(grayscale: Image.Image) -> Image.Image:
-    """Wendet den Laplace-Kernel auf das GESAMTE Bild an (nicht pro Kachel), gepolstert mit
-    Rand-Wiederholung (`np.pad(..., mode="edge")`), statt Pillows Standardverhalten (unveraenderter
-    Originalwert am Bildrand, kein Zero-Padding - siehe scoring.py::compute_sharpness-Kommentar).
-    Bei einem GLOBAL angewendeten Filter faellt dieser 1px-Randeffekt fuer ein einzelnes
-    Grossflaechen-Sharpness-Mass nicht ins Gewicht (scoring.py); hier wird das Ergebnis aber
-    anschliessend in ein 8x8-Kachelraster zerschnitten - ohne Korrektur wuerde JEDE am Bildrand
-    liegende Kachel (28 von 64) faelschlich eine hohe Varianz zeigen, selbst bei einem komplett
-    flächigen Bild."""
+    """Wendet den Laplace-Kernel auf das GESAMTE Bild an, gepolstert mit Rand-Wiederholung
+    (`np.pad(..., mode="edge")`), statt mit Pillows Standardverhalten (unveraenderter
+    Originalwert am Bildrand): das Ergebnis wird anschliessend in ein 8x8-Kachelraster
+    zerschnitten, und ohne Korrektur wuerde JEDE am Bildrand liegende Kachel (28 von 64)
+    faelschlich eine hohe Varianz zeigen, selbst bei einem komplett flaechigen Bild."""
     array = np.asarray(grayscale)
     padded = np.pad(array, pad_width=1, mode="edge")
     filtered = Image.fromarray(padded).filter(_LAPLACE_KERNEL)
@@ -130,12 +122,10 @@ def compute_symmetry_score(image: Image.Image) -> float:
 
     Rundungsregel bei ungeraden Bildmaßen, durch Testfall gepinnt: identisch zum
     8x8-Kachelraster von compute_uniform_area_fraction - `width // 2`/`height // 2` als
-    Grenze der ERSTEN Hälfte, die ZWEITE Hälfte nimmt den Rest (`array[mid:]` statt einer
-    symmetrischen Aufteilung um die Mitte).
+    Grenze der ERSTEN Hälfte, die ZWEITE Hälfte nimmt den Rest.
 
     Dokumentierter Fallback, kein Bug: ein komplett flächiges Bild (Gesamtenergie 0) hat per
-    Definition beide Diffs 0 (siehe _safe_relative_diff) -> score = 1.0. Ein flächiges Bild
-    ist trivial "balanciert", eine Asymmetrie ist nicht messbar."""
+    Definition beide Diffs 0 -> score = 1.0; eine Asymmetrie ist dort nicht messbar."""
     grayscale = image.convert("L")
     width, height = grayscale.size
     edges = np.asarray(laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
@@ -272,9 +262,7 @@ ANIMAL_CATEGORIES = frozenset(
 OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
 # SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei, kein Laufzeit-Download -
-# analog zum FaceDetector-Muster oben. Quelle: offizielles mediapipe-Modell-Repository
-# (https://storage.googleapis.com/mediapipe-models/object_detector/
-# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante (~4,4 MB).
+# analog zum FaceDetector-Muster oben; int8-quantisierte Variante (~4,4 MB).
 OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
@@ -404,10 +392,8 @@ SCENE_LABEL_MIN_CONFIDENCE = 0.2
 # Labels, verdrängt also nie einen Treffer zugunsten eines schwächeren.
 SCENE_LABEL_MAX_RESULTS = 5
 
-# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei, kein Laufzeit-Download.
-# Quelle: offizielles mediapipe-Modell-Repository
-# (https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/
-# efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
+# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei, kein Laufzeit-Download;
+# int8-quantisierte Variante (~5,4 MB).
 SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
@@ -492,12 +478,9 @@ def build_scene_classifier() -> SceneClassifierLike:
 # zwischen zwei einzelnen, fehleranfaellig zu zitierenden Landmark-Indizes.
 
 # SICHERHEIT: gepinnte, im Repository eingecheckte .task-Modelldatei, kein Laufzeit-Download,
-# analog den drei .tflite-Assets oben. Quelle: offizielles mediapipe-Modell-Repository
-# (https://storage.googleapis.com/mediapipe-models/
-# face_landmarker/face_landmarker/float16/1/face_landmarker.task, float16-quantisierte Variante,
-# ~3,6 MB). output_face_blendshapes wird zur Laufzeit ueber ein Options-Flag desselben Bundles
-# gesteuert (siehe build_face_landmarker unten), es gibt kein separates "ohne
-# Blendshapes"-Asset im mediapipe-Modell-Repository.
+# analog den drei .tflite-Assets oben (float16-quantisierte Variante, ~3,6 MB).
+# output_face_blendshapes wird zur Laufzeit ueber ein Options-Flag desselben Bundles gesteuert
+# (siehe build_face_landmarker unten), es gibt kein separates "ohne Blendshapes"-Asset.
 FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarker.task"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
@@ -541,9 +524,9 @@ class FaceOrientation:
     criteria.py::compute_freiraum_score.
 
     `yaw_degrees` - Vorzeichenkonvention dieser Umsetzung: positiv = Gesicht Richtung steigendem x
-    (Bild-rechte Seite) gedreht. Mangels seitlich gedrehtem Test-Referenzbild ist das VORZEICHEN
-    nicht gegen eine echte Modellausgabe verifiziert; die MatrixSTRUKTUR selbst
-    (R[0,0]/R[0,2]/R[2,0]/R[2,2] als Rotation-um-die-Y-Achse-Block) dagegen schon.
+    (Bild-rechte Seite) gedreht. Das VORZEICHEN ist nicht gegen eine echte Modellausgabe
+    verifiziert (es fehlt ein seitlich gedrehtes Test-Referenzbild); die MatrixSTRUKTUR selbst
+    (R[0,0]/R[0,2]/R[2,0]/R[2,2] als Rotation-um-die-Y-Achse-Block) ist es.
 
     `min_x`/`max_x` - kleinste/groesste normierte x-Koordinate ueber ALLE Landmarks des erkannten
     Gesichts (kein separater Bounding-Box-Ausgabewert im FaceLandmarkerResult)."""

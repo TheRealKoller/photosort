@@ -1,5 +1,5 @@
 """Die Endauswahl des Projekts: abgeleitet aus beiden Entwuerfen, ueberschrieben von der
-gemeinsamen Entscheidung (ADR 0099 Punkte 1 und 2).
+gemeinsamen Entscheidung.
 
 REIN und DB-FREI - dasselbe Muster wie `selection.py`/`events.py`/`quality.py`: keine Session, kein
 Modell, kein SQL-Ausdruck, kein Enum-Import aus `models.py`. Die Regel lebt HIER und nur hier; die
@@ -20,7 +20,7 @@ ausschliesslich in denselben Zweig hineinwirken. Ein strittiges, unentschiedenes
 NICHT zur Endauswahl - automatische Zugehoerigkeit gibt es allein bei Einigkeit.
 
 Die Zahl ZWEI steht an keiner Stelle: "alle einig" / "nicht alle einig" ist fuer jede Nutzerzahl
-definiert und faellt bei zwei Nutzern mit der Aussage der Story zusammen.
+definiert und faellt bei zwei Nutzern mit der Aussage des Zwei-Personen-Falls zusammen.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def selection_state(
     Entscheidung.
 
     `taken`/`rejected` zaehlen die ALBUMENTSCHEIDUNGEN (`Rating.status`), nie das Vorhandensein
-    einer Bewertungszeile: seit ADR 0098 kann eine Zeile allein den Favoriten tragen.
+    einer Bewertungszeile: eine Zeile kann allein den Favoriten tragen.
 
     DIE BEIDEN HERKUENFTE SIND NICHT SYMMETRISCH und das ist der Kern der Rechnung: Bei einem
     VORGESCHLAGENEN Foto ist jeder im Entwurf, der es nicht gestrichen hat (`user_count -

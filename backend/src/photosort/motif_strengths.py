@@ -31,7 +31,7 @@ from photosort.models import (
 )
 
 # Die Rangfolge der Grundlagen an EINER Stelle: `local < eye < cloud`. Ein Eye-Lauf verdraengt
-# damit eine lokale Aussage und eine Cloud-Aussage nie (Spec 0609 / ADR 0138 Punkt 4).
+# damit eine lokale Aussage und eine Cloud-Aussage nie.
 _SOURCE_RANK: dict[MotifAssessmentSource, int] = {
     MotifAssessmentSource.LOCAL: 0,
     MotifAssessmentSource.EYE: 1,
@@ -138,7 +138,7 @@ async def _write_local_snapshot(
     computed_at: datetime,
     strengths: Mapping[str, float],
 ) -> None:
-    """Legt den LOKALEN Vektor als Rueckbaudaten ab bzw. ersetzt ihn (ADR 0138 Punkt 5).
+    """Legt den LOKALEN Vektor als Rueckbaudaten ab bzw. ersetzt ihn.
 
     Hoechstens EINE Zeile je Foto (`photo_id` ist Primary Key): ein zweiter lokaler Lauf
     ueberschreibt den Schnappschuss mit seinem FRISCHEN Vektor, statt eine zweite Zeile
@@ -208,7 +208,7 @@ async def upsert_assessment(
     wurde.
 
     DIE REGEL, die die drei Grundlagen auseinanderhaelt, ist eine RANGFOLGE:
-    `local < eye < cloud` (Spec 0609 / ADR 0138 Punkt 4). Eine neue Aussage schreibt nur, wenn sie
+    `local < eye < cloud`. Eine neue Aussage schreibt nur, wenn sie
     hoeher rangiert als die vorhandene oder dieselbe Grundlage ist; sonst bleibt die Kopfzeile in
     Herkunft, Anbieter, Zeitstempel, Ausschluss-Flag und allen acht Werten unberuehrt. Die Regel
     haengt NICHT an der Reihenfolge der Teilschritte - sie steht vollstaendig hier, und in jeder

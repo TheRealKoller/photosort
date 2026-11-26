@@ -36,10 +36,7 @@ MISTRAL_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
 ANTHROPIC_VISION_MODEL = "claude-haiku-4-5"
 
 # Stärkeres, ebenfalls vision-fähiges Modell desselben Anbieters - wählbar, aber NICHT
-# Voreinstellung; die bleibt das jeweils günstigste vision-fähige Modell je Anbieter. Modell-ID
-# und Vision-Fähigkeit verifiziert gegen die offizielle Modellübersicht
-# (https://platform.claude.com/docs/en/about-claude/models/overview, abgerufen 2026-09-06:
-# "All current models support text and image input"), Preis siehe pricing.py.
+# Voreinstellung; die bleibt das jeweils günstigste vision-fähige Modell je Anbieter.
 ANTHROPIC_VISION_MODEL_SONNET = "claude-sonnet-5"
 
 # Kleinstes/günstigstes Modell der Ministral-3-Familie, verifiziert gegen die offizielle
@@ -50,29 +47,24 @@ MISTRAL_VISION_MODEL = "ministral-3b-2512"
 # Voreinstellung.
 #
 # NAMENS-STOLPERSTEIN: "Small" bezeichnet hier das STÄRKERE der beiden wählbaren Mistral-Modelle -
-# das ist Mistrals Produktnamensgebung ("Mistral Small 4", 119B Parameter, 6,5B aktiv), kein
-# Vertipper und keine falsche Registry-Reihenfolge. Der Konstantenname folgt deshalb der FAMILIE
-# (wie ANTHROPIC_VISION_MODEL_SONNET) statt der Parameterzahl.
+# das ist Mistrals Produktnamensgebung, kein Vertipper und keine falsche Registry-Reihenfolge. Der
+# Konstantenname folgt deshalb der FAMILIE (wie ANTHROPIC_VISION_MODEL_SONNET) statt der
+# Parameterzahl.
 #
-# Modell-ID verifiziert gegen die offizielle Modellkarte
-# (https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03, abgerufen 2026-09-09).
-# Immer die datierte ID, nie der gleitende Alias `mistral-small-latest` - der wanderte unter uns
-# weg und machte jede Preisverifikation gegenstandslos.
+# Immer die datierte ID, nie der gleitende Alias `mistral-small-latest`: der Alias wandert und
+# macht jede Preisverifikation gegenstandslos.
 #
-# VISION-FÄHIGKEIT - Belegkette mit offen dokumentierter Lücke. Ein wählbares Modell braucht zwei
-# belegte Tatsachen: verifizierten Token-Preis UND belegte Vision-Fähigkeit.
-#   BELEGT - zwei erstparteiliche Quellen sagen ausdrücklich "accepts both text and image inputs":
-#   https://mistral.ai/news/mistral-small-4/ und die Modellkarte
-#   https://huggingface.co/mistralai/Mistral-Small-4-119B-2603 (beide abgerufen 2026-09-09).
-#   LÜCKE - https://docs.mistral.ai/capabilities/vision, die Seite, die die Bildeingabe über
-#   /v1/chat/completions regelt, LISTET DAS MODELL ZUM ABRUFZEITPUNKT NICHT (2026-09-09). Sie darf
-#   nicht als Beleg zitiert werden, solange sie das Modell nicht führt; der Vermerk bleibt deshalb
-#   stehen, statt geglättet zu werden.
-#   RISIKO - der plausible Ausfall ist laut, nicht still: ein Modell ohne Bildunterstützung weist
-#   einen `image_url`-Content-Part mit 4xx zurück, `raise_for_vision_api_status()` macht daraus
-#   einen Fehler, der Aufruf zählt als `failed_calls` und ist in der Lauf-Bilanz sichtbar. Der
-#   stille Fall (Bild angenommen, aber nur der Prompt bewertet) ist strukturell nicht erkennbar;
-#   `docs/setup.md` empfiehlt beim erstmaligen Umstellen einen Probelauf mit Sichtprüfung.
+# VISION-FÄHIGKEIT: Ein wählbares Modell braucht zwei belegte Tatsachen - verifizierten
+# Token-Preis UND belegte Vision-Fähigkeit. Für dieses Modell ist die Vision-Fähigkeit nur über
+# zwei erstparteiliche Quellen belegt; die Capabilities-Seite, die die Bildeingabe über
+# /v1/chat/completions regelt, führt es nicht und darf deshalb nicht als Beleg zitiert werden -
+# der Vermerk bleibt stehen, statt geglättet zu werden.
+#
+# RISIKO: Der plausible Ausfall ist laut, nicht still - ein Modell ohne Bildunterstützung weist
+# einen `image_url`-Content-Part mit 4xx zurück, `raise_for_vision_api_status()` macht daraus einen
+# Fehler, der Aufruf zählt als `failed_calls` und ist in der Lauf-Bilanz sichtbar. Der stille Fall
+# (Bild angenommen, aber nur der Prompt bewertet) ist strukturell nicht erkennbar; `docs/setup.md`
+# empfiehlt beim erstmaligen Umstellen einen Probelauf mit Sichtprüfung.
 MISTRAL_VISION_MODEL_SMALL = "mistral-small-2603"
 
 # Die kuratierte Auswahl der wählbaren Modelle je Anbieter.
@@ -86,7 +78,7 @@ MISTRAL_VISION_MODEL_SMALL = "mistral-small-2603"
 #
 # ACHTUNG - IMPORTRICHTUNG: `config.py` importiert dieses Modul (der Validator braucht die
 # Registry). Dieses Modul darf `photosort.config` deshalb NIEMALS importieren, sonst entsteht ein
-# Importzyklus. Ein Bedarf danach ist der Anlass, die Registry in ein eigenes,
+# Importzyklus; ein Bedarf danach ist der Anlass, die Registry in ein eigenes,
 # abhängigkeitsfreies Modul zu ziehen - nicht den Zyklus zu bauen.
 #
 # Ein Modell, dessen Preis nicht gegen die offizielle Anbieterdokumentation verifiziert werden
@@ -105,8 +97,7 @@ def default_vision_model_for_provider(provider: str) -> str:
     Ein hier unbekannter Provider fällt bewusst auf seinen eigenen Namen zurück statt zu werfen:
     das Ergebnis ist dann eine Modell-ID, die `pricing.py::MODEL_PRICING` nicht kennt, und der
     Lauf wird als "nicht erfasst" ausgewiesen - ein neuer Provider ohne Preispflege fällt damit
-    auf, statt einen laufenden Cloud-Job mit einem KeyError abzubrechen. Durch das `Literal` auf
-    `Settings.landmark_provider` ist dieser Rückfall heute unerreichbar."""
+    auf, statt einen laufenden Cloud-Job mit einem KeyError abzubrechen."""
     models = VISION_MODELS_BY_PROVIDER.get(provider)
     if not models:
         return provider
@@ -120,8 +111,8 @@ def provider_for_vision_model(model: str) -> str | None:
     Die Lauf-Zeilen speichern das MODELL, nicht den Anbieter; die Lauf-Bilanz nennt beides. Die
     fehlende Hälfte entsteht hier aus einer reinen Rückwärtssuche über die Registry - NICHT aus
     einer weiteren Spalte und **niemals** aus `settings.landmark_provider`: die aktuelle
-    Betriebseinstellung sagt nichts darüber, womit ein vergangener Lauf gerechnet hat. So kann
-    eine historische Lauf-Antwort strukturell nicht die heutige Konfiguration preisgeben.
+    Betriebseinstellung sagt nichts darüber, womit ein vergangener Lauf gerechnet hat, eine
+    historische Lauf-Antwort kann die heutige Konfiguration also strukturell nicht preisgeben.
 
     `None` (statt eines Rückfalls) bei einem Modell, das nicht (mehr) in der Registry steht -
     Altlauf, entferntes Modell: die Oberfläche zeigt dann die Modell-ID allein, statt einen
@@ -182,9 +173,9 @@ def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
         raise error_class("Unerwartete Antwortstruktur der Mistral Chat Completions API.") from exc
 
 
-# Ab hier: der REALE Token-Verbrauch, den beide Provider in jeder Antwort mitliefern. Er
-# existiert genau einmal, im Moment der Antwort, und ist danach unwiederbringlich - deshalb sitzt
-# der Messpunkt hier, unmittelbar an der Antwort, und nicht weiter oben im Aufrufpfad.
+# Ab hier: der REALE Token-Verbrauch, den beide Provider in jeder Antwort mitliefern. Er existiert
+# genau einmal, im Moment der Antwort, und ist danach unwiederbringlich - deshalb sitzt der
+# Messpunkt unmittelbar an der Antwort.
 
 
 @dataclass(frozen=True)
@@ -262,17 +253,16 @@ def sanitize_label_text(raw: str) -> str:
     """Zeichensanitisierung eines frei formulierten, von einem Vision-Modell erzeugten Textes.
 
     SICHERHEIT: BEIDE Cloud-Pfade müssen DIESELBE Funktion benutzen, nicht eine zweite Fassung
-    davon - der Feinlabel-Pfad (`remote_classification.py::_fine_labels_from_json`, vor der
-    Längenprüfung und vor resolve_canonical_label/slugify) und der Sehenswürdigkeit-Pfad
-    (`landmark.py::sanitize_landmark_name`). Deshalb liegt sie hier, in der providerneutralen
-    gemeinsamen Schicht.
+    davon - der Feinlabel-Pfad (`remote_classification.py::_fine_labels_from_json`) und der
+    Sehenswürdigkeit-Pfad (`landmark.py::sanitize_landmark_name`). Deshalb liegt sie hier, in der
+    providerneutralen gemeinsamen Schicht.
 
-    Entfernt alle Unicode-Steuer- und Formatzeichen (Kategorien `Cc`/`Cf`: `\x00`,
-    Zero-Width-Zeichen wie U+200B, Bidi-Overrides wie U+202E) und zieht Whitespace-Folgen zu einem
-    einzelnen Leerzeichen zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch,
-    Tabulator, Wagenrücklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos entfernt
-    - sonst verschmölzen zwei Wörter über einen Zeilenumbruch hinweg zu einem; führende und
-    abschließende Leerzeichen entfallen mit.
+    Entfernt alle Unicode-Steuer- und Formatzeichen (Kategorien `Cc`/`Cf`, u.a. `\x00`,
+    Zero-Width-Zeichen, Bidi-Overrides) und zieht Whitespace-Folgen zu einem einzelnen Leerzeichen
+    zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch, Tabulator,
+    Wagenrücklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos entfernt - sonst
+    verschmölzen zwei Wörter über einen Zeilenumbruch hinweg zu einem; führende und abschließende
+    Leerzeichen entfallen mit.
 
     Eine BLACKLIST (Steuerzeichen), nie eine Zeichen-Whitelist: der Text ist freier deutscher
     Text, eine Whitelist aus Buchstaben/Ziffern/Leerzeichen/Bindestrich würde legitime Werte
@@ -329,13 +319,12 @@ class CloudRequestThrottle:
 
     KEIN Token-Bucket: ein Bucket erlaubt genau den Stoß, der den `429` auslöst.
 
-    `clock`/`sleep` sind Konstruktor-Parameter (Voreinstellungen `time.monotonic`/`asyncio.sleep`).
-    Ohne sie wäre weder diese Klasse noch `post_vision_request` ohne echte Wartezeit testbar -
-    `post_vision_request` wartet ausdrücklich AUSSCHLIESSLICH über den `sleep` dieses Objekts, es
-    gibt keinen zweiten Zeitgeber im Pfad.
+    `clock`/`sleep` sind Konstruktor-Parameter (Voreinstellungen `time.monotonic`/`asyncio.sleep`):
+    ohne sie wäre weder diese Klasse noch `post_vision_request` ohne echte Wartezeit testbar -
+    `post_vision_request` wartet AUSSCHLIESSLICH über den `sleep` dieses Objekts, es gibt keinen
+    zweiten Zeitgeber im Pfad.
 
-    `min_interval_seconds=0.0` ist ein gültiger Wert und bedeutet "kein Schrittmacher"; das ist
-    die Bauform, mit der die Client-Tests konstruieren."""
+    `min_interval_seconds=0.0` ist ein gültiger Wert und bedeutet "kein Schrittmacher"."""
 
     def __init__(
         self,
@@ -416,8 +405,7 @@ def retry_after_seconds(response: httpx.Response, *, now: datetime | None = None
 
     SICHERHEIT - fünf Muss-Kriterien, jedes testseitig abgedeckt:
     (a) `math.isfinite` VOR jeder Verwendung - `float("nan")`/`float("inf")` parsen erfolgreich und
-        sind "keine Angabe", nicht ein großer Wert. Nachgestellt: `min(float("nan"), 60.0)` liefert
-        `nan` (die Argumentreihenfolge entscheidet!), und `nan > budget` ist immer `False` - die
+        sind "keine Angabe", nicht ein großer Wert; `nan > budget` ist immer `False`, die
         Deckelung per `min(...)` ersetzt die Prüfung also NICHT, ohne sie fielen beide Zeit-Deckel
         des Aufrufers lautlos aus.
     (b) Es trägt KEINE Exception aus dem Header nach außen. Der Wert ist eine Eingabe von außen und
@@ -431,8 +419,7 @@ def retry_after_seconds(response: httpx.Response, *, now: datetime | None = None
     (d) Ein naives Datum ohne Zeitzone wird als UTC gelesen, nie als Ortszeit des Prozesses.
     (e) Rückgabetyp `float | None` - niemals ein durchgereichter String.
 
-    `now` ist ausschließlich für die Tests injizierbar: ohne einen festen Bezugszeitpunkt wären die
-    HTTP-Datum-Fälle nur mit einem Toleranzfenster prüfbar."""
+    `now` ist ausschließlich für die Tests injizierbar."""
     raw = response.headers.get("Retry-After")
     if raw is None:
         return None
@@ -511,18 +498,10 @@ MISTRAL_ENDPOINT = VisionEndpoint(
 # cloud_vision_throttle.py importieren - dem Modul, das seinerseits `config.py` importiert. Das
 # wäre ein Importzyklus.
 #
-# BELEGPFLICHT je Voreinstellung - Quelle und Abrufdatum, Recherchestand 2026-09-10; die
-# vollständige Herleitung beider Zahlen steht in ADR 0074:
-#   anthropic: 60/min (1 Anfrage/s). Erstparteilich dokumentiert sind für die niedrigste
-#     VERÖFFENTLICHTE Stufe ("Start") 1.000 RPM; die Voreinstellung liegt bewusst weit darunter.
-#   mistral: 40/min (1 Anfrage alle 1,5 s). NICHT ERSTPARTEILICH BELEGBAR - Mistral veröffentlicht
-#     keine Zahlen mehr je Tarif und verweist ausschließlich auf das Admin-Panel des eigenen
-#     Kontos. Eine begründete Setzung, keine belegte Grenze; die Beleglücke bleibt hier stehen,
-#     statt geglättet zu werden.
-#
-# VORSICHTIG gesetzt: eine zu großzügige Voreinstellung führt genau den Zustand herbei, den der
-# Schrittmacher abschafft. Der verlässliche Wert für ein konkretes Konto steht nur im Admin-Panel
-# des Anbieters - `docs/setup.md` sagt, wo er nachzusehen ist.
+# Die Zahlen sind VORSICHTIGE Setzungen, keine belegten Grenzen - der verlässliche Wert für ein
+# konkretes Konto steht nur im Admin-Panel des Anbieters, `docs/setup.md` sagt, wo er nachzusehen
+# ist. Eine zu großzügige Voreinstellung führt genau den Zustand herbei, den der Schrittmacher
+# abschafft.
 #
 # Die Tabelle deckt genau die Anbieter von `Settings.landmark_provider` ab (per Test erzwungen):
 # ein neuer Anbieter ohne Eintrag wäre ein KeyError beim Prozessstart.
@@ -537,12 +516,11 @@ DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER: dict[str, int] = {
 # `last_progress_at` von hier zu schreiben verbietet sich.
 #
 # Modulkonstanten und ausdrücklich KEINE Settings-Felder: sie hängen nicht an einer Kontostufe des
-# Betreibers, sondern an der Watchdog-Rechnung unten. Die einzige Betriebsvariable ist die RATE
-# (CLOUD_VISION_REQUESTS_PER_MINUTE).
+# Betreibers, sondern an der Watchdog-Rechnung unten.
 #
 # Schlimmster Fall je Anfrage: 120 s Warten + 5 x 60 s (VISION_REQUEST_TIMEOUT_SECONDS) = 420 s
-# gegen worker/stall_reaper.py::STALL_THRESHOLD von 15 Minuten. Diese Rechnung ist als Invariantentest
-# festgeschrieben (tests/test_cloud_vision.py) - im Produktivcode gibt es die Verbindung nicht,
+# gegen worker/stall_reaper.py::STALL_THRESHOLD von 15 Minuten - als Invariantentest
+# festgeschrieben (tests/test_cloud_vision.py). Im Produktivcode gibt es die Verbindung nicht,
 # cloud_vision.py darf photosort.worker nicht importieren.
 VISION_MAX_RATE_LIMIT_ATTEMPTS = 5  # Versuche INSGESAMT, nicht Wiederholungen
 VISION_RETRY_BUDGET_SECONDS = 120.0  # summierte Wartezeit EINER Anfrage
@@ -574,12 +552,12 @@ async def post_vision_request(
     gekürzt gewartet - eine halbe Wartezeit führt auf denselben `429` und verbrennt eine Anfrage.
 
     JEDER ANDERE Fehlschlag führt ohne jede Wiederholung und mit genau einem HTTP-Versuch zum
-    gewohnten best-effort-Skip: Netzwerkfehler, Zeitüberschreitung, `5xx` einschließlich
-    Anthropics `529`, `401`, `403`, jeder andere `4xx`. SICHERHEIT: die Wiederholungsbedingung ist
-    deshalb exakt `== 429` und ausdrücklich kein `>= 429`, kein "4xx", kein `in range(...)` - eine
-    Wiederholung nach `401`/`403` sendete denselben API-Key fünfmal gegen einen Endpunkt, der ihn
-    gerade abgelehnt hat; das Muster löst anbieterseitige Missbrauchserkennung aus und kann per
-    Definition nicht gelingen.
+    best-effort-Skip: Netzwerkfehler, Zeitüberschreitung, `5xx` einschließlich Anthropics `529`,
+    `401`, `403`, jeder andere `4xx`. SICHERHEIT: die Wiederholungsbedingung ist deshalb exakt
+    `== 429` und ausdrücklich kein `>= 429`, kein "4xx", kein `in range(...)` - eine Wiederholung
+    nach `401`/`403` sendete denselben API-Key fünfmal gegen einen Endpunkt, der ihn gerade
+    abgelehnt hat; das Muster löst anbieterseitige Missbrauchserkennung aus und kann per Definition
+    nicht gelingen.
 
     Gewartet wird AUSSCHLIESSLICH über den `sleep` des Schrittmachers, nie über ein eigenes
     `asyncio.sleep` - es gibt genau einen Zeitgeber in diesem Pfad, und er ist injizierbar.
@@ -596,8 +574,7 @@ async def post_vision_request(
     `httpx` folgt per Voreinstellung keiner Weiterleitung.
 
     Nach erschöpftem Budget endet der Pfad bei `raise_for_vision_api_status`, das die übergebene,
-    feature-eigene Fehlerklasse mit dem `429` im Text wirft - keine eigene Fehlerklasse, keine
-    Änderung am Fehlerpfad des Workers."""
+    feature-eigene Fehlerklasse mit dem `429` im Text wirft."""
     attempt = 0
     budget_remaining = VISION_RETRY_BUDGET_SECONDS
     while True:

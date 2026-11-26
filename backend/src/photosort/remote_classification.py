@@ -52,35 +52,29 @@ logger = logging.getLogger(__name__)
 # geparste Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht
 # auseinanderlaufen.
 #
-# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. Der Prompt-Bau nimmt den Wert deshalb
-# als Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
-# Antwortform des Anbieters wissen.
+# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv; das Motivregister soll nichts ueber
+# die Antwortform des Anbieters wissen.
 MAX_FINE_LABELS_PER_PHOTO = 2
 
 # Das Modell kommt als Konstruktor-Parameter herein, nie aus einer Modulkonstante.
 
-# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (acht Schluessel-Zahl-Paare, das
-# Ausschluss-Feld, zwei kurze deutsche Feinlabels, die Stufe der Albumtauglichkeit und eine
-# Begruendung an der 160-Zeichen-Grenze) liegt bei 451 Zeichen kompakt bzw. 547 eingerueckt und
-# damit ueberschlaegig bei 201 bzw. 245 Ausgabe-Tokens; der deutlich groessere Prompt waechst
-# ausschliesslich auf der EINGABEseite. 512 behaelt damit Reserve - die Grenze ist keine reine
-# Kostenschranke, sie begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell
-# geloggt werden kann, und eine abgeschnittene Antwort ist kein JSON und landet auf dem
+# Kurze, reine Klassifikationsantwort: 512 Ausgabe-Tokens halten die Antwort kompakt, waehrend der
+# deutlich groessere Prompt ausschliesslich auf der EINGABEseite waechst. Die Grenze ist keine
+# reine Kostenschranke - sie begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
+# potenziell geloggt werden kann, und eine abgeschnittene Antwort ist kein JSON und landet auf dem
 # strukturell harten Pfad, nie bei einem teilweise geparsten Datensatz. Beim Anheben gehoeren drei
 # Dinge zusammen nachgezogen: dieser Kommentar, der Waechtertest in
-# tests/test_remote_classification.py und pricing.py::ASSUMED_USAGE_BY_PROVIDER.output_tokens, das
-# gegen die vollbesetzte Antwort neu herzuleiten ist. Die Reserve-Invariante
-# `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht der Annahme anzupassen - gehoben wird die
-# Schranke. Sie haengt an MAX_ALBUM_SUITABILITY_REASON_LENGTH: wer die eine hebt, leitet die
-# andere neu her (S5).
+# tests/test_remote_classification.py und pricing.py::ASSUMED_USAGE_BY_PROVIDER.output_tokens. Die
+# Reserve-Invariante `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht der Annahme anzupassen -
+# gehoben wird die Schranke, und sie haengt an MAX_ALBUM_SUITABILITY_REASON_LENGTH.
 MAX_RESPONSE_TOKENS = 512
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
-# canonical_key/display_name, BEVOR resolve_canonical_label/slugify aufgerufen wird
-# (Sicherheits-Muss-Kriterium). Ein zu langes Label wird VERWORFEN, nicht gekuerzt: ein auf 60
-# Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren canonical_key in der
-# projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf denselben Slug fallen.
-# Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme.
+# canonical_key/display_name, BEVOR resolve_canonical_label/slugify aufgerufen wird. Ein zu langes
+# Label wird VERWORFEN, nicht gekuerzt: ein auf 60 Zeichen abgeschnittenes Label erzeugte sonst
+# dauerhaft einen unbrauchbaren canonical_key in der projektuebergreifenden Registry, und zwei
+# verschiedene Labels koennten auf denselben Slug fallen. Storage-/Degenerationsgrenze, KEINE
+# Sanitisierungsmassnahme.
 MAX_FINE_LABEL_LENGTH = 60
 
 # Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Sicherheits-Muss-Kriterium)
@@ -88,13 +82,11 @@ MAX_FINE_LABEL_LENGTH = 60
 # gegen Log-Injection durch eine entartete Modellantwort.
 _MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
-# Sicherheitsauflage S11: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
-# MOTIVSCHLUESSEL traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der Prompt
-# nicht gesetzt hat) - fuer eine verworfene Staerke und fuer ein verworfenes `excluded` liegt er
-# praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw. "ausserhalb [0,1]" bzw. "kein
-# Wahrheitswert" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7` nichts
-# darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
-# Log-Injection-Frage stellt sich nicht.
+# SICHERHEIT: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen MOTIVSCHLUESSEL traegt
+# der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der Prompt nicht gesetzt hat) -
+# fuer eine verworfene Staerke und fuer ein verworfenes `excluded` liegt er praktisch vollstaendig
+# in der FEHLERKLASSE. Damit enthaelt die Zeile keinen Fremdtext und die Log-Injection-Frage
+# stellt sich nicht.
 _STRENGTH_REASON_NOT_NUMERIC = "nicht_numerisch"
 _STRENGTH_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
 _EXCLUDED_REASON_NOT_BOOL = "kein_wahrheitswert"
@@ -132,13 +124,13 @@ class RemoteClassification:
     nimmt ein Foto aus JEDER Motivauswahl und ist von Hand nicht korrigierbar; die Staerken
     bleiben daneben unveraendert gespeichert.
 
-    `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
+    `fine_labels` enthaelt die zeichensanitierten, freien Feinlabels, hoechstens
     MAX_FINE_LABELS_PER_PHOTO.
 
     `album_suitability` ist die fuenfstufige Aussage ueber die BILDGUETE samt Begruendung, oder
-    `None` - "das Modell hat dazu nichts Brauchbares gesagt". Sie ist keine Motivstaerke (ADR 0091
-    bleibt unberuehrt) und wird in einer eigenen Tabelle persistiert; ihre Begruendung ist der
-    zweite Fremdtext-Kanal dieser Antwort und bereits saniert und gekappt."""
+    `None` - "das Modell hat dazu nichts Brauchbares gesagt". Sie ist keine Motivstaerke und wird
+    in einer eigenen Tabelle persistiert; ihre Begruendung ist der zweite Fremdtext-Kanal dieser
+    Antwort und bereits saniert und gekappt."""
 
     # `Mapping` statt `dict` als Annotation UND `MappingProxyType` als das, was der Parser
     # hineingibt: die Zusage von `frozen=True` gilt sonst nur fuer die REFERENZ, nicht fuer den
@@ -188,12 +180,12 @@ def _log_discarded_motif_key(photo_id: int, raw: object) -> None:
 
 
 def _log_discarded_strength(photo_id: int, reason: str) -> None:
-    """Schwesterfunktion zu `_log_discarded_motif_key` fuer eine verworfene STAERKE
-    (Sicherheitsauflage S11) - eine Zeile, WARNING, kein exc_info: der Lauf bleibt erfolgreich,
-    das Motiv steht mit `0.0` im Vektor.
+    """Schwesterfunktion zu `_log_discarded_motif_key` fuer eine verworfene STAERKE - eine Zeile,
+    WARNING, kein exc_info: der Lauf bleibt erfolgreich, das Motiv steht mit `0.0` im Vektor.
 
-    Geloggt werden ausschliesslich `photo_id` und eines der beiden festen Grund-Tokens, NIE der
-    Rohwert, nie die vollstaendige Antwort, nie der Motivschluessel, nie Bilddaten."""
+    SICHERHEIT: Geloggt werden ausschliesslich `photo_id` und eines der beiden festen
+    Grund-Tokens, NIE der Rohwert, nie die vollstaendige Antwort, nie der Motivschluessel, nie
+    Bilddaten."""
     logger.warning("remote_category: Motivstaerke verworfen photo_id=%s grund=%s", photo_id, reason)
 
 
@@ -212,8 +204,8 @@ def _strength_from_raw(raw: object, photo_id: int) -> float | None:
     """Die Staerke EINES Motivs - `None` heisst "keine brauchbare Zahl", der Aufrufer setzt dann
     `0.0`.
 
-    Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`
-    (Sicherheitsauflage S9). Drei Feinheiten, jede mit einer konkreten Ausfallfolge:
+    Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`. Drei
+    Feinheiten, jede mit einer konkreten Ausfallfolge:
 
     - `isinstance(raw, bool)` wird EXPLIZIT ausgeschlossen, bevor auf `int` geprueft wird:
       `isinstance(True, int)` ist `True`, `"menschen": true` erschiene sonst als die staerkste
@@ -222,13 +214,11 @@ def _strength_from_raw(raw: object, photo_id: int) -> float | None:
       (`0.0 <= nan <= 1.0` ist `False`). Pythons `json` parst beide Literale standardmaessig, und
       beide Provider-Pfade nutzen `json.loads` mit Standardeinstellungen. Ein durchgelassenes
       `NaN` legte die GESAMTE Fotoliste des Projekts auf `500`: `strength` ist eine
-      `double precision`-Spalte (PostgreSQL nimmt `NaN` an) und Starlette rendert mit
-      `allow_nan=False`. Die Pruefung gehoert deshalb HIER an den Parser, nicht an die
-      Datenbankschicht.
+      `double precision`-Spalte und Starlette rendert mit `allow_nan=False`. Die Pruefung gehoert
+      deshalb HIER an den Parser, nicht an die Datenbankschicht.
     - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::landmark_detection_from_json`.
       `1.4 -> 1.0` waere eine Aussage, die das Modell nie getroffen hat; und ein spaeteres Klemmen
-      (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt.
-    """
+      (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt."""
     if isinstance(raw, bool) or not isinstance(raw, int | float):
         _log_discarded_strength(photo_id, _STRENGTH_REASON_NOT_NUMERIC)
         return None
@@ -250,7 +240,7 @@ def _motif_strengths_from_json(raw_motifs: dict[Any, Any], photo_id: int) -> Map
     Der Aufbau laeuft ueber `MOTIF_REGISTRY`, nicht ueber die Schluessel der Antwort: das ist die
     Stelle, an der die Reihenfolge des Vektors vom Modell UNABHAENGIG wird und an der unmoeglich
     ein unvalidierter Fremdschluessel in die Ausgabe geraet. Die Schluessel sind ein zweiter
-    Persistenzkanal in API-Antwort und UI (Sicherheitsauflage S8/S9).
+    Persistenzkanal in API-Antwort und UI.
 
     Kein Trimmen und keine Normalisierung des Eingabeschluessels - `is_motif_key` ist eine reine
     Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, und `EXCLUSION_KEY` ist
@@ -284,12 +274,11 @@ def _excluded_from_json(raw: object, photo_id: int) -> bool:
 
 
 def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
-    """Dieselbe Reihenfolge wie `_categories_from_json`, aber mit Zeichensanitisierung statt einer
-    Set-Whitelist: sanitisieren -> leere/zu lange Werte verwerfen -> deduplizieren (Erstnennung
-    gewinnt) -> ZULETZT kuerzen. Verworfene Feinlabels werden NICHT geloggt: anders als bei einem
-    unbekannten Kategoriewert (der auf ein Prompt-/Set-Problem hindeutet) ist ein leeres oder
-    entartetes Feinlabel ohne Diagnosewert, und der Wert selbst waere genau der Fremdtext, der aus
-    dem Log herauszuhalten ist."""
+    """Zeichensanitisierung statt einer Set-Whitelist: sanitisieren -> leere/zu lange Werte
+    verwerfen -> deduplizieren (Erstnennung gewinnt) -> ZULETZT kuerzen. Verworfene Feinlabels
+    werden NICHT geloggt: anders als bei einem unbekannten Motivschluessel (der auf ein
+    Prompt-/Set-Problem hindeutet) ist ein leeres oder entartetes Feinlabel ohne Diagnosewert, und
+    der Wert selbst waere genau der Fremdtext, der aus dem Log herauszuhalten ist."""
     accepted: list[str] = []
     for raw in raw_labels:
         if not isinstance(raw, str):
@@ -370,10 +359,8 @@ class AnthropicCategoryClient:
         *,
         throttle: CloudRequestThrottle,
     ) -> None:
-        # PFLICHTPARAMETER ohne Default, Begruendung wortgleich zu
-        # landmark.py::AnthropicLandmarkClient. Dasselbe gilt fuer den Schrittmacher: ein Aufrufer,
-        # der ihn vergisst, fiele nicht beim Typecheck auf, sondern erst an der Anfragerate des
-        # Anbieters.
+        # PFLICHTPARAMETER ohne Default: ein Aufrufer, der den Schrittmacher vergisst, fiele nicht
+        # beim Typecheck auf, sondern erst an der Anfragerate des Anbieters.
         self._model = model
         self._throttle = throttle
         self._client = httpx.AsyncClient(
@@ -487,7 +474,6 @@ class MistralCategoryClient:
                 }
             ],
         }
-        # Begruendung wortgleich zu AnthropicCategoryClient.classify oben.
         response = await post_vision_request(
             self._client,
             MISTRAL_ENDPOINT,
@@ -506,13 +492,11 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
     """Dispatch-Factory zwischen AnthropicCategoryClient und MistralCategoryClient.
 
     Der Anbieter folgt aus DEM MODELL (`cloud_vision.py::provider_for_vision_model`), nicht aus
-    `settings.landmark_provider`: seit Spec 0616 ist das Cloud-Modell eine Eigenschaft der
-    PRUEFSEITE, und zwei Seiten duerfen in einem Lauf zwei Anbieter treffen (ADR 0139 Punkt 4).
-    Fuer den normalen Lauf ist das wirkungsgleich, weil `landmark_model` gegen den
-    Installationsanbieter validiert ist.
+    `settings.landmark_provider`: das Cloud-Modell ist eine Eigenschaft der PRUEFSEITE, und zwei
+    Seiten duerfen in einem Lauf zwei Anbieter treffen.
 
     Eine Modell-ID ausserhalb der Registry ist ein `ValueError` statt eines stillen Rueckfalls auf
-    den Installationsanbieter: die Wahl ist geschlossen (S6), und ein geratener Anbieter schickte
+    den Installationsanbieter: die Wahl ist geschlossen, und ein geratener Anbieter schickte
     Bilddaten an den falschen Empfaenger.
 
     Laeuft NIE in einem automatisierten Test (echtes Secret, echter Netzwerkversuch) - die
@@ -557,18 +541,17 @@ _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
 def slugify(text: str) -> str:
-    """Bildet einen URL-/Key-sicheren Slug (Schritt 4): casefoldet defensiv zusaetzlich selbst
-    (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert hat),
-    Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
-    entfernt - eine reine Textfunktion, keine neue Bibliothek.
+    """Bildet einen URL-/Key-sicheren Slug: casefoldet defensiv zusaetzlich selbst (funktioniert
+    damit unabhaengig davon, ob der Aufrufer bereits normalisiert hat), Sonderzeichen/Leerzeichen
+    zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_` entfernt - eine reine
+    Textfunktion, keine neue Bibliothek.
 
     Hash-Fallback: `_SLUG_INVALID_CHARS` matcht nur a-z/0-9 als gueltig - ein rein
     nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom offenen Remote-Vokabular
     explizit nicht ausgeschlossener Fall) wuerde sonst zu einem leeren String slugifien. Zwei
     verschiedene solche Label wuerden dann denselben (leeren) canonical_key produzieren und an
     UniqueConstraint(fine_labels.canonical_key) scheitern - ein Verfuegbarkeitsrisiko, das den
-    ganzen Batch-Lauf abbricht statt nur das eine betroffene Foto zu ueberspringen (best-effort
-    ohne Retry gilt pro Foto, nicht fuer eine IntegrityError beim Label-Anlegen).
+    ganzen Batch-Lauf abbricht statt nur das eine betroffene Foto zu ueberspringen.
     Deterministischer SHA256-Praefix, nie ein Zufallswert - derselbe Rohtext liefert bei einem
     Wiederholungslauf denselben Slug, kein Duplikat-Risiko."""
     slug = _SLUG_INVALID_CHARS.sub("_", text.casefold()).strip("_")

@@ -1,10 +1,9 @@
-"""Die Herkunft der Qualitaetsgewichte: geltende Fassung, Vorgaengerfassung, Schreibstelle
-(Spec 0432, ADR 0100).
+"""Die Herkunft der Qualitaetsgewichte: geltende Fassung, Vorgaengerfassung, Schreibstelle.
 
 `quality.py::QUALITY_CRITERION_WEIGHTS` bleibt DIE eine benannte Stelle fuer die Startwerte -
 dieses Modul wechselt nur die Herkunft des wirksamen Werts, nie den Schluesselsatz.
 
-OHNE EINE EINZIGE GESPEICHERTE FASSUNG GELTEN DIE STARTWERTE (G1). Keine Migration schreibt sie
+OHNE EINE EINZIGE GESPEICHERTE FASSUNG GELTEN DIE STARTWERTE. Keine Migration schreibt sie
 ein: Ein eingeschriebener Vorgabewert waere von einer uebernommenen Anpassung nicht mehr zu
 unterscheiden, und "zurueck auf die Startwerte" hiesse danach "zurueck auf eine Fassung, die
 jemand uebernommen hat".
@@ -13,7 +12,7 @@ ES GILT DIE FASSUNG MIT DER HOECHSTEN `id`, nie die mit dem juengsten Zeitstempe
 derselben Sekunde sind ueber eine Zeit nicht zu ordnen. Es gibt bewusst kein `active`-Kennzeichen,
 das danebentreten und mit der `id` auseinanderlaufen koennte.
 
-DIE UEBERLAGERUNG WIRD IN BEIDE RICHTUNGEN GEPRUEFT (G2): Ein den Startwerten unbekannter
+DIE UEBERLAGERUNG WIRD IN BEIDE RICHTUNGEN GEPRUEFT: Ein den Startwerten unbekannter
 Schluessel der Fassung wird VERWORFEN, ein der Fassung unbekannter Startwertschluessel behaelt
 seinen Startwert. Der wirksame Schluesselsatz ist damit immer exakt der Startwertsatz -
 insbesondere gelangt kein Kriterium mit Inhaltsaussage in den Qualitaetswert. Ein
@@ -21,7 +20,7 @@ insbesondere gelangt kein Kriterium mit Inhaltsaussage in den Qualitaetswert. Ei
 
 WEDER `commit` NOCH `flush` beim Schreiben: Die Transaktionsgrenze gehoert dem Aufrufer.
 
-S12 - KEIN NICHT-ENDLICHER UND KEIN NICHT-POSITIVER WERT erreicht die Persistenz, und der
+KEIN NICHT-ENDLICHER UND KEIN NICHT-POSITIVER WERT erreicht die Persistenz, und der
 Lesepfad nimmt keinen an. Die beiden Schranken sind bewusst verschieden scharf: Der Schreibpfad
 bricht LAUT, weil der Wert dort noch abzuwenden ist; der Lesepfad faellt still auf den Startwert
 zurueck, weil eine Ausnahme dort jeden Lauf des Systems anhielte. Ein gespeichertes `NaN` kommt
@@ -54,7 +53,7 @@ def _is_usable(weight: float) -> bool:
 def overlay_weights(baseline: Mapping[str, float], stored: Mapping[str, float]) -> dict[str, float]:
     """Die wirksamen Gewichte: die gespeicherte Fassung UEBERLAGERT ueber die Startwerte.
 
-    DER ERGEBNIS-SCHLUESSELSATZ IST EXAKT DER DES STARTWERTS, in beide Richtungen (G2). Iteriert
+    DER ERGEBNIS-SCHLUESSELSATZ IST EXAKT DER DES STARTWERTS, in beide Richtungen. Iteriert
     wird ueber die Startwerte, nie ueber die gespeicherten Eintraege.
 
     Ein gespeicherter Wert, der die Schranke aus `_is_usable` verfehlt, wird VERWORFEN und der
@@ -140,9 +139,9 @@ async def store_weights(
 
     ZURUECKSETZEN IST EINE NEUE FASSUNG mit den Werten der Vorgaengerin, nie ein Loeschen: Die
     Kette bleibt lueckenlos, und der zweite Druck fuehrt auf die Werte zurueck, von denen der
-    erste zurueckgesetzt hat (G10).
+    erste zurueckgesetzt hat.
 
-    S12 am Schreibpfad: Ein nicht endlicher oder nicht positiver Wert bricht mit `ValueError`, und
+    Am Schreibpfad: Ein nicht endlicher oder nicht positiver Wert bricht mit `ValueError`, und
     es entsteht KEINE Zeile - die Pruefung steht vor dem ersten `session.add`. Eine halb
     geschriebene Fassung waere von einer richtigen nicht mehr zu unterscheiden.
 

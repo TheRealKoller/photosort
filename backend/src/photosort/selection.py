@@ -12,8 +12,8 @@ Datenbankreihenfolge, eine Mengeniteration oder eine Uhr.
 
 Die Grenze, ab der ein Motiv als getragen gilt, wohnt HIER und ist fuer alle Motive dieselbe. Sie
 ist ausdruecklich keines der Anzeigebaender des Motiv-Vokabulars - ein auswaehlender Codepfad
-liest jene nicht (ADR 0091 Punkt 8), sonst entstuende ueber die Bandgrenzen eine Rangfolge
-zwischen Motiven. Ein struktureller Waechter in tests/test_selection.py haelt das fest.
+liest jene nicht, sonst entstuende ueber die Bandgrenzen eine Rangfolge zwischen Motiven. Ein
+struktureller Waechter in tests/test_selection.py haelt das fest.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 # Die drei Stellschrauben des Verfahrens plus die Vorbelegung des Richtwerts - dokumentiert
-# UNKALIBRIERTE Startwerte in der Klasse von `TIME_CLUSTER_GAP` und `LOCAL_CORRECTION_SPAN`. Es
-# gibt keinen Fotokorpus im Repository, gegen den ein anderer Wert zu belegen waere; sie zu
-# aendern ist eine Zahl hier plus ein Neuaufbau, keine Migration.
+# UNKALIBRIERTE Startwerte wie `TIME_CLUSTER_GAP` und `LOCAL_CORRECTION_SPAN`: es gibt keinen
+# Fotokorpus im Repository, gegen den ein anderer Wert zu belegen waere. Sie zu aendern ist eine
+# Zahl hier plus ein Neuaufbau, keine Migration.
 
 # Kein Event bekommt mehr als ein Viertel aller Plaetze - und nie weniger als den gleichen Anteil
 # (`max(⌈T/m⌉, ⌈EVENT_SHARE_CAP·T⌉)`), sonst griffe die Kappe bei wenigen Events zwangslaeufig
@@ -55,11 +55,11 @@ def motif_is_present(strength: float, threshold: float | None = None) -> bool:
     `threshold` ist DER MESSWEG UND NUR ER: Ein rein lesender Messlauf variiert die Grenze, ohne
     eine zweite Fassung des Vergleichs zu bauen - eine Nachbildung maesse etwas anderes, als der
     Lauf tut. Ohne Angabe gilt die Modulkonstante, das Verhalten ist dann unveraendert.
-    KEIN AUSWAEHLENDER PFAD GIBT EINEN WERT MIT: Die Eindaemmung aus ADR 0091 Punkt 1 haengt
-    daran, dass die Auswahl je Motiv gegen EINE fuer alle Motive gleiche Konstante prueft; eine
-    eigene Grenze eines auswaehlenden Aufrufers waere eine zweite Auswahlgrenze im selben Produkt.
-    Gehalten in `tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold`. Ein
-    mitgegebener Wert ist ein SKALAR fuer alle Motive, nie eine Grenze je Motiv."""
+    KEIN AUSWAEHLENDER PFAD GIBT EINEN WERT MIT: die Eindaemmung haengt daran, dass die Auswahl je
+    Motiv gegen EINE fuer alle Motive gleiche Konstante prueft; eine eigene Grenze eines
+    auswaehlenden Aufrufers waere eine zweite Auswahlgrenze im selben Produkt. Gehalten in
+    `tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold`. Ein mitgegebener Wert
+    ist ein SKALAR fuer alle Motive, nie eine Grenze je Motiv."""
     if threshold is None:
         return strength >= MOTIF_PRESENCE_THRESHOLD
     # Derselbe INKLUSIVE Vergleich, eine Zeile tiefer - ein `>` hier braeche die Zusage genauso.
@@ -390,10 +390,9 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
     nur Schnittmengen- und Leerheitspruefungen, nie einer Reihenfolge.
 
     Die Abwertung wird je Kandidat FORTGESCHRIEBEN und nie bei jeder Bewertung erneut ueber alle
-    bereits Gewaehlten summiert (Sicherheitsauflage S5). Ergebnisgleich - die Aehnlichkeiten
-    stehen additiv im Exponenten -, aber `O(n·k)` statt `O(n·k²)`: bei tausend Kandidaten und
-    vollem Kontingent ist das der Unterschied zwischen rund 10⁶ und rund 10⁹ Bewertungen synchron
-    im Request."""
+    bereits Gewaehlten summiert. Ergebnisgleich - die Aehnlichkeiten stehen additiv im Exponenten -,
+    aber `O(n·k)` statt `O(n·k²)`: bei tausend Kandidaten und vollem Kontingent ist das der
+    Unterschied zwischen rund 10⁶ und rund 10⁹ Bewertungen synchron im Request."""
     remaining = sorted(candidates, key=lambda candidate: candidate.photo_id)
     motifs_of = {
         candidate.photo_id: carried_motifs(candidate.motif_strengths) for candidate in remaining

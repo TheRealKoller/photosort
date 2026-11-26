@@ -13,10 +13,9 @@ keine Motive.
 WAS HIER NICHT PASSIERT, und warum:
 
 * Keine Sanierung der Feinlabel-Texte. Der Text ist fremder Modelltext und wird am Parser mit
-  `cloud_vision.sanitize_label_text` saniert und laengenbegrenzt (Spec 0609, S12) - dieses Modul
-  importiert aber bewusst nichts aus dem Anwendungscode.
-* Kein Vergleich und kein Urteil. Ob Eye oder Cloud "recht hat", ist Story #610; hier entstehen
-  nur Eyes eigene Aussagen.
+  `cloud_vision.sanitize_label_text` saniert und laengenbegrenzt - dieses Modul importiert aber
+  bewusst nichts aus dem Anwendungscode.
+* Kein Vergleich und kein Urteil: hier entstehen nur Eyes eigene Aussagen.
 * Kein Nachladen der Pin-Dateien. Die Modellrevision steht als Konstante in `MODEL_REVISION` und
   wird in `photo_eye_results.model_revision` mitgeschrieben; der Pin-Abgleich selbst gehoert zum
   Sidecar (`eye/src/pins.json`) und zum Heimserver-Schritt (`eye_meta.json`).
@@ -46,7 +45,7 @@ MAPPING_VERSION: Final = "eye-4.2.3/v3"
 
 # Die Revision des gepinnten Modells (`eye/src/pins.json`). Sie steht in jeder
 # `photo_eye_results`-Zeile, damit ein Pin-Wechsel nicht still unter bestehenden Ergebnissen
-# laeuft (ADR 0138 Punkt 2).
+# laeuft.
 MODEL_REVISION: Final = "v1.0.0"
 
 # Die Schwellen der Zuordnung. `tag_confidence` ist die Grenze, ab der ein Tag als Motivbeleg
@@ -161,11 +160,9 @@ MOTIF_TAGS_V1: Final[Mapping[str, tuple[str, ...]]] = {
     "detail_stimmung": ("flower", "leaf", "furniture"),
 }
 
-# v2 aendert gegenueber v1 genau zwei Motive; die uebrigen sechs Listen sind dieselben Objekte.
-# Tiere: die vier Arten plus die Oberbegriffe und Tierklassen des Vokabulars (dazu
-# `motif_detections`). Aktivitaet: Taetigkeiten - keine Gegenstaende, Orte oder Kleidung
-# (`surfboard`, `stadium`, `swimming_pool`, `swimwear`), kein Zuschauersport (`horse_racing`,
-# `motorsport`), kein `sailboat`, kein `chess`.
+# v2 aendert gegenueber v1 zwei Motive. Tiere: die vier Arten plus die Oberbegriffe und
+# Tierklassen des Vokabulars (dazu `motif_detections`). Aktivitaet: Taetigkeiten - keine
+# Gegenstaende, Orte, Kleidung oder Zuschauersport.
 MOTIF_TAGS_V2: Final[Mapping[str, tuple[str, ...]]] = {
     **MOTIF_TAGS_V1,
     "tiere": (
@@ -209,10 +206,9 @@ MOTIF_TAGS_V2: Final[Mapping[str, tuple[str, ...]]] = {
 }
 
 # v3 zaehlt nur DEFINIERENDE Signale: ein Tag belegt ein Motiv nur, wenn er das Motiv selbst
-# benennt. Gegenstaende (`car`, `bus`, `building`, `furniture`, `bicycle`, `football`), reine
-# Umgebungsbedingungen (`sky`, `cloud`, `sunset`, `water`) und Oberbegriffe ohne Art
-# (`animal`, `pet`, `wildlife`) entfallen; benannte Arten und Klassen kommen hinzu. `menschen`,
-# `bauwerk_sehenswuerdigkeit` und `essen_trinken` bleiben dieselben Objekte wie in v2.
+# benennt. Gegenstaende, reine Umgebungsbedingungen und Oberbegriffe ohne Art entfallen; benannte
+# Arten und Klassen kommen hinzu. `menschen`, `bauwerk_sehenswuerdigkeit` und `essen_trinken`
+# bleiben dieselben Objekte wie in v2.
 MOTIF_TAGS_V3: Final[Mapping[str, tuple[str, ...]]] = {
     **MOTIF_TAGS_V2,
     "landschaft": (
@@ -361,8 +357,7 @@ MOTIF_SUPPORT_V3: Final[Mapping[str, tuple[str, ...]]] = {
 }
 
 # Feste Albumbaender: untere Grenze inklusiv, obere exklusiv, die letzte Stufe nimmt 1.0 mit. Die
-# Grenzen stehen hier EINMAL - der Vergleich (Story #610) liest dieselbe Stufe ueber
-# `album_level()`.
+# Grenzen stehen hier EINMAL - der Vergleich liest dieselbe Stufe ueber `album_level()`.
 ALBUM_LEVELS: Final[tuple[tuple[int, float, float], ...]] = (
     (1, 0.0, 0.2),
     (2, 0.2, 0.4),

@@ -1,4 +1,4 @@
-"""Der EINE Lesepunkt der zaehlenden Albumstufe (ADR 0144).
+"""Der EINE Lesepunkt der zaehlenden Albumstufe.
 
 Welche Stufe fuer ein Foto zaehlt, folgt dem am Lauf eingefrorenen Verfahren
 (`CriterionScoringRun.album_level_source`): `cloud` liest `photo_album_suitability.level`, `eye`
@@ -9,10 +9,10 @@ still die andere Quelle zaehlen (Strukturwaechter in `tests/test_album_stage.py`
 Kein Rueckfall: Fehlt einem Foto die Stufe der Quelle, fehlt es im Ergebnis - auch wenn es eine
 Stufe des anderen Verfahrens traegt. Ein lokal gebildeter Ersatzwert existiert nicht.
 
-Reiner Datenbank-Lesepfad (Security S1, S5): Dieses Modul importiert keinen Netzwerk-, Vision-
-oder Eye-Client. Ein Request-Pfad, der hier liest, loest damit nie Modellarbeit aus.
+Reiner Datenbank-Lesepfad: Dieses Modul importiert keinen Netzwerk-, Vision- oder Eye-Client. Ein
+Request-Pfad, der hier liest, loest damit nie Modellarbeit aus.
 
-Keine Aufloesung (Security S3): Die Foto-Ids muessen bereits projektgebunden sein (etwa aus den
+Keine Aufloesung: Die Foto-Ids muessen bereits projektgebunden sein (etwa aus den
 Rangzeilen des Laufs). Das Ergebnis-Dict ist eine Abbildung, keine Mitgliedschaftsaussage.
 """
 
