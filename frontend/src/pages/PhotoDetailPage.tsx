@@ -32,15 +32,14 @@ import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/su
 import { isTextInputFocused } from '../utils/textInputFocus'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
-// the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic project size
-// for this two-person MVP.
+// the next unrated photo.
 const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
 
 // Der Text der Meldung bei fehlgeschlagenem `GET /motifs`. Er steht HIER und nicht in der
 // Staerkeliste: der Baustein bekommt den Text durchgereicht und entscheidet nicht selbst, wie ein
-// Ladefehler heisst - so kann das Info-Popover der Kachel (PR 3) denselben Baustein mit einem
+// Ladefehler heisst - so kann das Info-Popover der Kachel denselben Baustein mit einem
 // eigenen Text verwenden.
 const MOTIF_SET_ERROR_TEXT = 'Die Motive konnten nicht geladen werden.'
 
@@ -147,7 +146,7 @@ export function PhotoDetailPage() {
 
   const currentOwnStatus = ownRatingStatus(currentPhoto?.ratings ?? [], username)
   const currentOwnFavorite = ownFavorite(currentPhoto?.ratings ?? [], username)
-  // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang - der Server
+  // Anzeigeregel: eigene Bewertung hat immer Vorrang - der Server
   // liefert suggestion in diesem Fall ohnehin bereits als null, currentOwnStatus wird hier
   // trotzdem zusaetzlich geprueft (defensiv, gleiche Regel wie im Raster).
   const suggestion = currentOwnStatus === null ? (currentPhoto?.suggestion ?? null) : null
@@ -161,7 +160,7 @@ export function PhotoDetailPage() {
     ) {
       return
     }
-    // Auto-Advance gilt laut Spec nur "nach dem Setzen einer Bewertung" - ein Toggle zurueck auf
+    // Auto-Advance gilt nur "nach dem Setzen einer Bewertung" - ein Toggle zurueck auf
     // unbewertet ist eine Korrektur (Nutzer macht einen Fehlklick rueckgaengig), kein "fertig mit
     // diesem Foto"; automatisches Weiterspringen waere hier ueberraschend statt hilfreich.
     if (currentOwnStatus === status) {
@@ -194,7 +193,7 @@ export function PhotoDetailPage() {
     favoriteMutation.mutate({ photoId: currentPhoto.id, favorite: !currentOwnFavorite })
   }
 
-  // Ref-Indirektion (wie ProjectDetailPage.tsx::refetchRef): der Listener wird nur EINMAL
+  // Ref-Indirektion: der Listener wird nur EINMAL
   // registriert, liest aber bei jedem Tastendruck die jeweils aktuellen Handler.
   const handlersRef = useRef({ handlePrev, handleNext, handleToggleRating, handleToggleFavorite })
   handlersRef.current = { handlePrev, handleNext, handleToggleRating, handleToggleFavorite }
@@ -211,7 +210,7 @@ export function PhotoDetailPage() {
         case 'ArrowRight':
           void handlersRef.current.handleNext()
           break
-        // Die Belegung 1 / 2 / 3 bleibt; Taste 1 schaltet seit ADR 0098 das UNABHAENGIGE
+        // Die Belegung 1 / 2 / 3 bleibt; Taste 1 schaltet das UNABHAENGIGE
         // Favoriten-Kennzeichen und laesst die Albumentscheidung unberuehrt (und umgekehrt).
         case '1':
           handlersRef.current.handleToggleFavorite()
@@ -231,7 +230,7 @@ export function PhotoDetailPage() {
   }, [])
 
   /**
-   * DIE SEITE STEHT BEIM OEFFNEN OBEN (AK2) - die Vorbedingung der Buehnengeometrie.
+   * DIE SEITE STEHT BEIM OEFFNEN OBEN - die Vorbedingung der Buehnengeometrie.
    *
    * Die Buehne ist aus dem Sichtfenster gerechnet und steht ganz oben auf der Seite; sie liegt nur
    * dann vollstaendig im Bild, wenn die Seite auch oben steht. Ohne diese Ruecksetzung uebernimmt
@@ -342,7 +341,7 @@ export function PhotoDetailPage() {
   }
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
-  // Eye liefert hier nur noch die Feinlabels; die zaehlende Albumstufe kommt seit 0621 aus
+  // Eye liefert hier nur die Feinlabels; die zaehlende Albumstufe kommt aus
   // `album_suitability` und bringt ihre Herkunft (`source`) mit.
   const eyeFineLabels =
     currentPhoto.eye_result != null ? eyeVerdict(currentPhoto.eye_result).fineLabels : null
@@ -351,7 +350,7 @@ export function PhotoDetailPage() {
     <div className="flex flex-col gap-4">
       {/* DIE BUEHNE steht als ERSTES und ohne irgendetwas darueber: Ihre Hoehe ist aus dem
           Sichtfenster gerechnet, und jedes Element darueber schoebe ihre Unterkante um die eigene
-          Hoehe unter den Sichtrand (AK2). Der Shortcut-Hinweis ist deshalb in sie gewandert. */}
+          Hoehe unter den Sichtrand. Der Shortcut-Hinweis ist deshalb in sie gewandert. */}
       <PhotoDetailStage
         status="ready"
         counter={`${index + 1}/${total}`}
@@ -376,16 +375,12 @@ export function PhotoDetailPage() {
           <p className="text-text-h">
             Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}
           </p>
-          {/* Formatierung aus utils/suggestionLabels.ts, keine zweite Kopie derselben Logik. Der
-              fruehere dritte Fall "top_pick" (Kategorie + Qualitaets-Einordnung) ist entfallen -
-              dieser Kuratierungs-Kontext lebt in der
-              eigenstaendigen /curate-Ansicht statt in diesem Ausschuss-Vorschlagskasten (siehe
-              api/types.ts::SuggestionOut-Docstring). */}
+          {/* Formatierung aus utils/suggestionLabels.ts, keine zweite Kopie derselben Logik. */}
           <p className="text-text">{formatSuggestionReason(suggestion)}</p>
           {/* Ruft denselben Mutation-Pfad wie ein manueller Klick auf die passende
-              RatingButtons-Option auf (UI/UX-Abschnitt der Spec) - der bestehende Auto-Advance
-              greift danach unveraendert. Kein eigener "Vorschlag verwerfen"-Zustand: normale
-              Weiternavigation ist das implizite Ignorieren. */}
+              RatingButtons-Option auf - der bestehende Auto-Advance greift danach unveraendert.
+              Kein eigener "Vorschlag verwerfen"-Zustand: normale Weiternavigation ist das
+              implizite Ignorieren. */}
           <Button
             type="button"
             variant="outline"
@@ -399,9 +394,9 @@ export function PhotoDetailPage() {
       )}
 
       {/* DIE URTEILSFLAECHE - das Urteil ueber dieses Foto, unmittelbar hinter der Buehne und VOR
-          den Einzelwerten (AK5). Sie traegt die Albumtauglichkeit mit Begruendung, den Rang und
+          den Einzelwerten. Sie traegt die Albumtauglichkeit mit Begruendung, den Rang und
           die Feinlabel; darunter steht der Motivbereich, dessen Detailzeile den reservierten
-          Platz haelt (AK6/AK7).
+          Platz haelt.
 
           Der Motivbereich steht PERMANENT, auch ohne Kopfzeile - dann zeigt er an Stelle der
           Reihe einen Satz. Er ist der einzige Bedienblock dieses Abschnitts. */}
@@ -414,10 +409,10 @@ export function PhotoDetailPage() {
           Urteil
         </h2>
         {/* Die zaehlende Stufe kommt aus `album_suitability` - sie reist mit ihrer Herkunft, statt
-            hier aus der Eye-Kopfzeile geraten zu werden (0621). `?? null` heisst "noch nicht
-            eingestuft" und nicht "Feld nicht durchgereicht": diese Ansicht zeigt die Zeile immer,
-            mit Stufe oder mit dem Satz. Die Feinlabels bleiben Eyes rohe Tags, solange eine
-            Eye-Kopfzeile existiert. */}
+            hier aus der Eye-Kopfzeile geraten zu werden. `?? null` heisst "noch nicht eingestuft"
+            und nicht "Feld nicht durchgereicht": diese Ansicht zeigt die Zeile immer, mit Stufe
+            oder mit dem Satz. Die Feinlabels bleiben Eyes rohe Tags, solange eine Eye-Kopfzeile
+            existiert. */}
         <PhotoVerdict
           albumSuitability={currentPhoto.album_suitability ?? null}
           ranking={currentPhoto.ranking ?? null}
@@ -428,7 +423,7 @@ export function PhotoDetailPage() {
             Urteil benennt - Modellrevision, Fassung der Uebersetzung und Zeitpunkt stammen aus
             `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Es nennt die
             Albumtauglichkeit nur dann, wenn sie tatsaechlich aus Eye zaehlt (`source === 'eye'`);
-            sonst erklaert es allein die Feinlabels (0621). Die Fassung ist ein Rohwert und nur ein
+            sonst erklaert es allein die Feinlabels. Die Fassung ist ein Rohwert und nur ein
             Textknoten, nie HTML, `href`, `src`, `style`, `key`, `aria-label` oder `title`. Die
             Namensnennung steht darunter, an derselben Stelle wie die Angabe selbst. */}
         {currentPhoto.eye_result != null && (
@@ -491,7 +486,7 @@ export function PhotoDetailPage() {
           eigener Testhaken `criterion-score-grid` ist der Nachweis.
 
           OHNE `ranking`: Der Rang ist keiner der fuenfzehn Einzelwerte, sondern Teil des Urteils
-          und steht allein in `PhotoVerdict` (AK5). */}
+          und steht allein in `PhotoVerdict`. */}
       <CriterionScoreGrid criterionScores={currentPhoto.criterion_scores} />
 
       {/* Trennlinie zwischen Urteil/Nachschlagwerk und den uebrigen Angaben: ohne sie stiessen
@@ -500,14 +495,12 @@ export function PhotoDetailPage() {
           ist die freistehende Linie auf dem Grund. */}
       <div className="border-t border-separator" />
 
-      {/* AUFNAHMEZEIT - eine NEUE Anzeigestelle, keine Kennzeichnung an einer bestehenden: eine
-          Aufnahmezeit je Foto wurde vor Spec 0426 nirgends gezeigt. Sie steht im
-          Informationsteil, weil sie sagt, was das System über dieses Foto weiß. */}
+      {/* AUFNAHMEZEIT: Sie steht im Informationsteil, weil sie sagt, was das System über dieses
+          Foto weiß. */}
       <PhotoCaptureFacts photo={currentPhoto} headingLevel="h2" />
 
-      {/* Layout & Platzierung: nach den Bewertungs-Buttons. IMMER sichtbar (bewusste
-          Stakeholder-Entscheidung, kein Ausblenden bei not_candidate/not_run, siehe
-          Spec-Abschnitt "Entscheidungen") - kein `.length > 0`-Sichtbarkeitsgate. */}
+      {/* Layout & Platzierung: nach den Bewertungs-Buttons. IMMER sichtbar (bewusste Entscheidung,
+          kein Ausblenden bei not_candidate/not_run) - kein `.length > 0`-Sichtbarkeitsgate. */}
       <div className="text-sm text-text" data-testid="cloud-vision-status-section">
         <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
       </div>

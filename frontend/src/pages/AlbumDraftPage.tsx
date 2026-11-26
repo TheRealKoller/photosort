@@ -97,7 +97,7 @@ export interface AlbumDraftPageProps {
  * Serverzustand in den einmal geladenen Entwurf - nie ein Neuladen, damit Scrollposition und Fokus
  * stehen bleiben. Es gibt keinen gespeicherten Zustand „fertig".
  *
- * Der EIGENE Zustand kommt ausschließlich über `ownRatingStatus` mit dem `username`-Claim (S6/S10).
+ * Der EIGENE Zustand kommt ausschließlich über `ownRatingStatus` mit dem `username`-Claim.
  */
 export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps = {}) {
   const { projectId } = useParams()
@@ -174,7 +174,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
     setUndoError(null)
   }
 
-  // Fokusziele über `data-focus-key` (numerische Ids, nie ein Name - S11), gesucht NACH dem Render,
+  // Fokusziele über `data-focus-key` (numerische Ids, nie ein Name), gesucht NACH dem Render,
   // in dem der Handgriff angekommen ist. Nie `body`, kein Scrollsprung.
   const [focusRequest, setFocusRequest] = useState<{ key: string; scroll: boolean } | null>(null)
   useEffect(() => {

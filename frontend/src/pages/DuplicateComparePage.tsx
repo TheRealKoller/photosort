@@ -42,7 +42,7 @@ function tileSizesByIndex(
 }
 
 /**
- * Der erste Hinweis (A3): Antippen speichert sofort, und es gilt der ANGEZEIGTE Zustand.
+ * Der erste Hinweis: Antippen speichert sofort, und es gilt der ANGEZEIGTE Zustand.
  *
  * „Bleibt erhalten" hängt am angezeigten „Behalten" — nie an „nicht angetippt" oder
  * „unentschieden": Ein unentschiedener Duplikat-Verlierer zeigt bereits „Ausschuss" und scheidet
@@ -55,7 +55,7 @@ export const DUPLICATE_HINT_TEXT =
   'weiteren Bearbeitung aus.'
 
 /**
- * Die Folge von „behalten", an der Handlung selbst (Auflage S4 der Spec 0486, S12 der Spec 0533).
+ * Die Folge von „behalten", an der Handlung selbst.
  *
  * „Behalten" ist keine ansichtsinterne Buchführung: Die Aufnahme läuft danach in die
  * Kriterien-Bewertung und, bei erteilter Einwilligung, in die Cloud-Klassifizierung. Steht das
@@ -87,7 +87,7 @@ const LAST_GROUP_TEXT = 'Gespeichert — das war die letzte Gruppe.'
  * ein Index — eine umsortierte Antwort hält dieselbe Aufnahme, eine fehlende fällt aufs Raster
  * zurück.
  *
- * SICHERHEIT (S11): Der Rückweg-Parameter `from` wählt eine Variante und nennt kein Ziel. Es
+ * SICHERHEIT: Der Rückweg-Parameter `from` wählt eine Variante und nennt kein Ziel. Es
  * zählt allein der wörtliche Wert `ausschuss`; das Ziel ist fest `ausschussStepPath` aus der
  * numerischen Projekt-Id — nie der Parameterwert, `document.referrer` oder `navigate(-1)`. Sonst
  * führte ein präparierter Link einen angemeldeten Nutzer auf eine fremde Seite (offene

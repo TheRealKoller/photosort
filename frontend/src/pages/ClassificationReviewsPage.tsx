@@ -72,8 +72,7 @@ function ReviewRow({
 }
 
 /**
- * Seite 1 der Klassifizierungspruefung (Spec 0616, UI/UX): Liste der Pruefungen und das
- * Anlegen-Panel.
+ * Seite 1 der Klassifizierungspruefung: Liste der Pruefungen und das Anlegen-Panel.
  *
  * Das Panel steht inline unter dem Kopf, nicht in einem Dialog; der Umschalter traegt
  * `aria-expanded`/`aria-controls`. Bei leerer Liste ist es von Anfang an offen - dann ist Anlegen

@@ -37,10 +37,9 @@ import { ProjectStatsPage } from './pages/ProjectStatsPage'
 import { matchProjectId, PROJECT_ROUTE_PATHS } from './utils/projectRoutes'
 
 /**
- * Reiner Redirect: ersetzt die frueher hier stehende ProjectDetailPage.tsx als Ziel dieser Route -
- * Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst absoluter
- * Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt durchgehend
- * etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
+ * Reiner Redirect: Bestandsschutz fuer bestehende Links/Bookmarks auf `/projects/:projectId`.
+ * Bewusst absoluter Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt
+ * durchgehend etablierten Muster expliziter absoluter Pfade.
  */
 function ProjectDetailRedirect() {
   const { projectId } = useParams()
@@ -66,24 +65,21 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   // Aufnahmen mit dem Vorschlagsgrund `duplicate`. Eine Id ohne Gruppe fuehrt nicht ins Leere,
   // sondern auf den Leerzustand der Seite.
   { path: PROJECT_ROUTE_PATHS.photoDuplicates, element: <DuplicateComparePage /> },
-  // Der EINE Ort, an dem die beiden Staende gegenuebergestellt werden. Die fruehere
-  // Vergleichsseite ist mit Spec 0431 ERSATZLOS entfallen - ohne Weiterleitung, aus demselben
-  // Grund wie bei der Kuratierung: Ein zweiter Weg auf den einen verbleibenden Ort waere ein
-  // zweiter Ort.
+  // Der EINE Ort, an dem die beiden Staende gegenuebergestellt werden: Ein zweiter Weg auf den
+  // einen verbleibenden Ort waere ein zweiter Ort.
   { path: PROJECT_ROUTE_PATHS.selection, element: <AlbumSelectionPage /> },
   // Erste dedizierte Projekteinstellungs-Route.
   { path: PROJECT_ROUTE_PATHS.settings, element: <ProjectSettingsPage /> },
   // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der Pipeline-Schritt-Routen
   // (sie ist kein Schritt des Ablaufs).
   { path: PROJECT_ROUTE_PATHS.stats, element: <ProjectStatsPage /> },
-  // Der eine Ort, an dem die Auswahl entsteht und nachgearbeitet wird. Die frühere
-  // Kuratierungsroute ist mit Spec 0430 ERSATZLOS entfallen - ohne Weiterleitung, damit ein alter
-  // Link erkennbar ins Leere läuft statt still eine andere Ansicht zu zeigen.
+  // Der eine Ort, an dem die Auswahl entsteht und nachgearbeitet wird. Ein alter Link auf die
+  // fruehere Kuratierungsroute laeuft erkennbar ins Leere, statt still eine andere Ansicht zu
+  // zeigen.
   { path: PROJECT_ROUTE_PATHS.album, element: <AlbumDraftPage /> },
-  // Die Personenübersicht (Spec 0551): Gruppen je Person und "Ohne Namen", Nebenziel der
-  // Projektnavigation wie Einstellungen und Statistik.
+  // Die Personenuebersicht: Gruppen je Person und "Ohne Namen", Nebenziel der
   { path: PROJECT_ROUTE_PATHS.persons, element: <ProjectPersonsPage /> },
-  // Die Klassifizierungspruefung (Spec 0616): Liste und Anlegen, danach die Fallansicht. Beide
+  // Die Klassifizierungspruefung: Liste und Anlegen, danach die Fallansicht. Beide
   // Routen haengen am selben Nebenziel - die Fallansicht ist kein eigenes Ziel, sondern der Weg
   // in EINE Pruefung.
   { path: PROJECT_ROUTE_PATHS.classificationReviews, element: <ClassificationReviewsPage /> },
@@ -110,7 +106,7 @@ function AppShell() {
     clearToken()
     // Leert den gesamten Query-Cache, damit im aktiven Tab kein Rest der vorherigen Sitzung
     // (persoenliche Vorschlaege, Zaehlwerte, Statistik) sichtbar bleibt - vor der Navigation,
-    // damit der geschuetzte Baum schon leer entmountet wird (specs/features/0561).
+    // damit der geschuetzte Baum schon leer entmountet wird.
     queryClient.clear()
     navigate('/login')
   }
@@ -121,27 +117,22 @@ function AppShell() {
           ist der erste Eintrag einer projektweiten Z-Index-Konvention - bleibt unter
           Radix-Portal-Overlays (Dialoge/Tooltips
           landen per Portal mit eigenen, hoeheren Werten ausserhalb des normalen Baums). bg-bg wird
-          hier jetzt explizit gesetzt (bisher trug nur der aeussere Wrapper die Hintergrundfarbe),
-          damit scrollender Inhalt im Sticky-Zustand nicht sichtbar durchscheinen kann, falls eine
-          kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
+          hier explizit gesetzt, damit scrollender Inhalt im Sticky-Zustand nicht sichtbar
+          durchscheinen kann, falls eine kuenftige Seite einen abweichenden Hintergrund einfuehrt.
+          CSS-Sticky-Verhalten ist in
           jsdom nicht automatisiert pruefbar - `e2e/tests/sticky-header.spec.ts` misst es.
 
-          FESTE HOEHE STATT POLSTERUNG: `py-3` ist `h-header` gewichen. Der Wert kommt aus
-          `--spacing-header` in index.css und ist dieselbe Quelle, aus der die Schrittleiste ihren
-          Haftpunkt `top-header` bezieht - beide
+          FESTE HOEHE STATT POLSTERUNG: Der Wert kommt aus `--spacing-header` in index.css und ist
+          dieselbe Quelle, aus der die Schrittleiste ihren Haftpunkt `top-header` bezieht - beide
           Leisten haften gleichzeitig oben, ohne sich zu ueberlagern und ohne Fuge dazwischen. Ein
           zweiter, freihaendiger Zahlenwert an einer der beiden Stellen ist deshalb verboten (im
           Design-Vertrag gebunden).
 
-          KEIN `flex-wrap` MEHR: mit fester Hoehe waere ein Umbruch stilles Abschneiden statt
+          KEIN `flex-wrap`: mit fester Hoehe waere ein Umbruch stilles Abschneiden statt
           sichtbaren Wachsens. Der Nutzername wird stattdessen gekuerzt (`min-w-0`/`truncate`) -
           damit schlaegt zu enger Inhalt kuenftig laut an (no-horizontal-scroll bei 360px), statt
           unsichtbar zu verschwinden. */}
       <header className="sticky top-0 z-10 flex h-header items-center justify-between gap-3 border-b border-separator bg-bg px-4 sm:px-6">
-        {/* Requirements-Review-Fund (Branch feature/0012-visual-redesign-views): als einziges
-            interaktives Element im Header nicht ueber die Button-Komponente verdrahtet, dadurch
-            unter dem 44x44px-Touch-Ziel (AK "tatsaechlich messbar") - jetzt per Button asChild
-            konsistent zu "Abmelden" gehalten, mit ueberschriebener Groesse/Optik fuers Wortmarke. */}
         {/* gap-2 statt gap-1: 8px ist der Mindestabstand zwischen zwei fokussierbaren
             Elementen - die aufgespannten Trefferflaechen der beiden Links duerfen sich nicht
             ueberlappen, in einer Ueberlappung gewinnt das obenliegende Element. */}
@@ -149,17 +140,17 @@ function AppShell() {
           <Button
             asChild
             variant="ghost"
-            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer zeilenweisen
+            // Kein `h-11`: die Wortmarke ist weder heisser Pfad noch Zeile einer zeilenweisen
             // Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der Aufspannung, die
-            // das Button-Primitiv ohnehin mitbringt.
+            // das Button-Primitiv mitbringt.
             className="justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
           >
             <Link to="/">PhotoSort</Link>
           </Button>
-          {/* Projekt-Navigationsgruppe: loest den frueheren einzelnen "‹ Projekt"-Link ab. Rendert
-              ausschliesslich mit Projektkontext und haengt allein am pathname, nicht an einem
-              API-Aufruf - sie erscheint deshalb auch, waehrend die darunterliegende Seite noch
-              laedt oder fehlgeschlagen ist. Genau dann ist ein Weg heraus am wertvollsten. */}
+          {/* Projekt-Navigationsgruppe: Rendert ausschliesslich mit Projektkontext und haengt
+              allein am pathname, nicht an einem API-Aufruf - sie erscheint deshalb auch, waehrend
+              die darunterliegende Seite noch laedt oder fehlgeschlagen ist. Genau dann ist ein Weg
+              heraus am wertvollsten. */}
           {projectId !== null && <ProjectNav projectId={projectId} />}
         </div>
         <div className="flex min-w-0 items-center gap-3">

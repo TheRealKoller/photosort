@@ -112,7 +112,7 @@ function CameraSection({ projectId }: { projectId: number }) {
 }
 
 /**
- * Der Einwilligungstext nennt die Anbieter der AKTUELLEN Wahl (Spec 0383) statt der festen
+ * Der Einwilligungstext nennt die Anbieter der AKTUELLEN Wahl statt der festen
  * „Anthropic-Cloud-API": welche Cloud einwilligt wird, entscheidet `project.model_choice`, und
  * ein Text mit festem Anbieternamen wäre nach einer Umstellung schlicht unwahr. Bei
  * Eye-Kategorisierung bleibt die Kategorisierung auf diesem Server.
@@ -141,7 +141,7 @@ function consentExplainer(project: ProjectOut): string {
     categoriesOnServer
       ? 'Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei — nicht nötig: die Kategorisierung dieses Projekts läuft auf diesem Server und sendet kein Foto.'
       : sameProvider
-        ? // AK 62: die Anbietermenge ohne Dopplung - derselbe Anbieter wird EINMAL genannt.
+        ? // die Anbietermenge ohne Dopplung - derselbe Anbieter wird EINMAL genannt.
           remoteCategories('denselben Anbieter')
         : remoteCategories(categoryTarget),
   )
@@ -149,13 +149,13 @@ function consentExplainer(project: ProjectOut): string {
 }
 
 /**
- * Erste dedizierte Projekteinstellungs-Seite im Projekt - Toggle-Switch fuer die projektweite
+ * Projekteinstellungs-Seite: Toggle-Switch fuer die projektweite
  * Cloud-Bilderkennungs-Einwilligung + Info-Popover, das den Cloud-Versand erklaert.
  * Label/Erklaertext lauten auf "Cloud-Bilderkennung" - derselbe Schalter gated zusaetzlich die
  * Remote-Kategorie-Klassifizierung.
  *
- * Bewusst OHNE geraetespezifische Hover-Auto-Close-Logik (technische Detailentscheidung der
- * Umsetzung): dieses Popover sitzt an einer einzelnen Einstellungs-Zeile, wo Hover-Ergonomie
+ * Bewusst OHNE geraetespezifische Hover-Auto-Close-Logik: dieses Popover sitzt an einer einzelnen
+ * Einstellungs-Zeile, wo Hover-Ergonomie
  * beim schnellen Durchsehen nicht zaehlt - ein reiner Klick/Tap-Trigger
  * (Popover.onOpenChange ueber den kontrollierten Radix-Default) reicht.
  *
@@ -248,7 +248,7 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      {/* Die Modellwahl sitzt ZWISCHEN Cloud-Panel und Kameras (Spec 0383): die Einwilligung
+      {/* Die Modellwahl sitzt ZWISCHEN Cloud-Panel und Kameras: die Einwilligung
           beschreibt den Datenabfluss, die Wahl bestimmt den Empfänger. Die Gefahrenzone bleibt das
           letzte Kind des gap-6-Containers. */}
       <ModelChoiceSection projectId={id} />
