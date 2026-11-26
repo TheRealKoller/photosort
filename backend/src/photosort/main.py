@@ -1,5 +1,8 @@
+from typing import Literal
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -32,6 +35,15 @@ from photosort.rate_limit import limiter
 # auf alle Familienfotos. Bricht in tests/test_main_secret_key_guard.py (drei Faelle).
 MIN_SECRET_KEY_LENGTH = 32
 PLACEHOLDER_SECRET_KEY = "change-me"
+
+
+class HealthOut(BaseModel):
+    """Lebendigkeit des API-Prozesses - die Antwort des unauthentifizierten Probeaufrufs.
+
+    Benannt statt anonym, damit auch dieser 2xx-Koerper ein Schema in der
+    Schnittstellenbeschreibung traegt; der Koerper selbst bleibt `{"status": "ok"}`."""
+
+    status: Literal["ok"]
 
 
 def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
@@ -75,9 +87,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    @app.get("/health", response_model=HealthOut)
+    def health() -> HealthOut:
+        return HealthOut(status="ok")
 
     app.include_router(album_decisions.router)
     app.include_router(auth.router)

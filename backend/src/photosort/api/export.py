@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import JobEnqueuer, get_current_user, get_job_enqueuer, get_session
+from photosort.api.responses import TriggerQueuedOut
 from photosort.final_selection import included_photos
 from photosort.models import ExportPhoto, ExportRun, ExportRunStatus, Project
 
@@ -53,6 +54,13 @@ class ExportPhotoErrorOut(BaseModel):
 
 
 class ExportRunDetailOut(BaseModel):
+    """Der Export-Lauf samt Fehlerliste je Foto - die Bestaetigung DANACH.
+
+    Teilfehler enden mit Status `success`: der Lauf hat jedes Foto versucht, und die
+    gescheiterten stehen in `failed_photos` neben `failed_count`. `success` ist damit keine
+    Aussage "jedes Foto liegt auf OpenCloud". Den Abbruchmerker traegt der Polling-Zustand
+    (`ExportRunSummary.cancel_requested_at`), nicht dieses Detail."""
+
     id: int
     status: ExportRunStatus
     started_at: datetime
@@ -77,24 +85,28 @@ async def export_preview(
     return ExportPreviewOut(photo_count=len(included))
 
 
-@router.post("/{project_id}/export", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{project_id}/export",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TriggerQueuedOut,
+)
 async def trigger_export(
     project_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
     enqueuer: Annotated[JobEnqueuer, Depends(get_job_enqueuer)],
-) -> dict[str, str]:
+) -> TriggerQueuedOut:
     """Legt den wartenden Lauf VOR dem Einreihen an (Muster `trigger_scan`) und antwortet 202.
     Ohne Endauswahl entsteht kein Lauf - die Antwort bleibt dieselbe. Kein `current_user`: das
     Ergebnis gehoert dem Projekt."""
     await _ensure_project(session, project_id)
     if not await included_photos(session, project_id):
-        return {"status": "queued"}
+        return TriggerQueuedOut(status="queued")
     run = ExportRun(project_id=project_id, status=ExportRunStatus.QUEUED)
     session.add(run)
     await session.commit()
     await session.refresh(run)
     await enqueuer.enqueue_job("export_project", project_id, run_id=run.id)
-    return {"status": "queued"}
+    return TriggerQueuedOut(status="queued")
 
 
 @router.get("/{project_id}/exports/{run_id}", response_model=ExportRunDetailOut)

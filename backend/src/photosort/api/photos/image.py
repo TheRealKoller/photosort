@@ -28,7 +28,10 @@ from photosort.thumbnails import variant_path
 router = APIRouter()
 
 
-@router.get("/photos/{photo_id}/image")
+# `response_class` dokumentiert die Antwort als Bilddatei: ohne sie behauptete die
+# Schnittstellenbeschreibung einen JSON-Koerper, den dieser Endpunkt nie liefert. Das gebaute
+# `FileResponse` (Media-Type, Kopfzeilen) bleibt unveraendert.
+@router.get("/photos/{photo_id}/image", response_class=FileResponse)
 async def get_photo_image(
     photo_id: int,
     # Literal["thumbnail", "display"] statt ein freier str-Parameter: FastAPI/Pydantic validiert
