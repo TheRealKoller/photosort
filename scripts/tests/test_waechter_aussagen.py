@@ -23,6 +23,7 @@ from pathlib import Path
 from test_board_befehle_in_skills import INVARIANTEN as BOARD
 from test_ci_warten_verankert import INVARIANTEN as WARTEN
 from test_ci_wirkung import INVARIANTEN as CI
+from test_frontend_typen import INVARIANTEN as FRONTEND_TYPEN
 from test_github_zugriff_an_einer_stelle import INVARIANTEN as KATALOG
 from test_issue_befehle_in_skills import INVARIANTEN as BEFEHLE
 
@@ -34,6 +35,7 @@ MODULE = {
     "scripts/tests/test_issue_befehle_in_skills.py": BEFEHLE,
     "scripts/tests/test_board_befehle_in_skills.py": BOARD,
     "scripts/tests/test_ci_warten_verankert.py": WARTEN,
+    "scripts/tests/test_frontend_typen.py": FRONTEND_TYPEN,
 }
 MINDESTZAHL_AKTIV = 18
 TESTFUNKTION = re.compile(r"^def (?P<name>test_[a-z0-9_]+)\(", re.MULTILINE)

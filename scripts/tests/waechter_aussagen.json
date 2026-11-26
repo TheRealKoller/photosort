@@ -139,6 +139,46 @@
       "modul": "scripts/tests/test_ci_warten_verankert.py",
       "invariante": "anker-protokoll",
       "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "keine-interface-deklaration",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "marken-einmalig",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "marken-in-reihenfolge",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "schemabezug-belegt",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "keine-zweite-fassung",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "aufruf-ohne-typargument",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "beschreibung-am-typ",
+      "klasse": "A"
+    },
+    {
+      "modul": "scripts/tests/test_frontend_typen.py",
+      "invariante": "nachfuehrung-verdrahtet",
+      "klasse": "B"
     }
   ],
   "entfernt": [

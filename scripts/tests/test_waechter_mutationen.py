@@ -26,6 +26,8 @@ from test_ci_warten_verankert import INVARIANTEN as WARTEN_INVARIANTEN
 from test_ci_warten_verankert import pruefe as warten_pruefe
 from test_ci_wirkung import INVARIANTEN as CI_INVARIANTEN
 from test_ci_wirkung import pruefe as ci_pruefe
+from test_frontend_typen import INVARIANTEN as FRONTEND_TYPEN_INVARIANTEN
+from test_frontend_typen import pruefe as frontend_typen_pruefe
 from test_github_zugriff_an_einer_stelle import INVARIANTEN, pruefe
 from test_issue_befehle_in_skills import INVARIANTEN as BEFEHLE_INVARIANTEN
 from test_issue_befehle_in_skills import pruefe as befehle_pruefe
@@ -37,6 +39,7 @@ Waechter = {
     "befehle": befehle_pruefe,
     "board": board_pruefe,
     "ci": ci_pruefe,
+    "frontend-typen": frontend_typen_pruefe,
     "katalog": pruefe,
     "warten": warten_pruefe,
 }
@@ -44,6 +47,7 @@ INVARIANTEN_JE_Waechter = {
     "befehle": {invariante.id for invariante in BEFEHLE_INVARIANTEN},
     "board": {invariante.id for invariante in BOARD_INVARIANTEN},
     "ci": {invariante.id for invariante in CI_INVARIANTEN},
+    "frontend-typen": {invariante.id for invariante in FRONTEND_TYPEN_INVARIANTEN},
     "katalog": {invariante.id for invariante in INVARIANTEN},
     "warten": {invariante.id for invariante in WARTEN_INVARIANTEN},
 }
