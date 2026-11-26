@@ -52,7 +52,7 @@ function photosQueryKey(
 const DRAFT_QUERY_SEGMENT = 'draft'
 
 /**
- * SICHERHEIT (S4): Entwurfs- und Alternativen-Schlüssel tragen die angemeldete Identität HINTER
+ * SICHERHEIT: Entwurfs- und Alternativen-Schlüssel tragen die angemeldete Identität HINTER
  * dem Präfix `['photos', projectId]` (Muster `projectStatsQueryKey`). Der `QueryClient` überlebt
  * die Anmeldung eines zweiten Nutzers im selben Tab; ohne die Identität sähe dieser bis zum
  * Abschluss des Neuladens den Entwurf des ersten, samt „Deine Eingriffe". Hinter dem Präfix, damit

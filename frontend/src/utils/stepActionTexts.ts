@@ -76,7 +76,7 @@ export const NEXT_UNAVAILABLE_TEXT =
 export const ALBUM_OPEN_LABEL = 'Album-Entwurf öffnen'
 
 /*
- * Spec 0641: Jeder abbrechbare Vorgang traegt EINEN Namen - er steht im Knopf, in der Statuszeile,
+ * Jeder abbrechbare Vorgang traegt EINEN Namen - er steht im Knopf, in der Statuszeile,
  * in der Projektleiste und im Bestaetigungsdialog. Eine zweite Vokabeltabelle an den
  * Aufrufstellen liesse „Klassifizierung" und „Kriterien" nebeneinander stehen.
  */

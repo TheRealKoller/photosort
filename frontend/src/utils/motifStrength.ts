@@ -18,8 +18,7 @@ const NOT_LOCALLY_ASSESSABLE_TEXT = 'lokal nicht beurteilbar'
 export type MotifFillStep = 'strong' | 'medium' | 'weak' | 'none'
 
 /**
- * Die Fuellstufe eines Motivsymbols aus der wirksamen Staerke gegen die Baender aus `GET /motifs`
- * (ADR 0113 Punkt 1).
+ * Die Fuellstufe eines Motivsymbols aus der wirksamen Staerke gegen die Baender aus `GET /motifs`.
  *
  * `MotifStrengthOut.present` wird dafuer NIE gelesen: Die Praesenzgrenze 0.5 liegt mitten im
  * mittleren Band, aus beiden Skalen zugleich waere dieselbe Staerke einmal "mittel" und einmal
@@ -27,11 +26,11 @@ export type MotifFillStep = 'strong' | 'medium' | 'weak' | 'none'
  *
  * Beide Grenzen sind EINSCHLIESSEND (`>=`), genau wie im Backend. Die Baender kommen als
  * EXPLIZITER Parameter herein - eine modul-globale, vom Query-Cache befuellte Skala machte die
- * Funktion nur noch mit Query-Zustand testbar (dieselbe Festlegung wie in `utils/motifLabels.ts`).
+ * Funktion nur noch mit Query-Zustand testbar.
  *
  * `assessable === false` (lokale Grundlage, Motiv ohne Cloud-Aussage) ergibt `none` VOR jeder
  * Stufung: In der Reihe traegt dieser Fall dieselbe leere Fuellung wie "gar nicht vertreten",
- * unterschieden wird er in der aufgeklappten Zeile (AK7).
+ * unterschieden wird er in der aufgeklappten Zeile.
  */
 export function motifFillStep(
   strength: number,

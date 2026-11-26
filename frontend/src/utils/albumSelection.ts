@@ -31,8 +31,8 @@ export type ParticipantStance = 'taken' | 'struck' | 'untouched'
  * dar - genau das, was diese Ansicht ausschließt. Auch der `username` taugt nicht als Schlüssel:
  * er ist fremdbestimmter Text, `user_id` ist die Identität.
  *
- * GELESEN WIRD `status`, NICHT DAS VORHANDENSEIN DER ZEILE: Seit ADR 0098 kann eine Zeile allein
- * das Favoriten-Kennzeichen tragen, und das ist keine Albumentscheidung.
+ * GELESEN WIRD `status`, NICHT DAS VORHANDENSEIN DER ZEILE: Eine Zeile kann allein das
+ * Favoriten-Kennzeichen tragen, und das ist keine Albumentscheidung.
  */
 export function participantStance(
   photo: PhotoOut,
@@ -52,7 +52,7 @@ export function participantStance(
  * Schreibt eine gerade getroffene gemeinsame Entscheidung in eine bereits geladene Endauswahl
  * fort - rein, ohne Cache und ohne Netz.
  *
- * ALLE DREI FELDER GEMEINSAM, und alle drei aus der SERVERANTWORT (Auflage S5): Nach einer
+ * ALLE DREI FELDER GEMEINSAM, und alle drei aus der SERVERANTWORT: Nach einer
  * Entscheidung sind die beiden abgeleiteten Werte trivial bestimmt - `contested` ist `false`, und
  * `in_final_selection` ist die Entscheidung selbst. Der lokal beabsichtigte Wert wird nirgends
  * gelesen; nach einem verlorenen Wettlauf zeigte er dauerhaft eine Zugehörigkeit an, die so nicht

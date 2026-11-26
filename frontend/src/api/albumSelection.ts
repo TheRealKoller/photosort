@@ -21,7 +21,7 @@ export function getAlbumSelection(projectId: number): Promise<AlbumSelectionOut>
  * strittig werden" ist kein Zustand, den die Story kennt, ändern heißt den anderen Wert
  * schreiben.
  *
- * Die Antwort ist der PERSISTIERTE Zustand, nie ein Echo des Bodys (Auflage S5) - sie und nur sie
+ * Die Antwort ist der PERSISTIERTE Zustand, nie ein Echo des Bodys - sie und nur sie
  * wird über `utils/albumSelection.ts::applyAlbumDecision` in den geladenen Stand fortgeschrieben.
  */
 export function setAlbumDecision(photoId: number, included: boolean): Promise<AlbumDecisionOut> {

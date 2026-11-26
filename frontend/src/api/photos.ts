@@ -117,7 +117,7 @@ export async function fetchPhotoImageBlobUrl(
 }
 
 /**
- * Markiert ein Motiv fuer dieses Foto als zutreffend oder als nicht zutreffend (Spec 0427).
+ * Markiert ein Motiv fuer dieses Foto als zutreffend oder als nicht zutreffend.
  *
  * Der Body traegt AUSSCHLIESSLICH `applies` - der Nutzer schaetzt nie eine Zahl ein. Weder
  * `user_id` noch `motif_key` noch eine Staerke gehen mit; der Schluessel steht im Pfad, der Nutzer
@@ -144,11 +144,9 @@ export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Prom
 
 /**
  * Tauscht im eigenen Album-Entwurf ein Bild gegen ein anderes desselben Ereignisses — EIN Aufruf
- * statt zweier `setRating` (Spec 0432).
+ * statt zweier `setRating`.
  *
- * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Zwei getrennte
- * Aufrufe waren nicht atomar — der zweite konnte fehlschlagen und einen halb ausgeführten
- * Austausch hinterlassen — und ihre Zusammengehörigkeit kannte allein der Client.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht.
  *
  * Der Body trägt AUSSCHLIESSLICH die beiden Foto-Ids. Kein `event_id`, kein Gewicht, kein
  * Nutzer: Der Server löst alles über die Rangzeile des Laufs auf, und ein vom Client geliefertes

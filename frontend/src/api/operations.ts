@@ -7,7 +7,7 @@ import type {
 } from './types'
 
 /*
- * Spec 0641: Die drei Endpunkte der Vorgangssteuerung. `kind` und `run_id` adressieren GENAU
+ * Die drei Endpunkte der Vorgangssteuerung. `kind` und `run_id` adressieren GENAU
  * einen Lauf - ein zweiter Lauf desselben Schritts wird nie mitgemeint.
  */
 

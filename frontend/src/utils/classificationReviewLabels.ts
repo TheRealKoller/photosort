@@ -13,11 +13,11 @@ import { formatMotifKey, type MotifSet } from './motifLabels'
 import type { ScanStatusLabel } from './scanStatus'
 
 /*
- * Die EINE Begriffsquelle der Pruefseiten (Spec 0616, Abschnitt UI/UX): Seitentitel, die drei
+ * Die EINE Begriffsquelle der Pruefseiten: Seitentitel, die drei
  * Begriffe, Seitenmarken, vier Urteile, vier Zwecke und ihre Einheiten. Aufrufstellen lesen von
  * hier und schreiben kein Literal ab - sonst tragen zwei Stellen dieselbe Aussage und driften.
  *
- * ABGRENZUNG ZUR BEWERTUNG (Spec 0616): Hier steht weder "Vergleich" noch "Bewertung" allein. Das
+ * ABGRENZUNG ZUR BEWERTUNG: Hier steht weder "Vergleich" noch "Bewertung" allein. Das
  * Vokabular dieser Seiten ist "Pruefung", "Fall" und "Urteil"; eine Aufrufstelle, die eines der
  * beiden verbotenen Worte zeigt, faellt bei der Pruefung der sichtbaren Woerter auf.
  */
@@ -54,7 +54,7 @@ export const SIDE_LABELS = {
 } as const satisfies Record<'a' | 'b', string>
 
 /**
- * Die Wortlaute der Modellwahl (Spec 0383) - an jeder Stelle zeichengleich. Die Sperrgründe
+ * Die Wortlaute der Modellwahl - an jeder Stelle zeichengleich. Die Sperrgründe
  * beginnen alle mit „Nicht wählbar —", damit die Oberfläche sie nicht je Karte umformuliert.
  */
 export const MODEL_CHOICE_TEXTS = {
@@ -67,7 +67,7 @@ export const MODEL_CHOICE_TEXTS = {
   free: 'kostenfrei',
   saved: 'Gespeichert — gilt für künftige Läufe.',
   unchanged: 'Es wurde nichts geändert; die bisherige Wahl gilt weiter.',
-  // Der rechtlich formulierte Satz steht EINMAL (Spec 0383): Einstellungen und Laufdialog
+  // Der rechtlich formulierte Satz steht EINMAL: Einstellungen und Laufdialog
   // zeigen ihn wortgleich - zwei Kopien drifteten beim nächsten Wortwechsel auseinander.
   eyeLicenceNotice:
     'Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.',
@@ -168,7 +168,7 @@ export const REVIEW_DETAIL_TEXTS = {
   exportContents:
     'Die Datei enthält keine Bilddaten, keine Dateinamen, keine Orte und keine Namen - je Fall nur die Fotonummer, den Zweck, beide Rohwerte und das Urteil.',
   exportBlockedRunning: 'Der Export ist erst nach Abschluss der Prüfung möglich.',
-  // Spec 0641: Ein Abbruch ist kein Fehlschlag - der Satz nennt den Grund ohne Schuldzuweisung.
+  // Ein Abbruch ist kein Fehlschlag - der Satz nennt den Grund ohne Schuldzuweisung.
   exportBlockedCancelled: 'Eine abgebrochene Prüfung lässt sich nicht exportieren.',
   exportBlockedFailed: 'Eine fehlgeschlagene Prüfung lässt sich nicht exportieren.',
   exportError: 'Der Export konnte nicht geladen werden.',
@@ -311,7 +311,7 @@ function yesNo(value: boolean): string {
 export function reviewListStand(
   review: Pick<ClassificationReviewListItemOut, 'status' | 'case_count' | 'case_open'>,
 ): { tone: ScanStatusLabel; label: string } {
-  // Spec 0641: „wartet" und „abgebrochen" sind weder Erfolg noch Fehlschlag - neutraler Ton,
+  // „wartet" und „abgebrochen" sind weder Erfolg noch Fehlschlag - neutraler Ton,
   // das Wort traegt die Aussage.
   if (review.status === 'queued') {
     return { tone: 'never', label: 'wartet' }
@@ -343,7 +343,7 @@ export const NO_DEVIATION_TEXT = 'Die beiden Verfahren stimmen auf allen Fotos �
  * "keine Abweichungen" ist nur dann eine Aussage ueber die Verfahren, wenn wirklich etwas
  * verglichen wurde. Ist `unclassifiable_photo_count` gleich der Pruefmenge, hat KEIN Foto auf
  * beiden Seiten ein Ergebnis - dann nennt der Hinweis die fehlgeschlagenen Fotos statt einer
- * Uebereinstimmung (Spec 0616, Edge Case 4 / AK 9).
+ * Uebereinstimmung.
  */
 export function reviewNoCaseText(
   review: Pick<ClassificationReviewListItemOut, 'photo_count' | 'unclassifiable_photo_count'>,
@@ -386,7 +386,7 @@ export const SIDE_COST_LABELS = {
 } as const
 
 /**
- * Die Kostenzeile EINER Seite der Pruefung (AK 9/AK 12): Ist-Kosten mit dem beim Anlegen
+ * Die Kostenzeile EINER Seite der Pruefung: Ist-Kosten mit dem beim Anlegen
  * eingefrorenen Schaetzwert in der Klammer. Eye und lokal sind kostenfrei und tragen das Wort,
  * nie "0,00 USD"; ein Cloud-Lauf ohne Ist-Wert heisst "nicht erfasst". Ein bereits geschriebener
  * Ist-Wert bleibt nach einem Abbruch stehen - die bis dahin angefallenen Kosten sind die einzige

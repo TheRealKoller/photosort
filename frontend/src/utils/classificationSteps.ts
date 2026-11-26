@@ -18,7 +18,7 @@ import type { EtaKind } from './classificationEta'
 export type ClassificationStepId = ClassificationPhase
 
 /**
- * `cancelled` und `not_started` (Spec 0641) gibt es NUR bei einem abgebrochenen Lauf: der
+ * `cancelled` und `not_started` gibt es NUR bei einem abgebrochenen Lauf: der
  * unterbrochene Teilschritt und alles danach sind nicht "ausstehend" - es wird nichts mehr
  * daraus.
  */
@@ -37,8 +37,8 @@ export interface ClassificationStep {
   cloud: CloudPhaseSummaryOut | null
   /**
    * Woher die Restdauer dieses Teilschritts kommt - `null` heisst "dieser Teilschritt trägt gar
-   * keine Angabe" und gilt für jeden, der nicht gerade läuft (AK1), sowie für jeden Teilschritt
-   * eines beendeten Laufs (AK8).
+   * keine Angabe" und gilt für jeden, der nicht gerade läuft, sowie für jeden Teilschritt
+   * eines beendeten Laufs.
    */
   etaKind: EtaKind | null
   /**
@@ -82,7 +82,7 @@ function isCloudStep(id: ClassificationStepId): id is keyof typeof CLOUD_PURPOSE
 }
 
 export function deriveClassificationSteps(run: CriterionScoringRunSummary): ClassificationStep[] {
-  // `queued` ist NICHT beendet (Spec 0641): ein wartender Lauf hat noch keinen Teilschritt
+  // `queued` ist NICHT beendet: ein wartender Lauf hat noch keinen Teilschritt
   // begonnen, seine Bilanz gibt es nicht.
   const isFinished = run.status !== 'running' && run.status !== 'queued'
   const isQueued = run.status === 'queued'
@@ -95,8 +95,7 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
   //
   // Ein `phase`-Wert, den DIESES Bundle nicht kennt, faellt auf denselben Zweig: `indexOf` liefert
   // dann `-1`, und ohne Abfangen laege der Zeiger vor dem ersten Schritt - jeder Schritt stuende
-  // auf `pending`, waehrend der Lauf arbeitet. Das ist kein theoretischer Fall: PhotoSort ist eine
-  // PWA, Bundles werden gecacht, und genau diese Aenderung haengt zwei Werte an den Enum an. Ein
+  // auf `pending`, waehrend der Lauf arbeitet. PhotoSort ist eine PWA, Bundles werden gecacht; ein
   // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts. Neue
   // Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
   // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
@@ -170,14 +169,14 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
 }
 
 /**
- * Die Restdauer hängt an GENAU DEM Teilschritt, der läuft (AK1) - der Server liefert genau einen
+ * Die Restdauer hängt an GENAU DEM Teilschritt, der läuft - der Server liefert genau einen
  * Wert, und welcher Teilschritt gemeint ist, sagt `phase`.
  *
  * Zwei Gründe für "gar keine Angabe", beide als eigener Zweig:
  *
  * - Der Teilschritt läuft nicht (ausstehend, erledigt, übersprungen). Eine Restdauer an einem
  *   erledigten Schritt wäre eine Aussage über etwas Vergangenes.
- * - Der LAUF ist beendet (AK8). Das wird hier ausdrücklich noch einmal geprüft und nicht dem
+ * - Der LAUF ist beendet. Das wird hier ausdrücklich noch einmal geprüft und nicht dem
  *   Zustand `running` überlassen: Der Bestandszustand "beendet, aber `phase` gesetzt" lässt
  *   `deriveState` einen Teilschritt weiterhin als laufend ausweisen, und eine längst fertige
  *   Zeile behauptete dann eine Restdauer.
@@ -188,13 +187,13 @@ function etaOf(
   isFinished: boolean,
   run: CriterionScoringRunSummary,
 ): { etaKind: EtaKind | null; etaSeconds: number | null } {
-  // Spec 0641: Ab dem angeforderten Abbruch entfaellt die Restdauer sofort - der Lauf endet am
+  // Ab dem angeforderten Abbruch entfaellt die Restdauer sofort - der Lauf endet am
   // naechsten Pruefpunkt, eine Schaetzung bis zum Phasenende waere falsch.
   if (isFinished || state !== 'running' || run.cancel_requested_at != null) {
     return { etaKind: null, etaSeconds: null }
   }
   if (id === 'ranking') {
-    // ADR 0116 Punkt 5: `ranking` trägt NIE eine gemessene Angabe. Die Art hängt am Teilschritt,
+    // `ranking` trägt NIE eine gemessene Angabe. Die Art hängt am Teilschritt,
     // nicht daran, ob zufällig eine Zahl in der Antwort steht.
     return { etaKind: 'experience', etaSeconds: null }
   }

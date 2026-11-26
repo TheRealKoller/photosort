@@ -1,9 +1,7 @@
 import type { RatingOut, RatingStatus } from '../api/types'
 
 /**
- * Ermittelt die eigene Bewertung anhand des `username`-Claims aus dem JWT (siehe auth/jwt.ts) -
- * gemeinsame Hilfsfunktion statt der zuvor in Raster-, Einzelbild- und Vergleichsansicht
- * dreifach fast identisch dupliziert vorhandenen Logik (Architektur-Review-Fund).
+ * Ermittelt die eigene Bewertung anhand des `username`-Claims aus dem JWT (siehe auth/jwt.ts).
  */
 export function findOwnRating(
   ratings: RatingOut[],
@@ -17,8 +15,8 @@ export function findOwnRating(
 
 /**
  * Die eigene ALBUMENTSCHEIDUNG - `null` auch dann, wenn eine eigene Zeile existiert, die
- * ausschließlich das Favoriten-Kennzeichen trägt. Seit ADR 0098 ist das Vorhandensein der Zeile
- * keine Aussage mehr über den Bewertungsstand.
+ * ausschließlich das Favoriten-Kennzeichen trägt. Das Vorhandensein der Zeile ist keine Aussage
+ * über den Bewertungsstand.
  */
 export function ownRatingStatus(
   ratings: RatingOut[],
@@ -30,7 +28,7 @@ export function ownRatingStatus(
 /**
  * Das EIGENE Favoriten-Kennzeichen.
  *
- * SICHERHEIT (Auflage S6): ausschließlich über `findOwnRating` (Abgleich über den
+ * SICHERHEIT: ausschließlich über `findOwnRating` (Abgleich über den
  * `username`-Claim). Eine Zweitableitung wie `ratings.some(r => r.favorite)` oder "erster
  * Eintrag in `ratings[]`" stellte die Auszeichnung der anderen Person als die eigene dar - das
  * neue Feld lädt dazu ein, weil es für sich allein aussagekräftig aussieht.

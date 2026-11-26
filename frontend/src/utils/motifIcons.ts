@@ -2,7 +2,7 @@ import type { MotifKey } from '../api/types'
 import type { IconName } from '../components/ui/icon'
 
 /**
- * Motivschluessel -> Symbolname des Board-Satzes (ADR 0113 Punkt 3).
+ * Motivschluessel -> Symbolname des Board-Satzes.
  *
  * Die Zuordnung lebt im FRONTEND, nicht als Feld an `MotifOut`: Ein Symbolname ist eine
  * Eigenschaft des ausgelieferten Symbolsatzes, dessen Bestand das Backend nicht kennt. Die Zusage
@@ -24,7 +24,7 @@ const ICON_BY_MOTIF = new Map<string, IconName>([
   ['detail_stimmung', 'sparkles'],
 ])
 
-/** Neutrales Ersatzsymbol: Ein Altwert aus der Laufhistorie zerreisst die Reihe nicht (AK5). */
+/** Neutrales Ersatzsymbol: Ein Altwert aus der Laufhistorie zerreisst die Reihe nicht. */
 const FALLBACK_ICON: IconName = 'tag'
 
 export function motifIconName(motifKey: MotifKey): IconName {

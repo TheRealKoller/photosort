@@ -9,7 +9,7 @@ import { listMotifs } from '../api/motifs'
  * Server-Deployment, nicht zur Laufzeit - ein Refetch beim Fenster-Fokus oder beim Mount einer
  * zweiten Komponente waere reine Netzlast. Geraeumt wird der Eintrag ausschliesslich ueber
  * `queryClient.clear()` an den beiden Sitzungsende-Punkten (Abmelden und 401), die den gesamten
- * Cache leeren (specs/features/0561) - eine reine Garbage Collection wuerde diesen
+ * Cache leeren - eine reine Garbage Collection wuerde diesen
  * unvergaenglichen Eintrag nie entfernen.
  *
  * Mehrere gleichzeitige Konsumenten teilen sich denselben Cache-Eintrag (`queryKey`) und loesen

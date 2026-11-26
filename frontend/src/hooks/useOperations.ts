@@ -10,7 +10,7 @@ import type { OperationKind } from '../api/types'
 import { POLL_INTERVAL_MS } from './useProjects'
 
 /**
- * Die Vorgaenge des Projekts (Spec 0641). Sie traegt die Projektleiste UND den Dialog - beide
+ * Die Vorgaenge des Projekts. Sie traegt die Projektleiste UND den Dialog - beide
  * brauchen dieselbe, live gepollte Liste, deshalb eine gemeinsame Abfrage.
  *
  * Gepollt wird nur, solange die Liste nicht leer ist: ein Projekt ohne laufenden Vorgang kostet

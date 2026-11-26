@@ -12,7 +12,7 @@ export const CURATION_MIN_ROW_HEIGHT_PX = 200
 /** Eine volle Reihe darueber steht stattdessen wie die letzte (Zielhoehe, linksbuendig). */
 export const CURATION_MAX_ROW_HEIGHT_PX = 350
 
-/** Zwei 44px-Symbolknoepfe mit 12px Abstand - die schmalste Kachel, die beide noch traegt. */
+/** Die schmalste Kachel, die zwei Symbolknoepfe mit Abstand noch traegt. */
 export const ICON_HANDLES_WIDTH_PX = 100
 
 /**
@@ -23,9 +23,8 @@ export const ICON_HANDLES_WIDTH_PX = 100
 export const MIN_PLANNING_RATIO = ICON_HANDLES_WIDTH_PX / CURATION_MIN_ROW_HEIGHT_PX
 
 /**
- * Die Breite der vollen Knopfzeile je Kachelart: Symbol 14 + Abstand 4 + Wort (Inter 600, 12px)
- * + Polsterung 2 x 8, bei zwei Knoepfen plus 12 zwischen ihnen. Ist die Kachel schmaler, zeigen
- * ALLE ihre Knoepfe nur das Symbol.
+ * Die Breite der vollen Knopfzeile je Kachelart, aus Symbol, Abstand, Wort und Polsterung
+ * gerechnet. Ist die Kachel schmaler, zeigen ALLE ihre Knoepfe nur das Symbol.
  */
 export const HANDLES_FULL_WIDTH_PX = {
   draft: 208,

@@ -2,8 +2,8 @@
  * Zahlenformatierung der Projekt-Statistikseite. Reine Funktionen mit eigenen Unit-Tests - die
  * Seite selbst enthaelt keine Formatierungslogik.
  *
- * Durchgehend deutsches Zahlenformat (Dezimalkomma, Tausenderpunkt): die Anwendung hat genau zwei
- * deutschsprachige Nutzer, es gibt keine Lokalisierungsschicht und soll auch keine geben.
+ * Durchgehend deutsches Zahlenformat (Dezimalkomma, Tausenderpunkt): es gibt keine
+ * Lokalisierungsschicht und soll keine geben.
  */
 
 const DECIMAL_ONE = new Intl.NumberFormat('de-DE', {
@@ -69,7 +69,7 @@ export function formatUsd(amountUsd: number): string {
 }
 
 /**
- * Preis JE BILD für die Modellwahl (Spec 0383): mindestens vier, höchstens sechs
+ * Preis JE BILD für die Modellwahl: mindestens vier, höchstens sechs
  * Nachkommastellen („0,0052 USD je Bild"), damit Modelle mit Preisen unter einem Cent
  * unterscheidbar bleiben.
  *
@@ -107,8 +107,7 @@ export function formatUsdPerImage(priceUsdPerImage: number | null): string {
  * "0 %" - und "< 1 %" laese sich hier als Alarmzeichen statt als Rundungshinweis.
  *
  * Die Eingabe ist immer bereits auf [0, 1] normiert (Kriterienwerte aus criteria.py, Konfidenzen
- * am Parser-Rand geprueft), also nie negativ - `Math.round` rundet in diesem Bereich identisch zu
- * "kaufmaennisch" (0.5 aufwaerts).
+ * am Parser-Rand geprueft), also nie negativ.
  */
 export function formatCriterionPercent(value: number): string {
   return `${criterionPercentValue(value)}%`
@@ -184,9 +183,6 @@ export function formatTakenAtRange(earliest: string | null, latest: string | nul
 // "mistral") - geteilt zwischen der Klassifizierungs-Sektion, der Fortschrittsanzeige, der
 // Kostenschaetzung und der Grundlagenzeile der Motivstaerken. Fallback auf den rohen Wert fuer
 // einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
-//
-// Liegt seit Spec 0427 hier und nicht mehr in `categoryLabels.ts`: ein Anbietername ist keine
-// Kategorie, und jene Datei ist mit der Kategorie-Welt entfallen.
 const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   anthropic: 'Anthropic',
   mistral: 'Mistral',

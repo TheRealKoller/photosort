@@ -2,7 +2,7 @@ import type { OperationKind, OperationOut } from '../api/types'
 import { OPERATION_LABELS } from './stepActionTexts'
 
 /*
- * Spec 0641: Die Wortlaute des Abbruchs an EINER Stelle. Sie stehen im Knopf, in der Statuszeile,
+ * Die Wortlaute des Abbruchs an EINER Stelle. Sie stehen im Knopf, in der Statuszeile,
  * in der Projektleiste, im Dialog und im Fehlerfall; eine Seite, die ihren eigenen Satz tippt,
  * hiesse beim naechsten Wortlautwechsel nachziehen zu muessen.
  */
