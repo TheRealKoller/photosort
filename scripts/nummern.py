@@ -4,7 +4,7 @@
 Zwei Sitzungen, die gleichzeitig in eigenen Arbeitsstaenden arbeiten, vergeben sonst dieselbe
 Nummer: Die konkurrierende Vergabe liegt in einem Branch, der noch nirgends gepusht ist. Dieses
 Skript rechnet die Nummer so aus, dass **beide Seiten fuer sich dasselbe Ergebnis erhalten** -
-ohne Nachricht, ohne Sperre und ohne Wartepunkt (ADR 0108).
+ohne Nachricht, ohne Sperre und ohne Wartepunkt.
 
 **Die Rechnung.** Basis ist die hoechste auf `origin/main` vergebene Nummer des Verzeichnisses
 plus eins - nie der eigene Blick, sonst rechnet jede Seite mit einer anderen Basis. Kontrahenten
@@ -17,7 +17,7 @@ konnte, bekommt die naechste Nummer ab der Basis, die kein Kontrahent fuehrt (si
 **In CI sieht der nachbarlesende Teil nichts**, weil es dort weder einen zweiten Arbeitsbaum noch
 einen ungepushten Branch gibt. Eine gruene CI belegt die Fruehwarnung deshalb nicht.
 
-Sicherheitsauflagen, die still brechen, wenn sie fallen (Spec 0485, S1-S8):
+Sicherheitsauflagen, die still brechen, wenn sie fallen:
 
 * Jeder Branchname und jeder Pfad geht als Listenelement an `subprocess.run`, nie ueber eine
   Shell, und jeder Aufruf mit einem Branchnamen als Tree-ish uebergibt den voll qualifizierten
@@ -59,7 +59,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-# Exit-Codes wie in `merge-main-into-branch.sh`: 0 ist der einzige Ausgang ohne Handlungsbedarf.
+# Exit-Codes: 0 ist der einzige Ausgang ohne Handlungsbedarf.
 EXIT_OK = 0
 EXIT_KONTENTION = 10
 EXIT_DUBLETTE = 20
@@ -73,16 +73,14 @@ NUMMERNRAEUME: Mapping[str, str] = {
 }
 ABGELEHNTER_RAUM = "features"
 
-# Vierstellige Nummer, Trennstrich, nicht-leerer Rumpf, `.md` - dasselbe Muster, an dem
-# `test_dokumentnummern_eindeutig.py` die Eindeutigkeit misst.
+# Dasselbe Muster, an dem `test_dokumentnummern_eindeutig.py` die Eindeutigkeit misst.
 _DOKUMENTNAME = re.compile(r"^(?P<nummer>\d{4})-.+\.md$")
 
 # Die Form, in der der Zeilenparser von `backend/tests/test_migration_chain.py` die Kennung
 # sieht. Faellt sie, sieht das bestehende Sicherheitsnetz die neuen Kennungen still nicht mehr.
 KENNUNGSFORM = re.compile(r"[0-9a-f]{12}")
 
-# Kleinbuchstaben, Ziffern, einfache Bindestriche, kein fuehrender/abschliessender Strich. Der
-# Slug ist der einzige frei gewaehlte Wert, der von aussen in einen Dateinamen laeuft: kein
+# Der Slug ist der einzige frei gewaehlte Wert, der von aussen in einen Dateinamen laeuft: kein
 # Pfadtrenner, kein `..`, kein fuehrender Bindestrich.
 SLUGFORM = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SLUG_HOECHSTLAENGE = 60
@@ -173,20 +171,13 @@ def zuteilung_je_kontrahent(
     """Reine Funktion: die vollstaendige Zuteilung ueber der Kontrahentenmenge, in zwei Gaengen.
 
     **Erster Gang, in Rangfolge:** Jeder Kontrahent behaelt seine niedrigste sichtbar gefuehrte
-    Nummer, sofern eine rangniedrigere Seite sie nicht schon beansprucht hat. Das ist der Fall
-    aus ADR 0108 Punkt 4: Fuehren zwei Seiten dieselbe Nummer, behaelt sie die rangniedrigere.
+    Nummer, sofern eine rangniedrigere Seite sie nicht schon beansprucht hat. Fuehren zwei Seiten
+    dieselbe Nummer, behaelt sie die rangniedrigere.
 
     **Zweiter Gang, wieder in Rangfolge:** Wer nichts behalten konnte - weil er noch keine Datei
     angelegt hat oder weil eine rangniedrigere Seite seine Nummer hielt -, bekommt die naechste
     Nummer ab der Basis, die **kein** Kontrahent fuehrt und die in diesem Lauf noch niemand
     bekommen hat.
-
-    **Gezaehlt wird nicht.** Eine Rechnung, die nur die Anzahl der von rangniedrigeren
-    Kontrahenten gefuehrten Nummern auf die Basis addiert, ist ausschliesslich dann
-    kollisionsfrei, wenn diese Nummern lueckenlos ab der Basis liegen. Eine Luecke entsteht ohne
-    jede Handvergabe: Ein Branch ohne Arbeitsbaum und ohne `origin`-Gegenstueck ist nach Punkt 1
-    kein Kontrahent mehr, und wer die Basisnummer fuehrte, hinterlaesst beim Verschwinden genau
-    diese Luecke. Ab da teilte die Zaehlung Nummern zu, die andere Branches bereits fuehren.
 
     Die Zuteilung haengt nur an der Kontrahentenmenge, nicht daran, wer fragt: Jede Seite
     errechnet dieselbe Abbildung, ohne Nachricht und ohne Wartepunkt.
@@ -278,8 +269,8 @@ def gepruefter_slug(slug: str) -> str:
 ZEITGRENZE_SEKUNDEN = 60
 
 # Der zweite Eingabekanal. Mit gesetztem GIT_DIR/GIT_WORK_TREE lasen sowohl `git ls-tree` als
-# auch `git worktree list --porcelain` gemessen ein **fremdes** Repositorium - die Basis kaeme
-# still aus dem falschen Nummernraum.
+# auch `git worktree list --porcelain` ein **fremdes** Repositorium - die Basis kaeme still aus
+# dem falschen Nummernraum.
 UMGEBUNG_ENTFERNT: tuple[str, ...] = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -469,12 +460,7 @@ def nummern_im_index(wurzel: Path, verzeichnis: str) -> Ablesung:
 
 
 def nummern_im_verzeichnis(pfad: Path) -> Ablesung:
-    """Eine Verzeichnisebene eines Arbeitsbaums - nur Dateinamen, nie Dateiinhalte.
-
-    Derselbe Namensfilter wie beim Blick auf den eigenen Arbeitsbaum. Wendete die
-    Nachbarauflistung einen anderen an, zaehlten zwei Seiten dieselbe Datei verschieden, und
-    jede darauf gebaute Determinismus-Zusage waere still falsch.
-    """
+    """Eine Verzeichnisebene eines Arbeitsbaums - nur Dateinamen, nie Dateiinhalte."""
     if not pfad.is_dir():
         return Ablesung(frozenset(), 0, 0)
     return nummern_aus_namen(
