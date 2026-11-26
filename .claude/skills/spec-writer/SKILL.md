@@ -9,7 +9,7 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen — gezählt wie in `CLAUDE.md` festgelegt in Zeilen zu höchstens 100 Zeichen, denen diese Datei nicht folgt —, weil vier Konsultationen mit je eigener Skip-Frage und der gesamte Branch-Ablauf in einem Skill stehen.
 
-Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 0). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum; rein lokales `git` bleibt davon unberührt.
+Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade an deinem ersten GitHub-Berührungspunkt (Schritt 0) seine `SKILL.md` über das Skill-Werkzeug und vor jeder Operation deren Datei `operationen/<ID>.md` — nur die Operationen, die dein Lauf ausführt. Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum; rein lokales `git` bleibt davon unberührt.
 
 Die fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung, Devil's Advocate) ist an dieser Stelle bereits über `refinement` abgeschlossen — dieser Skill setzt direkt bei einer bestätigten Story an und beantwortet ausschließlich noch die Frage "wie bauen wir das technisch?".
 

@@ -1,8 +1,9 @@
 """Haelt fest, dass der Bereichsvorrat eines Issues an genau einer Stelle steht.
 
 Seit ADR 0085 ist der Bereich eines Issues ein GitHub-Label mit dem Praefix `bereich:`. Der
-Vorrat ist eine **geschlossene** Menge und steht als Literal in einer Zeile fester Form im
-Operationskatalog (`.claude/skills/github-access/SKILL.md`); Ablauf-Skills nennen ausschliesslich
+Vorrat ist eine **geschlossene** Menge und steht als Literal in einer Zeile fester Form in der
+Operationsdatei (`.claude/skills/github-access/operationen/issue-bereich-setzen.md`); Ablauf-Skills
+nennen ausschliesslich
 die Operations-ID, nie einen der Werte. Vier Zusicherungen tragen das:
 
 * **(a)** Genau **eine** Zeile fester Form traegt den Vorrat, verglichen gegen eine eingefrorene
@@ -68,7 +69,7 @@ import pytest
 REPO_WURZEL = Path(__file__).parents[2]
 
 # Der eine erlaubte Ort. Jede andere Datei des Suchraums ist wertfrei.
-KATALOG = ".claude/skills/github-access/SKILL.md"
+KATALOG = ".claude/skills/github-access/operationen/issue-bereich-setzen.md"
 CAPTURE = ".claude/skills/capture/SKILL.md"
 
 BEREICH_OPERATION = "issue-bereich-setzen"
@@ -147,7 +148,7 @@ _VORRAT_ZEILE = re.compile(
 _VORRATS_WERT = re.compile(r"(?<![\w-])bereich:[a-z][a-z0-9-]*")
 _FREMDER_WERT = re.compile(r"(?<![\w-])bereich:[\w-]+")
 
-_EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
+_EINTRAG_KOPF = re.compile(r"^#{2,6} `(?P<id>[^`\n]+)`", re.MULTILINE)
 _ABSCHNITT = re.compile(r"^## ", re.MULTILINE)
 _LABEL_ARGUMENT = re.compile(r"--(?:add|remove)-label\s+(?P<wert>\S+)")
 # Eine Nachhol-Zeile hat im Katalog eine feste Form: Listenpunkt, Operations-ID in Backticks,

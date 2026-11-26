@@ -21,7 +21,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-KATALOG = ".claude/skills/github-access/SKILL.md"
+OPERATIONEN = ".claude/skills/github-access/operationen"
+ISSUE_ANLEGEN = f"{OPERATIONEN}/issue-anlegen.md"
+ISSUE_LESEN = f"{OPERATIONEN}/issue-lesen.md"
+ISSUE_LISTE_LESEN = f"{OPERATIONEN}/issue-liste-lesen.md"
+ISSUE_KOMMENTIEREN = f"{OPERATIONEN}/issue-kommentieren.md"
+ISSUE_VERWERFEN = f"{OPERATIONEN}/issue-verwerfen.md"
+PR_PRUEFSTAND_ABWARTEN = f"{OPERATIONEN}/pr-pruefstand-abwarten.md"
+PR_PRUEFSTAND_LESEN = f"{OPERATIONEN}/pr-pruefstand-lesen.md"
+BOARD_AUFNAHME = f"{OPERATIONEN}/board-aufnahme.md"
+BOARD_STATUS_SETZEN = f"{OPERATIONEN}/board-status-setzen.md"
+KATALOG_UEBERSICHT = ".claude/skills/github-access/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 SKILLER = ".claude/skills/skiller/SKILL.md"
 
@@ -70,48 +80,62 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="neue-operation-definiert",
         waechter="katalog",
-        datei=KATALOG,
-        alt="### `issue-verwerfen` — Issue ohne Umsetzung schließen",
+        datei=ISSUE_VERWERFEN,
+        alt="## `issue-verwerfen` — Issue ohne Umsetzung schließen",
         neu=(
-            "### `issue-verwerfen` — Issue ohne Umsetzung schließen\n"
+            "## `issue-verwerfen` — Issue ohne Umsetzung schließen\n"
             "\n"
-            "### `issue-archivieren` — ein Issue archivieren"
+            "## `issue-archivieren` — ein Issue archivieren"
         ),
         invariante="katalog-geschlossen",
     ),
     Mutation(
+        name="uebersicht-zeile-zeigt-auf-fremde-datei",
+        waechter="katalog",
+        datei=KATALOG_UEBERSICHT,
+        alt=(
+            "| `issue-anlegen` | ein Story-Issue anlegen | "
+            "[`operationen/issue-anlegen.md`](operationen/issue-anlegen.md) |"
+        ),
+        neu=(
+            "| `issue-anlegen` | ein Story-Issue anlegen | "
+            "[`operationen/issue-lesen.md`](operationen/issue-lesen.md) |"
+        ),
+        invariante="uebersicht-vollstaendig",
+    ),
+    Mutation(
         name="weg-ausserhalb-des-vokabulars",
         waechter="katalog",
-        datei=KATALOG,
-        alt="### `issue-anlegen` — ein Story-Issue anlegen\n\n**Wege:** `mcp`, `gh`",
-        neu="### `issue-anlegen` — ein Story-Issue anlegen\n\n**Wege:** `mcp`, `ssh`",
+        datei=ISSUE_ANLEGEN,
+        alt="## `issue-anlegen` — ein Story-Issue anlegen\n\n**Wege:** `mcp`, `gh`",
+        neu="## `issue-anlegen` — ein Story-Issue anlegen\n\n**Wege:** `mcp`, `ssh`",
         invariante="wege-geschlossen",
     ),
     Mutation(
         name="weg-ohne-beleg",
         waechter="katalog",
-        datei=KATALOG,
-        alt="### `pr-pruefstand-lesen` — den Stand der Checks einmal lesen\n\n**Wege:** `gh`",
-        neu="### `pr-pruefstand-lesen` — den Stand der Checks einmal lesen\n\n**Wege:** `mcp`, `gh`",
+        datei=PR_PRUEFSTAND_LESEN,
+        alt="## `pr-pruefstand-lesen` — den Stand der Checks einmal lesen\n\n**Wege:** `gh`",
+        neu="## `pr-pruefstand-lesen` — den Stand der Checks einmal lesen\n\n**Wege:** `mcp`, `gh`",
         invariante="wege-belegt",
     ),
     Mutation(
         name="board-weg-mit-mcp",
         waechter="katalog",
-        datei=KATALOG,
-        alt="### `board-aufnahme` — ein Issue ins Projekt aufnehmen\n\n**Wege:** `gh`",
-        neu="### `board-aufnahme` — ein Issue ins Projekt aufnehmen\n\n**Wege:** `gh`, `mcp`",
+        datei=BOARD_AUFNAHME,
+        alt="## `board-aufnahme` — ein Issue ins Projekt aufnehmen\n\n**Wege:** `gh`",
+        neu="## `board-aufnahme` — ein Issue ins Projekt aufnehmen\n\n**Wege:** `gh`, `mcp`",
         invariante="wege-board",
     ),
     Mutation(
         name="ziel-nicht-als-literal",
         waechter="katalog",
-        datei=KATALOG,
-        alt="### `issue-verwerfen` — Issue ohne Umsetzung schließen",
+        datei=ISSUE_VERWERFEN,
+        alt="## `issue-verwerfen` — Issue ohne Umsetzung schließen",
         neu=(
-            "### `issue-verwerfen` — Issue ohne Umsetzung schließen\n"
+            "## `issue-verwerfen` — Issue ohne Umsetzung schließen\n"
             "\n"
-            "### `issue-archivieren` — ein Issue archivieren\n"
+            "## `issue-archivieren` — ein Issue archivieren\n"
             "\n"
             "**Wege:** `mcp`, `gh`\n"
             "**Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `fotos`"
@@ -121,7 +145,7 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="feld-zuviel-in-der-grenze",
         waechter="katalog",
-        datei=KATALOG,
+        datei=ISSUE_LISTE_LESEN,
         alt="**Auswertungsgrenze:** `number`, `labels`, `state`, `author` — und nichts sonst.",
         neu=(
             "**Auswertungsgrenze:** `number`, `labels`, `state`, `author`, `title` — und nichts "
@@ -174,7 +198,7 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="kommentarfeld-in-der-grenze",
         waechter="katalog",
-        datei=KATALOG,
+        datei=ISSUE_LESEN,
         alt="**Auswertungsgrenze:** `body`, `title`, `labels`, `state`, `author` — und nichts sonst.",
         neu=(
             "**Auswertungsgrenze:** `body`, `title`, `labels`, `state`, `author`, `comments` — "
@@ -353,7 +377,7 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="inline-freitext-statt-datei",
         waechter="befehle",
-        datei=KATALOG,
+        datei=ISSUE_ANLEGEN,
         alt=(
             'gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" '
             "--body-file <body-datei> <label-schalter>"
@@ -367,7 +391,7 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="fremdes-ziel",
         waechter="befehle",
-        datei=KATALOG,
+        datei=ISSUE_KOMMENTIEREN,
         alt="gh issue comment <NNN> --repo TheRealKoller/photosort --body-file <pfad>",
         neu="gh issue comment <NNN> --repo Fremder/photosort --body-file <pfad>",
         invariante="ziel-geschlossen",
@@ -383,15 +407,15 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="board-wert-nicht-in-der-optionsmenge",
         waechter="board",
-        datei=KATALOG,
-        alt='--field "Status" --value "Ready"',
-        neu='--field "Status" --value "In progress"',
+        datei=BOARD_STATUS_SETZEN,
+        alt='--field "Status" --value "<Wert>"\n```',
+        neu='--field "Status" --value "In progress"\n```',
         invariante="board-werte",
     ),
     Mutation(
         name="wartepunkt-ohne-zeitgrenze",
         waechter="warten",
-        datei=KATALOG,
+        datei=PR_PRUEFSTAND_ABWARTEN,
         alt="timeout 540 gh pr checks <MMM>",
         neu="gh pr checks <MMM>",
         invariante="pruefstand-blockierend",
@@ -407,7 +431,7 @@ MUTATIONEN: tuple[Mutation, ...] = (
     Mutation(
         name="grenze-nicht-leer",
         waechter="katalog",
-        datei=KATALOG,
+        datei=PR_PRUEFSTAND_ABWARTEN,
         alt=(
             "**Auswertungsgrenze:** keine Felder — ausgewertet wird ausschließlich der "
             "Ergebniswert aus der"
@@ -439,7 +463,7 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
         waechter="katalog",
         aenderungen=(
             (
-                KATALOG,
+                BOARD_AUFNAHME,
                 "**Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation "
                 "an —\ngemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und "
                 "im\nWerkzeugkasten liegt nichts, was diese Operation ausführen könnte.\n"
@@ -501,13 +525,9 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
         waechter="board",
         aenderungen=(
             (
-                KATALOG,
-                "- `board-status-setzen`: `gh project item-edit 8 --owner TheRealKoller --url "
-                'https://github.com/TheRealKoller/photosort/issues/318 --field "Status" '
-                '--value "Ready"`',
-                "- `board-status-setzen`: `gh project item-edit 8 --owner TheRealKoller --url "
-                "https://github.com/TheRealKoller/photosort/issues/318 --field Status "
-                "--value Ready`",
+                BOARD_STATUS_SETZEN,
+                '--field "Status" --value "<Wert>"\n```',
+                "--field Status --value <Wert>\n```",
             ),
         ),
     ),
@@ -516,7 +536,7 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
         waechter="warten",
         aenderungen=(
             (
-                KATALOG,
+                PR_PRUEFSTAND_ABWARTEN,
                 "timeout 540 gh pr checks <MMM> --repo TheRealKoller/photosort --watch "
                 "--fail-fast --interval 30 >/dev/null 2>&1",
                 "timeout 300 gh pr checks <MMM> --repo TheRealKoller/photosort --watch "

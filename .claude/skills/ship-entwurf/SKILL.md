@@ -12,10 +12,10 @@ committet, was der Lauf im Repository verändert hat, gleicht mit `main` ab, pus
 einen Pull Request. Er fasst die Penpot-Datei nicht an, er löscht nichts, und er beurteilt keinen
 Entwurf — beurteilt wird ein Entwurf durch Hinsehen.
 
-**Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade ihn einmal
-über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (das ist Schritt 6), und arbeite
-danach für den Rest des Laufs mit dem geladenen Katalog. Dieser Skill hier nennt ausschließlich
-Operations-IDs und die Ablauf-Logik drumherum — wann eine Operation läuft, unter welcher
+**Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade an deinem
+ersten GitHub-Berührungspunkt (das ist Schritt 6) seine `SKILL.md` über das Skill-Werkzeug und vor
+jeder Operation deren Datei `operationen/<ID>.md` — nur die Operationen, die dein Lauf ausführt.
+Dieser Skill hier nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum — wann eine Operation läuft, unter welcher
 Bedingung, wie ihr Ergebnis ausgewertet wird. Rein lokales `git` ist davon unberührt und steht
 weiterhin hier.
 

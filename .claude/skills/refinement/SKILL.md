@@ -9,7 +9,7 @@ description: 'Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer St
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Fragerunden, das Lohnenswert-Gate, die Entwurfsrunden und die Issue-Schreibregeln hier vollständig stehen.
 
-Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 0). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
+Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade an deinem ersten GitHub-Berührungspunkt (Schritt 0) seine `SKILL.md` über das Skill-Werkzeug und vor jeder Operation deren Datei `operationen/<ID>.md` — nur die Operationen, die dein Lauf ausführt. Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 
 Eine Idee wird erst dann als `Ready` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `spec-writer`.
 

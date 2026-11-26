@@ -5,6 +5,7 @@
 **Bezug:** GitHub-Issue [`#339`](https://github.com/TheRealKoller/photosort/issues/339), zugehörige Feature-Spec `specs/features/0339-*.md`, `architect`-Konsultation für Story #339 am 2026-09-06 (Messungen desselben Tages, siehe Kontext).
 
 **Teilweise abgelöst:** Abschnitt 8 (Prüfform des Katalogs) — die Prüfungen des Katalogs sind seit [ADR 0148](./0148-der-rote-waechtertest-traegt-eine-aussage-oder-eine-form.md) reine Funktionen `Bestand → Befunde` mit deklarierten Invarianten; Satz- und Markerwortlaute entfallen, die Aussagen bleiben.
+**Teilweise abgelöst:** Abschnitt 1, Satz „Ein Ablauf-Skill lädt `github-access` **einmal** … und arbeitet danach für den Rest seines Laufs mit dem geladenen Katalog." — seit [ADR 0152](./0152-operationskatalog-uebersicht-und-eine-datei-je-operation.md) wird nur noch `SKILL.md` einmal geladen; die Einzelheiten einer Operation liest der Lauf erst, wenn er sie ausführt. Der Ort bleibt derselbe Skill.
 
 **Löst ab (jeweils benannt, nicht stillschweigend übergangen):**
 

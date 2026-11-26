@@ -159,10 +159,11 @@ vielen Stellen auf GitHub zu. Seit
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür kein
 eigenes Werkzeug mehr, und seit
 [ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
-steht jeder dieser Zugriffe an **genau einer Stelle**: dem Operationskatalog
-`.claude/skills/github-access/SKILL.md`. Jede Operation dort nennt ihre **Zugangswege in fester
-Reihenfolge**, und es gibt zwei davon — die GitHub-MCP-Werkzeuge einer Session (`mcp`) und die
-CLI `gh`.
+steht jeder dieser Zugriffe an **genau einer Stelle**: dem Skill
+`.claude/skills/github-access/`. Seine `SKILL.md` trägt Übersicht, Wegleiter und gemeinsame
+Regeln; die Einzelheiten jeder Operation liegen unter `operationen/<ID>.md`. Jede Operation nennt
+ihre **Zugangswege in fester Reihenfolge**, und es gibt zwei davon — die GitHub-MCP-Werkzeuge
+einer Session (`mcp`) und die CLI `gh`.
 
 Für `gh` heißt das zweierlei: Für die vier **Board**-Operationen ist es der einzige Weg und damit
 unverzichtbar; für die Issue- und Pull-Request-Operationen ist es der zweite Weg, der greift,

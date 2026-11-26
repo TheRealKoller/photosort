@@ -7,7 +7,7 @@ description: Hält eine neue Idee oder einen (vermeintlichen) Bug schnell und un
 
 **GitHub-Erlaubnisstufe:** schreibend
 
-Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 2). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
+Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade an deinem ersten GitHub-Berührungspunkt (Schritt 2) seine `SKILL.md` über das Skill-Werkzeug und vor jeder Operation deren Datei `operationen/<ID>.md` — nur die Operationen, die dein Lauf ausführt. Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 
 Der Sinn dieses Skills ist Geschwindigkeit: eine Idee oder ein (vermeintlicher) Bug wird roh festgehalten, ohne sie im selben Moment zu bewerten, zu hinterfragen oder auszuarbeiten — das übernimmt später `refinement`. Stell deshalb **keine** inhaltlichen Rückfragen zur Sache selbst (kein "warum", kein "für wen", keine Recherche im Code oder in `specs/`) — nur die technischen Minimal-Angaben unten, falls sie nicht eindeutig aus dem Gesagten hervorgehen.
 

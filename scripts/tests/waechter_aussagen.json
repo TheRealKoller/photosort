@@ -7,6 +7,11 @@
     },
     {
       "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "uebersicht-vollstaendig",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
       "invariante": "wege-geschlossen",
       "klasse": "B"
     },

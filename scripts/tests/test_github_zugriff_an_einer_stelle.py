@@ -159,6 +159,15 @@ ABSCHNITTS_ZITAT = re.compile(r"(?:Abschnitt|unter)\s+[„\"](?P<titel>[^„\"�
 
 DEFINITION = re.compile(r"^(?P<ebene>#{2,6})[ \t]+`(?P<id>[a-z][a-z0-9-]*)`")
 
+# Der Ablauf findet eine Operation über die Übersicht in `SKILL.md`; die Zeile nennt Kennung,
+# Zweck und die Datei, die ihre Einzelheiten trägt.
+KATALOG_UEBERSICHT = ".claude/skills/github-access/SKILL.md"
+UEBERSICHTSZEILE = re.compile(
+    r"^\| `(?P<id>[a-z][a-z0-9-]*)` \|[^\n]*\| "
+    r"\[`operationen/(?P<datei>[a-z0-9-]+)\.md`\]\(operationen/[a-z0-9-]+\.md\)",
+    re.MULTILINE,
+)
+
 # Die benannte Ausnahme: die einzige Operation, die Fremdtext aus Kommentaren liest.
 KOMMENTAR_AUSNAHME = "pr-reviewkommentare-lesen"
 # Der Antwort-Endpunkt fuehrt bauartbedingt durch `/comments` - er schreibt in einen bestehenden
@@ -172,6 +181,11 @@ INVARIANTEN = (
         "katalog-geschlossen",
         "Die definierten IDs sind genau die erwarteten 21 - keine fehlt, keine kommt dazu, keine "
         "doppelt.",
+    ),
+    Invariante(
+        "uebersicht-vollstaendig",
+        "Die Übersicht in `SKILL.md` nennt jede definierte Operation und verweist auf genau ihre "
+        "Datei; keine Zeile zeigt auf eine nicht definierte oder fremde Operation.",
     ),
     Invariante("wege-geschlossen", "Je Operation 1..n Wege aus {mcp, gh}, ohne Dopplung."),
     Invariante(
@@ -197,8 +211,8 @@ INVARIANTEN = (
     Invariante("id-verwendung", "Jede verwendete Operations-ID ist definiert."),
     Invariante(
         "zugriff-nur-im-katalog",
-        "Kein `gh`-Befehl und kein `mcp__github__`-Name außerhalb einer Datei, die mindestens "
-        "eine Operation definiert.",
+        "Kein `gh`-Befehl und kein `mcp__github__`-Name außerhalb des Katalogs - des Skills "
+        "`github-access` samt seinen Operationsdateien.",
     ),
     Invariante("messbegriffe", "Kein enumerierter Messbegriff im Anweisungsraum."),
     Invariante(
@@ -277,9 +291,17 @@ def _ist_skill_oder_agent(datei: str) -> bool:
     return datei.endswith("/SKILL.md") or datei.startswith(".claude/agents/")
 
 
+KATALOG_SKILL = ".claude/skills/github-access"
+
+
 def katalogdateien(stellen: list[Eintrag]) -> set[str]:
-    """Die Dateien, die mindestens eine Operation definieren - die einzigen zugriffsberechtigten."""
+    """Die Dateien, die mindestens eine Operation definieren."""
     return {eintrag.datei for eintrag in stellen}
+
+
+def _ist_im_katalog(datei: str) -> bool:
+    """Jede Datei des Katalogs - Übersicht wie Operationsdatei - darf GitHub-Aufrufe führen."""
+    return datei == KATALOG_SKILL or datei.startswith(f"{KATALOG_SKILL}/")
 
 
 def _katalognamen(dateien: set[str]) -> set[str]:
@@ -287,7 +309,8 @@ def _katalognamen(dateien: set[str]) -> set[str]:
 
     Der ganze Pfad und ein eindeutiger Dateiname zählen immer; der Verzeichnisname nur, solange er
     nicht generisch ist (`docs`). Sonst träfe jeder Satz, der irgendeine Datei unter `docs/` nennt,
-    ein Zitat, das gar nicht auf den Katalog zeigt.
+    ein Zitat, das gar nicht auf den Katalog zeigt. Der Skillname `github-access` zählt immer,
+    auch wenn viele Dateien darunter liegen - andere Dateien nennen den Katalog so.
     """
     namen = set(dateien)
     dateinamen: dict[str, list[str]] = {}
@@ -297,6 +320,8 @@ def _katalognamen(dateien: set[str]) -> set[str]:
         dateinamen.setdefault(teile[-1], []).append(datei)
         if len(teile) > 1:
             verzeichnisse.setdefault(teile[-2], []).append(datei)
+        if len(teile) > 2 and teile[:2] == [".claude", "skills"]:
+            namen.add(teile[2])
     namen.update(name for name, pfade in dateinamen.items() if len(pfade) == 1)
     namen.update(
         name
@@ -348,12 +373,13 @@ def pruefe(bestand: Bestand) -> list[Befund]:
         ]
     befunde: list[Befund] = []
     befunde.extend(_katalog_geschlossen(stellen, katalog))
+    befunde.extend(_uebersicht(bestand, stellen))
     befunde.extend(_wege(stellen))
     befunde.extend(_ziel_literal(stellen))
     befunde.extend(_lesende_grenze(stellen))
     befunde.extend(_verweis_abschnitt(bestand, katalog))
     befunde.extend(_id_verwendung(bestand, {eintrag.id for eintrag in stellen}))
-    befunde.extend(_zugriff_nur_im_katalog(bestand, katalog))
+    befunde.extend(_zugriff_nur_im_katalog(bestand))
     befunde.extend(_messbegriffe(bestand))
     befunde.extend(_erlaubnisstufen(bestand))
     befunde.extend(_kommentar_pfad(stellen))
@@ -388,6 +414,58 @@ def _katalog_geschlossen(stellen: list[Eintrag], katalog: set[str]) -> list[Befu
                 f"Operation `{doppelt}` ist {len(orte)}-mal definiert ({', '.join(orte)}).",
             )
         )
+    return befunde
+
+
+def _uebersicht(bestand: Bestand, stellen: list[Eintrag]) -> list[Befund]:
+    """Jede Operation aus der Übersicht auffindbar - und die Übersicht ohne tote Zeile."""
+    if KATALOG_UEBERSICHT not in bestand:
+        return [
+            befund(
+                KATALOG_UEBERSICHT,
+                1,
+                "uebersicht-vollstaendig",
+                "Übersicht fehlt - keine Operation waere auffindbar.",
+            )
+        ]
+    befunde: list[Befund] = []
+    zeilen: list[tuple[int, str, str]] = []
+    for nummer, zeile in enumerate(bestand[KATALOG_UEBERSICHT].split("\n"), start=1):
+        treffer = UEBERSICHTSZEILE.match(zeile)
+        if treffer:
+            datei = f"{KATALOG_SKILL}/operationen/{treffer.group('datei')}.md"
+            zeilen.append((nummer, treffer.group("id"), datei))
+    for nummer, ident, datei in zeilen:
+        eintrag = next((stelle for stelle in stellen if stelle.id == ident), None)
+        if eintrag is None:
+            befunde.append(
+                befund(
+                    KATALOG_UEBERSICHT,
+                    nummer,
+                    "uebersicht-vollstaendig",
+                    f"`{ident}` ist in der Übersicht, aber nirgends definiert.",
+                )
+            )
+        elif eintrag.datei != datei:
+            befunde.append(
+                befund(
+                    KATALOG_UEBERSICHT,
+                    nummer,
+                    "uebersicht-vollstaendig",
+                    f"`{ident}` verweist auf {datei}, definiert ist sie in {eintrag.datei}.",
+                )
+            )
+    genannt = {ident for _, ident, _ in zeilen}
+    for eintrag in stellen:
+        if eintrag.id not in genannt:
+            befunde.append(
+                befund(
+                    KATALOG_UEBERSICHT,
+                    1,
+                    "uebersicht-vollstaendig",
+                    f"`{eintrag.id}` fehlt in der Übersicht.",
+                )
+            )
     return befunde
 
 
@@ -593,10 +671,10 @@ def _id_verwendung(bestand: Bestand, definiert: set[str]) -> list[Befund]:
     return befunde
 
 
-def _zugriff_nur_im_katalog(bestand: Bestand, katalog: set[str]) -> list[Befund]:
+def _zugriff_nur_im_katalog(bestand: Bestand) -> list[Befund]:
     befunde: list[Befund] = []
     for datei in sorted(bestand):
-        if not _im_anweisungsraum(datei) or datei in katalog:
+        if not _im_anweisungsraum(datei) or _ist_im_katalog(datei):
             continue
         for nummer, zeile in enumerate(bestand[datei].split("\n"), start=1):
             if GH_IRGENDWO.search(zeile):
