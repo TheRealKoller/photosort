@@ -1,6 +1,6 @@
 # 0649 - Code-Kommentare tragen die Zusicherung, nicht die Entstehungsgeschichte
 
-**Status:** Accepted
+**Status:** Implemented ([PR #670](https://github.com/TheRealKoller/photosort/pull/670))
 **Erstellt:** 2026-11-26
 **Bezug:** [Issue #649](https://github.com/TheRealKoller/photosort/issues/649)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Spec acht Pull Requests trägt und
