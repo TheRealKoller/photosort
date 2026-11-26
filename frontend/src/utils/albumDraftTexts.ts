@@ -29,3 +29,6 @@ export const SETTINGS_LINK_LABEL = 'Zu den Projekteinstellungen'
 export const DRAFT_EYE_DISABLED_TEXT =
   'Eye ist in dieser Installation abgeschaltet — ohne Eye-Lauf entsteht kein Album-Entwurf. Die ' +
   'Kategorisierung stellst du in den Projekteinstellungen um.'
+
+/** Titel des Hinweises nach einem Tausch („Gestrichen" kommt aus der Begriffsquelle). */
+export const EXCHANGED_TITLE = 'Getauscht'

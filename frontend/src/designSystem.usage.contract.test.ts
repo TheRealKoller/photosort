@@ -115,6 +115,7 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     'src/components/DraftAlternativesBand.tsx',
     'src/components/DraftEventSection.tsx',
     'src/components/CurationSkeletonList.tsx',
+    'src/components/AlbumDraftDay.tsx',
     'src/pages/AlbumDraftPage.tsx',
     'src/pages/AlbumSelectionPage.tsx',
   ]
