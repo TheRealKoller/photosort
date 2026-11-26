@@ -1,5 +1,4 @@
-"""DIE EINE Schreibstelle des Ereignis-Logs der Nacharbeit - und die Ladeabfragen der Diagnose
-(ADR 0100, Spec 0432).
+"""DIE EINE Schreibstelle des Ereignis-Logs der Nacharbeit - und die Ladeabfragen der Diagnose.
 
 Jedes `FeedbackEvent` dieses Projekts entsteht hier. Das ist keine Bequemlichkeit, sondern der
 Ort, an dem die FELDMATRIX JE `kind` gehalten wird: welches Feld eine Art pflichtig traegt und
@@ -13,15 +12,15 @@ also fuer immer, und die Diagnose zaehlt sie mit.
 
 WEDER `commit` NOCH `flush`: Die Transaktionsgrenze gehoert dem Aufrufer. Ein Ereignis gehoert in
 dieselbe Transaktion wie der Schreibvorgang, den es beschreibt - insbesondere beim Austausch, der
-zwei Bewertungszeilen und ein Ereignis atomar schreibt (S5).
+zwei Bewertungszeilen und ein Ereignis atomar schreibt.
 
 Dieses Modul liest und schreibt, hat also eine Session - die reine, DB-freie Auswertung des Logs
 lebt getrennt davon in `feedback.py` (Muster `quality.py`/`selection.py`/`album_selection.py`).
 
-KEINE LADEABFRAGE DER DIAGNOSE FILTERT NACH PROJEKT (D1). Der Gewichtssatz gilt global; zaehlten
-die Fallzahlen nur ein Projekt, stuenden sie neben einem Vorschlag, den sie nicht belegen. Der
-Preis - eine Zahl auf der Projektseite, die nicht dieses Projekt beschreibt - wird von der
-Beschriftung des Abschnitts ausgesprochen.
+KEINE LADEABFRAGE DER DIAGNOSE FILTERT NACH PROJEKT. Der Gewichtssatz gilt global; zaehlten die
+Fallzahlen nur ein Projekt, stuenden sie neben einem Vorschlag, den sie nicht belegen. Der Preis -
+eine Zahl auf der Projektseite, die nicht dieses Projekt beschreibt - wird von der Beschriftung
+des Abschnitts ausgesprochen.
 """
 
 from __future__ import annotations
@@ -59,9 +58,9 @@ from photosort.models import (
     ScanStatus,
 )
 
-# Das Gewicht eines Ereignisses aus der GEMEINSAMEN Endauswahl (ADR 0100 Punkt 5). Es ist der
-# Multiplikator dieses Ereignisses in der Ableitung, nie in der Anzeige: Die ausgewiesene Fallzahl
-# bleibt die ungewichtete Anzahl der Korrekturen.
+# Das Gewicht eines Ereignisses aus der GEMEINSAMEN Endauswahl. Es ist der Multiplikator dieses
+# Ereignisses in der Ableitung, nie in der Anzeige: Die ausgewiesene Fallzahl bleibt die
+# ungewichtete Anzahl der Korrekturen.
 #
 # STRIKT GROESSER ALS 1, und das ist die eigentliche Aussage: Eine gemeinsame Entscheidung ist das
 # Urteil beider Personen vor einem Geraet, ein Einzelhandgriff das einer. Bei einem Wert <= 1
@@ -75,7 +74,7 @@ FINAL_DECISION_WEIGHT = 2.0
 # Die Felder, die die Matrix unterscheidet. `project_id`, `photo_id`, `kind` und `weight` stehen
 # nicht darin: Sie traegt jede Art, ausnahmslos. Die eingefrorenen Zahlen `level`/`quality` und
 # der Laufbezug ebenfalls nicht - sie sind bei jeder Art erlaubt und bei keiner pflichtig, weil
-# ein Foto ohne Modellbewertung trotzdem ein Ereignis erzeugt (L4).
+# ein Foto ohne Modellbewertung trotzdem ein Ereignis erzeugt.
 _REQUIRED_FIELDS: dict[FeedbackEventKind, frozenset[str]] = {
     FeedbackEventKind.PHOTO_INCLUDED: frozenset({"user_id"}),
     FeedbackEventKind.PHOTO_REMOVED: frozenset({"user_id"}),
@@ -84,8 +83,8 @@ _REQUIRED_FIELDS: dict[FeedbackEventKind, frozenset[str]] = {
     FeedbackEventKind.MOTIF_ADDED: frozenset({"user_id", "motif_key"}),
     FeedbackEventKind.MOTIF_DROPPED: frozenset({"user_id", "motif_key"}),
     FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN: frozenset({"user_id", "motif_key"}),
-    # KEIN `user_id` (S9): Die gemeinsame Entscheidung gehoert dem Projekt. Ihr Schreibendpunkt
-    # nimmt aus genau diesem Grund kein `current_user` entgegen.
+    # KEIN `user_id`: Die gemeinsame Entscheidung gehoert dem Projekt. Ihr Schreibendpunkt nimmt
+    # aus genau diesem Grund kein `current_user` entgegen.
     FeedbackEventKind.FINAL_DECISION_IN: frozenset(),
     FeedbackEventKind.FINAL_DECISION_OUT: frozenset(),
 }
@@ -113,8 +112,8 @@ class FrozenContext:
     """Die EINGEFRORENE Entscheidungslage eines Fotos zum Zeitpunkt der Korrektur.
 
     Alle vier Werte sind nullbar und bedeuten dasselbe: "lag damals nicht vor". Ein Foto ohne
-    Modellbewertung, ein Projekt ohne erfolgreichen Lauf - beides erzeugt trotzdem ein Ereignis
-    (L4), es bildet in der Ableitung nur kein Paar.
+    Modellbewertung, ein Projekt ohne erfolgreichen Lauf - beides erzeugt trotzdem ein Ereignis,
+    es bildet in der Ableitung nur kein Paar.
 
     `frozen`, weil die Werte aus EINER Erhebung in die geschriebene Zeile gehen: Eine Zuweisung
     daran waere eine zweite, spaetere Momentaufnahme in derselben Zeile."""
@@ -129,9 +128,9 @@ async def _latest_successful_criterion_scoring_run(
     session: AsyncSession, project_id: int
 ) -> tuple[int, CategoryMethod] | None:
     """Id und eingefrorene Stufenquelle des juengsten erfolgreichen Laufs. Das Praedikat ist
-    bewusst identisch zu `api/photos/_reads.py::latest_successful_criterion_scoring_run_id` (dort steht
-    die ausfuehrliche Begruendung). Eine Import-Beziehung von diesem Modul in die API-Schicht liefe
-    der Abhaengigkeitsrichtung entgegen."""
+    bewusst identisch zu `api/photos/_reads.py::latest_successful_criterion_scoring_run_id`; eine
+    Import-Beziehung von diesem Modul in die API-Schicht liefe der Abhaengigkeitsrichtung
+    entgegen."""
     row = (
         await session.execute(
             select(CriterionScoringRun.id, CriterionScoringRun.album_level_source)
@@ -153,12 +152,12 @@ async def load_frozen_context(
 
     EINGEFROREN wird, was ein spaeterer Lauf UEBERSCHREIBT: die zaehlende Modellstufe und der
     Qualitaetswert (`PhotoRanking.rank_score` des damals juengsten erfolgreichen Laufs). Ohne das
-    Einfrieren haenge die Aussage des Ereignisses am heutigen Stand - und genau das schliesst die
-    Story aus.
+    Einfrieren haenge die Aussage des Ereignisses am heutigen Stand - und genau das schliesst
+    diese Zusage aus.
 
     Die Stufe stammt aus dem Verfahren, das an DIESEM Lauf eingefroren ist
-    (`album_level_source`, ADR 0144), sonst aus einem anderen als der eingefrorene `rank_score`.
-    Ohne erfolgreichen Lauf gilt `Project.category_method` - ueber eine eigene Abfrage, nicht ueber
+    (`album_level_source`), sonst aus einem anderen als der eingefrorene `rank_score`. Ohne
+    erfolgreichen Lauf gilt `Project.category_method` - ueber eine eigene Abfrage, nicht ueber
     ein Objekt (Begruendung unten).
 
     Die lokalen Kriterienwerte werden hier ausdruecklich NICHT gelesen: Sie sind eine
@@ -270,8 +269,8 @@ async def record_album_decision(
 ) -> FeedbackEvent:
     """Ein Handgriff am EIGENEN Album-Entwurf: aufgenommen, gestrichen, oder zurueckgenommen.
 
-    Der Aufrufer ruft NUR bei tatsaechlichem Statuswechsel hierher (ADR 0100 Punkt 4); das
-    Praedikat dafuer ist `api/ratings.py::album_decision_kind`."""
+    Der Aufrufer ruft NUR bei tatsaechlichem Statuswechsel hierher; das Praedikat dafuer ist
+    `api/ratings.py::album_decision_kind`."""
     return _append(
         session,
         kind=kind,
@@ -301,8 +300,8 @@ async def record_motif_correction(
     eine fruehere Korrektur desselben Paares, und die zweite Korrektur eines Motivs zeigte dann
     nie einen Modellfehler an.
 
-    `motif_key` stammt vom Aufrufer IMMER hinter der Pruefung gegen das geschlossene Motivset
-    (S11), nie aus dem rohen Pfadparameter davor."""
+    `motif_key` stammt vom Aufrufer IMMER hinter der Pruefung gegen das geschlossene Motivset,
+    nie aus dem rohen Pfadparameter davor."""
     return _append(
         session,
         kind=kind,
@@ -364,7 +363,7 @@ async def record_exchange(
 
     Anders als die uebrigen `record_*` nimmt diese Funktion keinen `FrozenContext` entgegen,
     sondern die Werte einzeln: Der Austausch-Endpunkt hat die beiden Rangzeilen bereits gelesen -
-    sie sind seine Projekt- und Event-Bindung (S2/S3) -, und ein zweiter Lesegang daneben koennte
+    sie sind seine Projekt- und Event-Bindung -, und ein zweiter Lesegang daneben koennte
     eine andere Lage sehen als die, gegen die gerade geprueft wurde.
 
     `criterion_scoring_run_id` und `event_id` sind hier PFLICHTIG und nicht nullbar: Ohne Lauf und
@@ -398,7 +397,7 @@ _FINAL_DECISION_KINDS = (
 
 @dataclass(frozen=True)
 class FeedbackDiagnosis:
-    """Die laufende Diagnose - AUSSCHLIESSLICH AGGREGATE (S8).
+    """Die laufende Diagnose - AUSSCHLIESSLICH AGGREGATE.
 
     Kein Einzelereignis, kein `user_id`, keine Foto-Id und keine Aufschluesselung je Nutzer
     verlaesst diesen Ladepfad; der Endpunkt darueber kann nur weglassen, was er hier bekommt. Das
@@ -409,8 +408,8 @@ class FeedbackDiagnosis:
     Fehlerzahlen.
 
     `latest_event_id` ist die hoechste `id` des GESAMTEN Logs und bei leerem Log `0` - das
-    Zustimmungs-Token, gegen das eine spaetere Uebernahme auf strikte Gleichheit geprueft wird
-    (S6). Es ist KEIN Objektverweis und wird nie zu einer Zeile aufgeloest."""
+    Zustimmungs-Token, gegen das eine spaetere Uebernahme auf strikte Gleichheit geprueft wird.
+    Es ist KEIN Objektverweis und wird nie zu einer Zeile aufgeloest."""
 
     correction_count: int
     motif_errors: Mapping[MotifErrorCase, int]
@@ -454,7 +453,7 @@ async def load_diagnosis(
     """Die Diagnose ueber das GESAMTE Log - ohne Projektfilter (siehe Modulkopf).
 
     `criterion_keys` wird uebergeben und nicht aus `quality.py` gelesen: Welcher Schluesselsatz
-    gilt, entscheidet der Aufrufer und nie der Bestand an Messwerten (G2).
+    gilt, entscheidet der Aufrufer und nie der Bestand an Messwerten.
 
     GEORDNET WIRD UEBER DIE AUFSTEIGENDE `id`, nie ueber `occurred_at`: Zwei Schreibvorgaenge
     derselben Sekunde sind ueber eine Zeit nicht zu ordnen. Fuer die Aggregate selbst ist die
@@ -517,7 +516,7 @@ async def load_diagnosis(
 
     # ZWEI PAARQUELLEN, und nur diese: gleichstufige Austausche und die gemeinsame Endauswahl.
     # Ein stufenuebergreifender Austausch zaehlt oben als Fall und bildet hier KEIN Paar - sonst
-    # vermischte sich die Aussage ueber die lokalen Kriterien mit der ueber das Modell (G5).
+    # vermischte sich die Aussage ueber die lokalen Kriterien mit der ueber das Modell.
     paired_exchanges = [
         row
         for row in exchange_rows
@@ -566,7 +565,7 @@ async def load_diagnosis(
 async def latest_event_id(session: AsyncSession) -> int:
     """Die hoechste `id` des GESAMTEN Logs, `0` bei leerem Log.
 
-    OHNE JEDEN FILTER - nicht nach Projekt, nicht nach Art (S6): Gegen ein gefiltertes Maximum
+    OHNE JEDEN FILTER - nicht nach Projekt, nicht nach Art: Gegen ein gefiltertes Maximum
     geprueft, gingen Ereignisse unbemerkt durch, und die uebernommene Fassung entstuende gegen
     eine Lage, die niemand gesehen hat.
 
