@@ -9,7 +9,7 @@ import type { FeedbackDiagnosisOut, FeedbackWeightPreview } from './types'
  * Projektsegment im Pfad wäre der Weg, auf dem sie stillschweigend wieder projektweise würden.
  */
 export function getFeedbackDiagnosis(): Promise<FeedbackDiagnosisOut> {
-  return apiFetch<FeedbackDiagnosisOut>('/feedback/diagnosis')
+  return apiFetch('/feedback/diagnosis')
 }
 
 /**
@@ -20,7 +20,7 @@ export function getFeedbackDiagnosis(): Promise<FeedbackDiagnosisOut> {
  * sind - in welchem Projekt auch immer.
  */
 export function adoptFeedbackWeights(basedOnEventId: number): Promise<FeedbackWeightPreview> {
-  return apiFetch<FeedbackWeightPreview>('/feedback/weights', {
+  return apiFetch('/feedback/weights', {
     method: 'POST',
     body: { based_on_event_id: basedOnEventId },
   })
@@ -34,7 +34,7 @@ export function adoptFeedbackWeights(basedOnEventId: number): Promise<FeedbackWe
  * erst die Rücknahme und dann deren Rücknahme an.
  */
 export function revertFeedbackWeights(revertsSetId: number): Promise<FeedbackWeightPreview> {
-  return apiFetch<FeedbackWeightPreview>('/feedback/weights/revert', {
+  return apiFetch('/feedback/weights/revert', {
     method: 'POST',
     body: { reverts_set_id: revertsSetId },
   })

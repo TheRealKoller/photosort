@@ -56,6 +56,7 @@ export function makePhoto(overrides: Partial<PhotoOut> = {}): PhotoOut {
     criterion_scores: [],
     fine_labels: [],
     cloud_vision_status: [],
+    motifs: [],
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,

@@ -279,18 +279,18 @@ export function caseSideValueText(
 ): string {
   switch (purpose) {
     case 'motifs':
-      if (side.motifs === null) {
+      if (side.motifs == null) {
         return NO_STATEMENT_TEXT
       }
       return side.motifs.length === 0
         ? NO_MOTIF_TEXT
         : side.motifs.map((key) => formatMotifKey(key, motifs)).join(', ')
     case 'motif_feature':
-      return side.present === null ? NO_STATEMENT_TEXT : yesNo(side.present)
+      return side.present == null ? NO_STATEMENT_TEXT : yesNo(side.present)
     case 'excluded_document':
-      return side.excluded_document === null ? NO_STATEMENT_TEXT : yesNo(side.excluded_document)
+      return side.excluded_document == null ? NO_STATEMENT_TEXT : yesNo(side.excluded_document)
     case 'album_level':
-      return side.album_level === null
+      return side.album_level == null
         ? NO_STATEMENT_TEXT
         : formatAlbumSuitabilityLevel(side.album_level)
   }

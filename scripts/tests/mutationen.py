@@ -54,6 +54,11 @@ DOCKERIGNORE = "backend/.dockerignore"
 DOCKERFILE = "backend/Dockerfile"
 DEVELOPER = ".claude/agents/developer.md"
 
+TYPES_TS = "frontend/src/api/types.ts"
+SCHEMA_DTS = "frontend/src/api/generated/schema.d.ts"
+PACKAGE_JSON = "frontend/package.json"
+MOTIFS_TS = "frontend/src/api/motifs.ts"
+
 
 @dataclass(frozen=True)
 class Mutation:
@@ -442,6 +447,76 @@ MUTATIONEN: tuple[Mutation, ...] = (
         ),
         invariante="lesende-grenze",
     ),
+    Mutation(
+        name="interface-statt-alias",
+        waechter="frontend-typen",
+        datei=TYPES_TS,
+        alt="export type ListPhotosParams = {",
+        neu="export interface ListPhotosParams {",
+        invariante="keine-interface-deklaration",
+    ),
+    Mutation(
+        name="marker-zweimal",
+        waechter="frontend-typen",
+        datei=TYPES_TS,
+        alt="/* ===== Erzeugt ===== */",
+        neu="/* ===== Erzeugt ===== */\n/* ===== Erzeugt ===== */",
+        invariante="marken-einmalig",
+    ),
+    Mutation(
+        name="erzeugt-marker-verloren",
+        waechter="frontend-typen",
+        datei=TYPES_TS,
+        alt="/* ===== Erzeugt ===== */",
+        neu="/* ===== Oberflächen-eigen ===== */",
+        invariante="marken-in-reihenfolge",
+    ),
+    Mutation(
+        name="schemabezug-erfunden",
+        waechter="frontend-typen",
+        datei=TYPES_TS,
+        alt="components['schemas']['ReviewVerdictOut']",
+        neu="components['schemas']['ReviewVerdictOutX']",
+        invariante="schemabezug-belegt",
+    ),
+    Mutation(
+        name="zweite-fassung-im-modul",
+        waechter="frontend-typen",
+        datei=MOTIFS_TS,
+        alt="import { apiFetch } from './client'",
+        neu="import { apiFetch } from './client'\n\ntype MotifsAlias = string",
+        invariante="keine-zweite-fassung",
+    ),
+    Mutation(
+        name="antworttyp-als-typargument",
+        waechter="frontend-typen",
+        datei=MOTIFS_TS,
+        alt="return apiFetch('/motifs')",
+        neu="return apiFetch<MotifSetOut>('/motifs')",
+        invariante="aufruf-ohne-typargument",
+    ),
+    Mutation(
+        name="beschreibung-am-typ-entfernt",
+        waechter="frontend-typen",
+        datei=SCHEMA_DTS,
+        alt=(
+            "            /**\n"
+            "             * Price Per Image Usd\n"
+            "             * @description `null` heisst fuer dieses Modell ist kein Preis "
+            "hinterlegt, nie `0`.\n"
+            "             */"
+        ),
+        neu="            /** Price Per Image Usd */",
+        invariante="beschreibung-am-typ",
+    ),
+    Mutation(
+        name="nachfuehrung-nicht-verdrahtet",
+        waechter="frontend-typen",
+        datei=PACKAGE_JSON,
+        alt='"typecheck": "npm run api:check && tsc -b --noEmit",',
+        neu='"typecheck": "tsc -b --noEmit",',
+        invariante="nachfuehrung-verdrahtet",
+    ),
 )
 
 
@@ -569,6 +644,40 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
                 CI,
                 "      - name: Test (pytest, Shard ${{ matrix.shard }} von ${{ strategy.job-total }})\n",
                 "      - name: Backend-Tests\n",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="frontend-marker-andere-verzierung",
+        waechter="frontend-typen",
+        aenderungen=(
+            (TYPES_TS, "/* ===== Erzeugt ===== */", "/* --- Erzeugt --- */"),
+            (
+                TYPES_TS,
+                "/* ===== Oberflächen-eigen ===== */",
+                "/* --- Oberflächen-eigen --- */",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="frontend-schemabezug-doppelte-anfuehrung",
+        waechter="frontend-typen",
+        aenderungen=(
+            (
+                TYPES_TS,
+                "export type ScanStatus = components['schemas']['ScanStatus']",
+                'export type ScanStatus = components["schemas"]["ScanStatus"]',
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="frontend-typecheck-mit-doppeltem-leerzeichen",
+        waechter="frontend-typen",
+        aenderungen=(
+            (
+                PACKAGE_JSON,
+                '"typecheck": "npm run api:check && tsc -b --noEmit",',
+                '"typecheck": "npm run api:check  &&  tsc -b --noEmit",',
             ),
         ),
     ),

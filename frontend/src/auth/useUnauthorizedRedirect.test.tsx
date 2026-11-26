@@ -105,7 +105,12 @@ describe('useUnauthorizedRedirect', () => {
     vi.stubGlobal('fetch', vi.fn())
     vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { detail: 'Nicht authentifiziert.' }))
 
-    await expect(apiFetchBlob('/photos/1/image')).rejects.toBeInstanceOf(Error)
+    await expect(
+      apiFetchBlob('/photos/{photo_id}/image', {
+        pathParams: { photo_id: 1 },
+        query: { variant: 'thumbnail' },
+      }),
+    ).rejects.toBeInstanceOf(Error)
 
     expect(queryClient.getQueryData(['projects'])).toBeUndefined()
     expect(queryClient.getQueryData(['motifs'])).toBeUndefined()

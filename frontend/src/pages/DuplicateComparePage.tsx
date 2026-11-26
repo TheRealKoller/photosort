@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { DuplicateDecision } from '../api/types'
-import { DuplicateEnlargedView } from '../components/DuplicateEnlargedView'
-import { DuplicatePhotoTile } from '../components/DuplicatePhotoTile'
-import { Alert } from '../components/ui/alert'
+import { DuplicateGroupActions } from '../components/DuplicateGroupActions'
+import { DuplicateGroupGrid } from '../components/DuplicateGroupGrid'
+import { DuplicateGroupHeader } from '../components/DuplicateGroupHeader'
+import { DuplicateGroupNotices } from '../components/DuplicateGroupNotices'
 import { Button } from '../components/ui/button'
-import { Progress } from '../components/ui/progress'
-import { Skeleton } from '../components/ui/skeleton'
 import {
   useDuplicateDecisionMutation,
   useDuplicateGroupConfirmMutation,
@@ -16,65 +15,7 @@ import {
   useDuplicateGroupQuery,
 } from '../hooks/useDuplicates'
 import { useEdgeFocusHandoff } from '../hooks/useEdgeFocusHandoff'
-import { useElementWidth } from '../hooks/useElementWidth'
-import { DUPLICATE_TILE_INSET_X_PX, duplicateGridRows } from '../utils/duplicateLayout'
-import { bestExposureIndices, bestSharpnessIndices, formatSpan } from '../utils/duplicateMetrics'
-import type { JustifiedRow } from '../utils/justifiedRows'
 import { ausschussStepPath, duplicateComparePath } from '../utils/projectRoutes'
-
-const SKELETON_TILE_COUNT = 4
-
-/** Raster und Platzhalterliste: umbrechend, oben bündig, mit dem gerechneten `GRID_GAP_PX`. */
-const GRID_LIST_CLASSES = 'flex w-full flex-wrap items-start gap-3'
-
-/** Die Bildmaße je Index aus den Reihen - `duplicateGridRows` führt jeden Index genau einmal. */
-function tileSizesByIndex(
-  count: number,
-  rows: readonly JustifiedRow[],
-): { width: number; height: number }[] {
-  const sizes = Array.from({ length: count }, () => ({ width: 0, height: 0 }))
-  for (const row of rows) {
-    for (const tile of row.tiles) {
-      sizes[tile.index] = { width: tile.width, height: tile.height }
-    }
-  }
-  return sizes
-}
-
-/**
- * Der erste Hinweis: Antippen speichert sofort, und es gilt der ANGEZEIGTE Zustand.
- *
- * „Bleibt erhalten" hängt am angezeigten „Behalten" — nie an „nicht angetippt" oder
- * „unentschieden": Ein unentschiedener Duplikat-Verlierer zeigt bereits „Ausschuss" und scheidet
- * ohne weiteres Zutun aus. Eine Zusage über nicht Angetipptes wäre eine, die die Ansicht nicht
- * halten kann.
- */
-export const DUPLICATE_HINT_TEXT =
-  'Antippen von „Behalten“ oder „Ausschuss“ wird sofort gespeichert. Es gilt der angezeigte ' +
-  'Zustand: Was „Behalten“ zeigt, bleibt erhalten; nur was „Ausschuss“ zeigt, scheidet aus der ' +
-  'weiteren Bearbeitung aus.'
-
-/**
- * Die Folge von „behalten", an der Handlung selbst.
- *
- * „Behalten" ist keine ansichtsinterne Buchführung: Die Aufnahme läuft danach in die
- * Kriterien-Bewertung und, bei erteilter Einwilligung, in die Cloud-Klassifizierung. Steht das
- * nicht hier — im Raster wie in der Großansicht —, trifft der Nutzer eine Entscheidung über einen
- * Datenabfluss, von dem er nichts weiß.
- */
-export const DUPLICATE_CONSEQUENCE_TEXT =
-  '„Behalten" heißt: Die Aufnahme läuft in die Bewertung weiter — und, solange die ' +
-  'Cloud-Freigabe dieses Projekts gesetzt ist, auch an den Cloud-Anbieter.'
-
-/** Der leere Zustand. Er deckt alle Fälle ab, in denen es zu dieser Aufnahme keine Gruppe gibt —
- * unbekanntes Foto, fremdes Projekt, kein Duplikat, oder eine Gruppe, die ein neuer Lauf
- * aufgelöst hat. Der Server unterscheidet sie nicht, und die Ansicht kann es deshalb auch
- * nicht. */
-export const DUPLICATE_EMPTY_TEXT =
-  'Zu dieser Aufnahme gibt es keine Duplikat-Gruppe. Möglicherweise hat ein neuer Lauf sie ' +
-  'aufgelöst.'
-
-const LAST_GROUP_TEXT = 'Gespeichert — das war die letzte Gruppe.'
 
 /**
  * Alle Aufnahmen einer Duplikat-Gruppe — als Raster oder in der Großansicht, je Aufnahme
@@ -106,38 +47,7 @@ export function DuplicateComparePage() {
   const groupMutation = useDuplicateGroupDecisionMutation(id, anchorId)
   const confirmMutation = useDuplicateGroupConfirmMutation(id, anchorId)
 
-  const items = useMemo(() => query.data?.items ?? [], [query.data])
-  const bestSharpness = useMemo(
-    () => bestSharpnessIndices(items.map((item) => item.sharpness)),
-    [items],
-  )
-  const bestExposure = useMemo(
-    () => bestExposureIndices(items.map((item) => item.exposure)),
-    [items],
-  )
-
-  // EIN gemessener Ref für beide Listen: Er hängt an der gerade gerenderten - Platzhalter oder
-  // Raster, nie beide -, und ein Knotenwechsel meldet die neue Liste beim Beobachter an.
-  const { ref: gridRef, width: gridWidth } = useElementWidth<HTMLUListElement>()
-  const tileSizes = useMemo(
-    () =>
-      tileSizesByIndex(
-        items.length,
-        duplicateGridRows(
-          items.map((item) => item.photo.aspect_ratio ?? null),
-          gridWidth,
-        ),
-      ),
-    [items, gridWidth],
-  )
-  const skeletonSizes = useMemo(
-    () =>
-      tileSizesByIndex(
-        SKELETON_TILE_COUNT,
-        duplicateGridRows(Array<null>(SKELETON_TILE_COUNT).fill(null), gridWidth),
-      ),
-    [gridWidth],
-  )
+  const items = query.data?.items ?? []
 
   const [enlargedId, setEnlargedId] = useState<number | null>(null)
   /** Die Aufnahme, deren Bildfläche nach dem Schließen der Großansicht den Fokus bekommt. */
@@ -281,221 +191,54 @@ export function DuplicateComparePage() {
         </Button>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {istGefuellt ? (
-          <>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-xl sm:text-2xl">
-                Gruppe {query.data.position} von {query.data.total}{' '}
-                <span className="text-base font-normal text-text sm:text-lg">
-                  {`· ${items.length} Aufnahmen in ${formatSpan(query.data.span_seconds)}`}
-                </span>
-              </h1>
-              {/* Nie die einzige Quelle der Zahl - beide stehen als Text im h1. */}
-              <Progress
-                aria-hidden="true"
-                value={query.data.position}
-                max={query.data.total}
-                className="w-24 sm:w-40"
-              />
-            </div>
-            {/* Am Rand `disabled` statt abwesend: Ein verschwindender Knopf verschöbe die übrigen
-                unter dem Finger. Der zugängliche Name ist der sichtbare Text (WCAG 2.5.3). */}
-            <div role="group" aria-label="Duplikat-Gruppen" className="flex flex-wrap gap-3">
-              <Button
-                ref={groupNav.previousRef}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-11 sm:h-8"
-                disabled={previousGroupId === null}
-                onClick={() => goToGroup(previousGroupId)}
-              >
-                Vorherige Gruppe
-              </Button>
-              <Button
-                ref={groupNav.nextRef}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-11 sm:h-8"
-                disabled={nextGroupId === null}
-                onClick={() => goToGroup(nextGroupId)}
-              >
-                Nächste Gruppe
-              </Button>
-            </div>
-          </>
-        ) : (
-          <h1 className="text-xl sm:text-2xl">Duplikate vergleichen</h1>
-        )}
-      </div>
+      <DuplicateGroupHeader
+        group={istGefuellt ? query.data : null}
+        previousRef={groupNav.previousRef}
+        nextRef={groupNav.nextRef}
+        onPrevious={() => goToGroup(previousGroupId)}
+        onNext={() => goToGroup(nextGroupId)}
+      />
 
-      {query.isLoading && (
-        <ul
-          ref={gridRef}
-          role="status"
-          aria-label="Duplikat-Gruppe wird geladen…"
-          className={GRID_LIST_CLASSES}
-        >
-          {skeletonSizes.map((size, index) => (
-            // `border-2 border-transparent` steht für den Zustandsrahmen der echten Kachel - ohne
-            // ihn wäre der Platzhalter 4 px schmaler als die Rechnung.
-            <li
-              key={index}
-              aria-hidden="true"
-              style={{ width: size.width + DUPLICATE_TILE_INSET_X_PX }}
-              className="flex max-w-full flex-col gap-3 rounded-lg border-2 border-transparent bg-elevated px-2 py-2 sm:py-3"
-            >
-              <Skeleton
-                style={{ width: size.width, height: size.height }}
-                className="max-w-full rounded-md"
-              />
-              <Skeleton className="h-3 w-full rounded-xs" />
-              <Skeleton className="h-3 w-full rounded-xs" />
-              <Skeleton className="h-3 w-full rounded-xs" />
-              <Skeleton className="h-8 w-full rounded-sm" />
-            </li>
-          ))}
-        </ul>
-      )}
+      <DuplicateGroupNotices
+        filled={istGefuellt}
+        autoDecided={autoDecided}
+        autoUndoneAndOpen={autoUndoneAndOpen}
+        empty={istLeer}
+        loadError={query.isError && !istLeer ? query.error : null}
+        onRetry={() => void query.refetch()}
+      />
 
-      {istGefuellt && autoDecided && (
-        <div className="flex max-w-3xl flex-col gap-2">
-          <p data-testid="duplicate-auto-decided" className="text-sm text-text">
-            Automatisch entschieden – praktisch identische Aufnahmen
-          </p>
-          <p className="text-sm text-text">
-            Zurücknehmen: „Behalten“ auf einer Aufnahme wählen. Die Gruppe ist danach offen, und ein
-            späterer Lauf entscheidet sie nicht erneut automatisch.
-          </p>
-        </div>
-      )}
-
-      {istLeer && <p className="text-sm text-text">{DUPLICATE_EMPTY_TEXT}</p>}
-
-      {query.isError && !istLeer && (
-        <Alert onRetry={() => void query.refetch()}>
-          {query.error instanceof ApiError
-            ? query.error.detail
-            : 'Fehler beim Laden der Duplikat-Gruppe.'}
-        </Alert>
-      )}
-
-      {istGefuellt && (
-        <>
-          {autoUndoneAndOpen && (
-            <p role="status" className="text-sm text-text">
-              Automatische Entscheidung zurückgenommen — die Gruppe ist jetzt offen.
-            </p>
-          )}
-
-          {/* Immer sichtbar, nie eingeklappt, kein `Alert` - und unmittelbar an der Handlung. */}
-          <div className="flex max-w-3xl flex-col gap-2">
-            <p className="text-sm text-text">{DUPLICATE_HINT_TEXT}</p>
-            <p data-testid="duplicate-consequence" className="text-sm text-text">
-              {DUPLICATE_CONSEQUENCE_TEXT}
-            </p>
-          </div>
-
-          {/* Beschriftete Schaltflächen, keine Symbole: Beide setzen in EINEM Aufruf den Zustand
-              jeder Aufnahme der Gruppe, und eine Glyphe sagte nicht, welche Richtung. */}
-          <div className="flex flex-col gap-3">
-            <div role="group" aria-label="Ganze Gruppe" className="flex flex-wrap gap-3">
-              {(['keep', 'discard'] as const).map((wert) => (
-                <Button
-                  key={wert}
-                  type="button"
-                  variant="outline"
-                  disabled={groupMutation.isPending}
-                  busy={groupMutation.isPending}
-                  onClick={() => groupMutation.mutate(wert)}
-                >
-                  {wert === 'keep' ? 'Alle behalten' : 'Alle in den Ausschuss'}
-                </Button>
-              ))}
-            </div>
-            {groupMutation.isError && (
-              <Alert>
-                {groupMutation.error instanceof ApiError
-                  ? groupMutation.error.detail
-                  : 'Die Entscheidung für die Gruppe konnte nicht gespeichert werden.'}
-              </Alert>
-            )}
-          </div>
-
-          {enlargedItem !== undefined ? (
-            <DuplicateEnlargedView
-              items={items}
-              currentId={enlargedItem.photo.id}
-              bestSharpness={bestSharpness}
-              bestExposure={bestExposure}
-              decidingIds={decidingIds}
-              onSelect={setEnlargedId}
-              onClose={closeEnlarged}
-              onDecide={handleDecide}
-            />
-          ) : (
-            <ul ref={gridRef} className={GRID_LIST_CLASSES}>
-              {items.map((item, index) => (
-                <DuplicatePhotoTile
-                  key={item.photo.id}
-                  photo={item.photo}
-                  effectiveDecision={item.effective_decision}
-                  keepPossible={item.keep_possible}
-                  sharpness={item.sharpness}
-                  exposure={item.exposure}
-                  bestSharpness={bestSharpness.has(index)}
-                  bestExposure={bestExposure.has(index)}
-                  deciding={decidingIds.has(item.photo.id)}
-                  imageWidth={tileSizes[index].width}
-                  imageHeight={tileSizes[index].height}
-                  onOpen={() => setEnlargedId(item.photo.id)}
-                  onDecide={(decision) => handleDecide(item.photo.id, decision)}
-                  imageRef={(element) => {
-                    if (element === null) {
-                      imageRefs.current.delete(item.photo.id)
-                    } else {
-                      imageRefs.current.set(item.photo.id, element)
-                    }
-                  }}
-                />
-              ))}
-            </ul>
-          )}
-
-          {/* Der Abschluss schreibt den angezeigten Zustand fest, statt ihn zu ändern - es
-              entsteht kein Gruppenzustand „erledigt". Gesperrt, solange eine Einzel- oder
-              Gruppenentscheidung läuft: Er schriebe sonst gegen einen Stand, der gerade wechselt.
-              Die Schaltfläche selbst ist die Wiederholung nach einem Fehler. */}
-          {/* In einer automatisch entschiedenen Gruppe entfällt der Abschluss ganz (nicht
-              `disabled`): Er schriebe einen Stand fest, der schon festgeschrieben ist. */}
-          <div className="flex flex-col items-start gap-3">
-            {!autoDecided && (
-              <Button
-                type="button"
-                disabled={confirmBlocked}
-                busy={confirmMutation.isPending}
-                onClick={handleConfirm}
-              >
-                {confirmLabel}
-              </Button>
-            )}
-            {/* Die Live-Region steht im gefüllten Zustand IMMER da, nur ihr Text wechselt: Eine
-                Region, die erst zusammen mit ihrem Text erscheint, sagen Screenreader oft nicht an. */}
-            <p aria-live="polite" data-testid="duplicate-last-group" className="text-sm text-text">
-              {lastGroupSaved ? LAST_GROUP_TEXT : ''}
-            </p>
-            {confirmMutation.isError && (
-              <Alert>
-                {confirmMutation.error instanceof ApiError
-                  ? confirmMutation.error.detail
-                  : 'Die Gruppe konnte nicht abgeschlossen werden.'}
-              </Alert>
-            )}
-          </div>
-        </>
-      )}
+      <DuplicateGroupActions
+        filled={istGefuellt}
+        groupPending={groupMutation.isPending}
+        groupError={groupMutation.isError ? groupMutation.error : null}
+        autoDecided={autoDecided}
+        confirmBlocked={confirmBlocked}
+        confirmPending={confirmMutation.isPending}
+        confirmLabel={confirmLabel}
+        lastGroupSaved={lastGroupSaved}
+        confirmError={confirmMutation.isError ? confirmMutation.error : null}
+        onGroupDecision={(decision) => groupMutation.mutate(decision)}
+        onConfirm={handleConfirm}
+      >
+        <DuplicateGroupGrid
+          loading={query.isLoading}
+          items={items}
+          enlargedItem={enlargedItem}
+          decidingIds={decidingIds}
+          onOpen={setEnlargedId}
+          onClose={closeEnlarged}
+          onSelect={setEnlargedId}
+          onDecide={handleDecide}
+          imageRef={(photoIdWert, element) => {
+            if (element === null) {
+              imageRefs.current.delete(photoIdWert)
+            } else {
+              imageRefs.current.set(photoIdWert, element)
+            }
+          }}
+        />
+      </DuplicateGroupActions>
     </div>
   )
 }

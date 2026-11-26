@@ -1,27 +1,17 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router'
+import { useCallback, useMemo } from 'react'
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router'
 
 import { ApiError } from '../../api/client'
-import type { AusschussPhotoEntry, DuplicateDecision } from '../../api/types'
-import { GrundKennzeichen } from '../../components/AusschussGrund'
-import { DUPLICATE_IMMUTABLE_TEXT, DUPLICATE_ZUSTAENDE } from '../../components/DuplicatePhotoTile'
-import { DuplicateStackTile } from '../../components/DuplicateStackTile'
-import { PhotoImage } from '../../components/PhotoImage'
-import { RerunBlock } from '../../components/RerunBlock'
-import { StatusDot } from '../../components/StatusDot'
-import { StepActionBar } from '../../components/StepActionBar'
+import { AusschussActionBar } from '../../components/AusschussActionBar'
+import { AusschussDetail } from '../../components/AusschussDetail'
 import { Alert } from '../../components/ui/alert'
-import { Button } from '../../components/ui/button'
-import { Progress } from '../../components/ui/progress'
-import { Skeleton } from '../../components/ui/skeleton'
-import { useAusschussEntryQuery, useAusschussQuery } from '../../hooks/useAusschuss'
+import { AusschussOverview } from '../../components/AusschussOverview'
+import { AusschussRecognition } from '../../components/AusschussRecognition'
+import { useAusschussQuery } from '../../hooks/useAusschuss'
 import { useCancelOperation } from '../../hooks/useOperations'
-import { useDuplicateDecisionMutation } from '../../hooks/useDuplicates'
 import { useConfirmAusschussGateMutation, useTriggerScoreMutation } from '../../hooks/useProjects'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
 import { useElementWidth } from '../../hooks/useElementWidth'
-import { cn } from '../../lib/utils'
-import { formatDateTime } from '../../utils/formatStats'
 import {
   GRID_GAP_PX,
   MIN_ROW_HEIGHT_PX,
@@ -30,81 +20,14 @@ import {
   naturalTiles,
 } from '../../utils/justifiedRows'
 import type { JustifiedTile } from '../../utils/justifiedRows'
-import { ausschussStepPath, duplicateComparePath } from '../../utils/projectRoutes'
-import { deriveStepAction } from '../../utils/stepActions'
 import {
   CANCEL_TEXTS,
   cancelRequestedText,
-  cancelledAtText,
   cancelledText,
   waitingText,
 } from '../../utils/operationTexts'
-import { AUSSCHUSS_NOTHING_SORTED_TEXT } from '../../utils/stepActionTexts'
+import { deriveStepAction } from '../../utils/stepActions'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
-
-// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" -
-// dieselbe Annaeherung wie in der Fotoliste, keine harte Vorgabe.
-const SKELETON_TILE_COUNT = 6
-
-/** Der leere Bestand - dauerhaft sichtbar statt als fluechtiger Hinweis. Er deckt beide
- * Faelle ab, in denen nichts zu sichten ist: Der Lauf hat keinen Ausschuss gefunden, oder es gibt
- * noch gar keinen erfolgreichen Lauf mit Vorschlaegen. */
-export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit nichts zu sichten.'
-
-/** Der benannte Zustand der Detailansicht, wenn die Aufnahme nicht (mehr) im Bestand liegt: Die
- * Antwort des `photo_id`-Filters ist leer, weil ein neuer Lauf die Entscheidung aufgeloest hat -
- * kein Fehler, sondern ein definierter Zustand mit Rueckweg. */
-/** Der eigene Leertext der gefilterten Ansicht: Der allgemeine Leertext erscheint
- * dann NICHT zusätzlich — zwei getrennte Leerzustände, nie zugleich. */
-export const AUSSCHUSS_AUTO_EMPTY_TEXT = 'Keine automatisch entschiedenen Gruppen.'
-
-/** Der Rückweg aus der gefilterten Ansicht steht an derselben Stelle wie sonst der Zähler und
- * hängt an der ADRESSE, nicht an der Antwort — er ist auch beim Laden und im Fehler bedienbar. */
-const AUSSCHUSS_AUTO_FILTER_TEXT = 'Nur automatisch entschiedene Gruppen'
-
-export const AUSSCHUSS_MISSING_ENTRY_TEXT =
-  'Diese Aufnahme gehört nicht mehr zum Ausschuss. Möglicherweise hat ein neuer Lauf sie aufgelöst.'
-
-/** Die Entscheidungszeile eines noch offenen Eintrags: Die Zeile trennt den GRUND der
- * Markierung von der getroffenen ENTSCHEIDUNG. */
-export const AUSSCHUSS_OPEN_LABEL = 'Vorgeschlagen'
-
-/** Die Farbe der Entscheidungszeile. `null` (noch offen) ist zurueckhaltend: Es ist der Zustand
- * ohne Handlung, nicht einer mit. */
-const ENTSCHEIDUNG_SCHRIFT: Record<DuplicateDecision | 'offen', string> = {
-  keep: 'text-accent',
-  discard: 'text-danger-text',
-  offen: 'text-text-muted',
-}
-
-/** Der gespeicherte Zeilenwert als Wort. `null` heisst "noch nicht entschieden" - es gibt keine
- * Ruecknahme, und die Ansicht bietet deshalb auch keine an. */
-function entscheidungswort(decision: DuplicateDecision | null): string {
-  return decision === null ? AUSSCHUSS_OPEN_LABEL : DUPLICATE_ZUSTAENDE[decision].text
-}
-
-/** Die Zusaetze an der Entscheidungszeile. `Aus früherem Lauf` gehoert zum dritten Grund und
- * tritt an die Stelle des Grund-Kennzeichens; `wirkt nicht mehr` markiert ein gespeichertes
- * `keep`, das den Zustand nicht mehr bestimmt. Beide Texte sind Anzeige des SERVERWERTS, keine
- * Ableitung aus `reason` oder `decision` — und sie schliessen einander aus: Wo kein aktueller
- * Grund steht, gibt es auch keinen, auf den sich `wirkt nicht mehr` beziehen koennte. */
-function Entscheidungshinweise({ eintrag }: { eintrag: AusschussPhotoEntry }) {
-  const ausFrueheremLauf = eintrag.reason === 'earlier_decision'
-  const wirktNichtMehr =
-    !ausFrueheremLauf &&
-    eintrag.decision === 'keep' &&
-    eintrag.decision_effective === false &&
-    !eintrag.keep_possible
-  if (!ausFrueheremLauf && !wirktNichtMehr) {
-    return null
-  }
-  return (
-    <>
-      {ausFrueheremLauf && <span className="text-xs text-text-muted">Aus früherem Lauf</span>}
-      {wirktNichtMehr && <span className="text-xs text-text-muted">wirkt nicht mehr</span>}
-    </>
-  )
-}
 
 /** Der `photo`-Parameter der Schritt-Route. Alles ausserhalb einer positiven ganzen Zahl ist
  * KEIN Fehler, sondern die Uebersicht: Ein Deep-Link ohne gueltige Aufnahme ist ein regulaerer
@@ -304,200 +227,49 @@ export function AusschussStepPage() {
       statusText = 'Ausschuss bestätigt'
   }
 
+  // „wartet" traegt keinen Statuspunkt - es laeuft noch nichts. Nach dem Ausloesen zeigt der
+  // Punkt sofort den laufenden Zustand, nicht den alten.
+  const statusDot =
+    action.kind === 'running' ? 'running' : action.kind === 'queued' ? null : scoringStatus
+
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg">Ausschuss</h2>
-      <p className="text-sm text-text">
-        Erkennt automatisch unscharfe, überbelichtete oder doppelte Fotos als Ausschuss-Vorschläge —
-        läuft vollständig lokal auf diesem Server.
-      </p>
-      <p className="text-sm text-text">{AUSSCHUSS_NOTHING_SORTED_TEXT}</p>
-      {rerun !== null && (
-        <RerunBlock
-          rerun={rerun}
-          onRerun={handleTriggerScore}
-          disabled={isScoreBusy}
-          busy={isTriggerPending}
-        />
-      )}
-
-      {scoreTriggerErrorDetail && <Alert>{scoreTriggerErrorDetail}</Alert>}
-
-      {scoringStatus === 'success' && <p className="text-sm text-text">{suggestionsFoundText}</p>}
-
-      {/* Zähler als Link in die gefilterte Ansicht. Bei 0 entfällt die Zeile ganz; solange
-          geladen wird oder ein Fehler vorliegt, gibt es keine 0 und keinen Platzhalter. */}
-      {!autoFilter &&
-        ausschussQuery.isSuccess &&
-        autoDecidedGroupCount !== null &&
-        autoDecidedGroupCount > 0 && (
-          <div className="flex flex-wrap">
-            <Button asChild variant="outline" size="sm" className="h-11 sm:h-8">
-              <Link to={ausschussStepPath(project.id, { auto: true })}>
-                {autoDecidedGroupCount === 1
-                  ? '1 Gruppe automatisch entschieden'
-                  : `${autoDecidedGroupCount} Gruppen automatisch entschieden`}
-              </Link>
-            </Button>
-          </div>
-        )}
-
-      {/* Nach der Bestaetigung bleibt der Schritt aufrufbar - weitere Anpassungen sind moeglich,
-          und es kann erneut bestaetigt werden. */}
-      {gateConfirmedAt !== null && (
-        <p className="text-sm text-text">
-          Ausschuss bestätigt am {formatDateTime(gateConfirmedAt)} — der Schritt bleibt aufrufbar.
-        </p>
-      )}
-
-      {/* Ohne Wiederholung: Die einzige Wiederholung ist die Hauptaktion der Leiste. */}
-      {scoringStatus === 'failed' && <Alert>{scoringRun?.error_message}</Alert>}
+      <AusschussRecognition
+        projectId={project.id}
+        rerun={rerun}
+        onRerun={handleTriggerScore}
+        disabled={isScoreBusy}
+        busy={isTriggerPending}
+        triggerError={scoreTriggerErrorDetail}
+        scoringStatus={scoringStatus}
+        suggestionsFoundText={suggestionsFoundText}
+        autoDecidedGroupCount={
+          !autoFilter && ausschussQuery.isSuccess ? autoDecidedGroupCount : null
+        }
+        gateConfirmedAt={gateConfirmedAt}
+        errorMessage={scoringRun?.error_message}
+      />
 
       {istDetailansicht ? (
         <AusschussDetail projectId={project.id} photoId={detailPhotoId} onClose={closeDetail} />
       ) : (
         scoringStatus === 'success' && (
-          <div className="flex w-full flex-col items-start gap-3">
-            {autoFilter && (
-              <div className="flex flex-wrap items-center gap-3">
-                <p data-testid="ausschuss-auto-filter" className="text-sm text-text">
-                  {AUSSCHUSS_AUTO_FILTER_TEXT}
-                </p>
-                <Button asChild variant="ghost" size="sm" className="h-11 sm:h-8">
-                  <Link to={ausschussStepPath(project.id)}>Alle Gruppen anzeigen</Link>
-                </Button>
-              </div>
-            )}
-
-            {ausschussQuery.isLoading && (
-              <ul
-                role="status"
-                aria-label="Ausschnitt wird geladen…"
-                className="flex flex-wrap gap-3"
-              >
-                {naturalTiles(
-                  Array.from({ length: SKELETON_TILE_COUNT }, () => null),
-                  TARGET_ROW_HEIGHT_PX,
-                ).map((tile) => (
-                  <li key={tile.index} aria-hidden="true" style={{ width: tile.width }}>
-                    <Skeleton className="size-full rounded-md" style={{ height: tile.height }} />
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {ausschussQuery.isError && (
-              <Alert onRetry={() => void ausschussQuery.refetch()}>
-                {ausschussQuery.error instanceof ApiError
-                  ? ausschussQuery.error.detail
-                  : 'Fehler beim Laden des Ausschusses.'}
-              </Alert>
-            )}
-
-            {ausschussQuery.isSuccess && entries.length === 0 && (
-              <p className="text-sm text-text">
-                {autoFilter ? AUSSCHUSS_AUTO_EMPTY_TEXT : AUSSCHUSS_EMPTY_TEXT}
-              </p>
-            )}
-
-            {entries.length > 0 && (
-              // `w-full`: Die Spalte darüber steht auf `items-start`, ohne volle Breite mäße
-              // `useElementWidth` die Breite des INHALTS statt des Containers - eine einzelne
-              // Panoramakachel der letzten Zeile hielte das Raster dann auf ihrer eigenen Breite
-              // fest und die Übersicht scrollte bei 360px waagerecht.
-              <ul data-ausschuss-grid ref={gridRef} className="flex w-full flex-wrap gap-3">
-                {entries.map((eintrag, index) => {
-                  const tile = tiles.get(index)
-                  if (eintrag.kind === 'group') {
-                    return (
-                      <DuplicateStackTile
-                        key={`gruppe-${eintrag.group_anchor_photo_id}`}
-                        projectId={project.id}
-                        entry={eintrag}
-                        width={tile?.width ?? 0}
-                        height={tile?.height ?? 0}
-                      />
-                    )
-                  }
-                  return (
-                    <li
-                      key={eintrag.photo.id}
-                      style={{ width: tile?.width ?? 0, height: tile?.height ?? 0 }}
-                      className="relative rounded-md bg-elevated"
-                    >
-                      {/* Die Bildflaeche ist ein natives `<button>` - Enter und Leertaste wirken
-                          ohne eigenen Tastatur-Handler, und der zugaengliche Name nennt die
-                          Aktion samt Dateiname. Der Beschnitt liegt am Button selbst, nicht am
-                          `li` - am `li` schnitte `overflow-hidden` den Fokusring ab. */}
-                      <button
-                        type="button"
-                        onClick={() => openDetail(eintrag.photo.id)}
-                        aria-label={`${eintrag.photo.relative_path} öffnen`}
-                        data-testid="ausschuss-image"
-                        className="block size-full overflow-hidden rounded-md"
-                      >
-                        <PhotoImage
-                          photoId={eintrag.photo.id}
-                          variant="thumbnail"
-                          alt={eintrag.photo.relative_path}
-                          className="size-full object-cover"
-                        />
-                      </button>
-
-                      {/* Beide Kennzeichen liegen auf der UNDURCHSICHTIGEN Flaeche `--overlay` und
-                          sind fuer Zeigegeraete durchlaessig: Die Bildflaeche bleibt die eine
-                          Trefferflaeche dieser Kachel. Kachelgrosser Beschnitt NUR fuer die
-                          Angaben - der Fokusring des Buttons bleibt unbeschnitten, und sehr
-                          schmale Kacheln halten Zeile und Kennzeichen in ihren Grenzen. */}
-                      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
-                        {eintrag.reason !== 'earlier_decision' && (
-                          <span className="absolute left-1 top-1 rounded-sm bg-overlay p-1">
-                            <GrundKennzeichen reason={eintrag.reason} />
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            'absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-overlay px-2 py-1 text-xs',
-                            ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen'],
-                          )}
-                        >
-                          <span
-                            data-testid="ausschuss-decision"
-                            className="flex min-w-0 items-center gap-1"
-                          >
-                            {entscheidungswort(eintrag.decision)}
-                            <Entscheidungshinweise eintrag={eintrag} />
-                          </span>
-                          <span className="min-w-6 truncate font-mono text-text-muted">
-                            {eintrag.photo.relative_path.split('/').pop()}
-                          </span>
-                        </span>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-
-            {/* Der Sichtbarkeitsnachweis: Die geladene Seite ist nicht der ganze Bestand. */}
-            {(ausschussQuery.hasNextPage || ausschussQuery.isFetchingNextPage) && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={ausschussQuery.isFetchingNextPage}
-                busy={ausschussQuery.isFetchingNextPage}
-                onClick={() => void ausschussQuery.fetchNextPage()}
-              >
-                Mehr laden
-              </Button>
-            )}
-            {(ausschussQuery.hasNextPage || ausschussQuery.isFetchingNextPage) && (
-              <p aria-live="polite" className="text-sm text-text">
-                {entries.length} von {total} Einträgen geladen
-              </p>
-            )}
-          </div>
+          <AusschussOverview
+            autoFilter={autoFilter}
+            loading={ausschussQuery.isLoading}
+            error={ausschussQuery.isError ? ausschussQuery.error : null}
+            empty={ausschussQuery.isSuccess && entries.length === 0}
+            entries={entries}
+            total={total}
+            hasNextPage={ausschussQuery.hasNextPage}
+            isFetchingNextPage={ausschussQuery.isFetchingNextPage}
+            gridRef={gridRef}
+            tiles={tiles}
+            projectId={project.id}
+            onOpen={openDetail}
+            onLoadMore={() => void ausschussQuery.fetchNextPage()}
+            onRetry={() => void ausschussQuery.refetch()}
+          />
         )
       )}
 
@@ -515,235 +287,20 @@ export function AusschussStepPage() {
         </Alert>
       )}
 
-      <StepActionBar
+      <AusschussActionBar
         action={action}
-        status={
-          <>
-            {/* „wartet" traegt keinen Statuspunkt - es laeuft noch nichts. Nach dem
-                Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
-            <StatusDot
-              status={
-                action.kind === 'running'
-                  ? 'running'
-                  : action.kind === 'queued'
-                    ? null
-                    : scoringStatus
-              }
-            />
-            {statusText}
-          </>
-        }
-        detail={
-          scoringStatus === 'running' ? (
-            <div className="flex w-full max-w-sm flex-col gap-2">
-              <p className="text-sm text-text">
-                {photosProcessed} von {photosTotal} Fotos verarbeitet
-              </p>
-              {photosTotal > 0 ? (
-                <Progress aria-hidden="true" value={photosProcessed} max={photosTotal} />
-              ) : (
-                <Progress aria-hidden="true" />
-              )}
-            </div>
-          ) : scoringStatus === 'cancelled' && photosTotal > 0 ? (
-            // Eingefrorener Stand, keine Restdauer.
-            <div className="flex w-full max-w-sm flex-col gap-2">
-              <p className="text-sm text-text">
-                {cancelledAtText(photosProcessed, photosTotal, 'Fotos')}
-              </p>
-              <Progress aria-hidden="true" value={photosProcessed} max={photosTotal} />
-            </div>
-          ) : null
-        }
+        statusDot={statusDot}
+        statusText={statusText}
+        photosProcessed={photosProcessed}
+        photosTotal={photosTotal}
+        scoringStatus={scoringStatus}
         onAction={action.kind === 'confirm' ? handleConfirm : handleTriggerScore}
         busy={action.kind === 'confirm' && confirmMutation.isPending}
         onCancel={handleCancelScoring}
         cancelRequested={isCancelRequested}
         cancelPending={cancelMutation.isPending}
         cancelFocusToken={cancelMutation.data ?? null}
-        operation="ausschuss"
       />
     </section>
-  )
-}
-
-/**
- * Die Detailansicht: Grossbild und Entscheidungszeile, beim Gruppenmitglied dazu der Weg in die
- * Vergleichsansicht. Die Gruppe selbst wird hier nicht geladen - sie wird dort entschieden.
- *
- * `Esc` schliesst nur, solange diese Ansicht ueberhaupt offen ist - das erledigt die Komponente
- * selbst statt der Seite, weil sie genau dann montiert ist.
- */
-function AusschussDetail({
-  projectId,
-  photoId,
-  onClose,
-}: {
-  projectId: number
-  photoId: number
-  onClose: () => void
-}) {
-  const query = useAusschussEntryQuery(projectId, photoId)
-  const eintrag: AusschussPhotoEntry | null = query.data ?? null
-
-  /* Der Schreibweg ist der EINZELNE: Er trifft genau diese Aufnahme. Der Anker der Gruppe ist
-     dabei nur der Ort, an dem die Antwort im Zwischenspeicher landet - die Menge der betroffenen
-     Fotos bestimmt der Server, die Oberflaeche schickt keine Id-Liste mit. */
-  const decisionMutation = useDuplicateDecisionMutation(
-    projectId,
-    eintrag?.group_anchor_photo_id ?? photoId,
-  )
-
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [onClose])
-
-  if (query.isLoading) {
-    return (
-      <p role="status" className="text-sm text-text">
-        Aufnahme wird geladen…
-      </p>
-    )
-  }
-
-  if (query.isError) {
-    return (
-      <Alert onRetry={() => void query.refetch()}>
-        {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Aufnahme.'}
-      </Alert>
-    )
-  }
-
-  if (eintrag === null) {
-    return (
-      <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-text">{AUSSCHUSS_MISSING_ENTRY_TEXT}</p>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Zurück zur Übersicht
-        </Button>
-      </div>
-    )
-  }
-
-  /* „Aufheben" gibt es nur, wo es etwas bewirkt: Bei einer Ablehnung wegen geringer Bildqualitaet
-    gibt es keine Gruppe, und kein Wert der Entscheidungszeile aendert den Zustand dieser
-    Aufnahme. Die Anzeige bietet den Wert deshalb nicht an - der Server weist ihn trotzdem NICHT
-    ab. Die Bedingung ist der SERVERWERT
-    `keep_possible` (`duplicates.py::keep_possible_for`) - NICHT eine Ableitung aus
-    `reason`: Traegt der Eintrag eine Entscheidungszeile, die einen Lauf ueberlebt hat, in dem
-    `suggested_status` und `duplicate_of` zurueckgesetzt wurden, ist der Grund `low_quality` und
-    "behalten" wirkt trotzdem. */
-  const keepPossible = eintrag.keep_possible
-
-  return (
-    <div className="flex w-full flex-col items-start gap-3">
-      <div className="flex w-full flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg">Aufnahme im Ausschuss</h3>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label="Detailansicht schließen"
-          onClick={onClose}
-        >
-          Schließen
-        </Button>
-      </div>
-
-      <div className="flex w-full flex-col gap-4">
-        <div className="flex flex-col items-start gap-3">
-          {/* Grossbild in der Variante `display`: Hier wird beurteilt, und ein hochskaliertes
-              Vorschaubild entschiede die Frage nach der Schaerfe falsch. `object-contain`, damit
-              nichts beschnitten wird. */}
-          <div className="w-full overflow-hidden rounded-md bg-surface">
-            <PhotoImage
-              photoId={eintrag.photo.id}
-              variant="display"
-              alt={eintrag.photo.relative_path}
-              className="max-h-96 w-full object-contain"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            {eintrag.reason !== 'earlier_decision' && <GrundKennzeichen reason={eintrag.reason} />}
-            <span
-              data-testid="detail-decision"
-              className={ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen']}
-            >
-              {entscheidungswort(eintrag.decision)}
-            </span>
-            <Entscheidungshinweise eintrag={eintrag} />
-            <span className="font-mono text-xs text-text-muted">{eintrag.photo.relative_path}</span>
-          </div>
-
-          <div
-            role="group"
-            aria-label="Entscheidung über diese Aufnahme"
-            className="flex flex-wrap gap-3"
-          >
-            {keepPossible && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label={`${DUPLICATE_ZUSTAENDE.keep.text} (Detailansicht): ${eintrag.photo.relative_path}`}
-                aria-pressed={eintrag.decision === 'keep'}
-                disabled={decisionMutation.isPending}
-                busy={decisionMutation.isPending && eintrag.decision !== 'keep'}
-                onClick={() =>
-                  decisionMutation.mutate({ photoId: eintrag.photo.id, decision: 'keep' })
-                }
-              >
-                {DUPLICATE_ZUSTAENDE.keep.text}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label={`${DUPLICATE_ZUSTAENDE.discard.text} (Detailansicht): ${eintrag.photo.relative_path}`}
-              aria-pressed={eintrag.decision === 'discard'}
-              disabled={decisionMutation.isPending}
-              busy={decisionMutation.isPending && eintrag.decision !== 'discard'}
-              onClick={() =>
-                decisionMutation.mutate({ photoId: eintrag.photo.id, decision: 'discard' })
-              }
-            >
-              {DUPLICATE_ZUSTAENDE.discard.text}
-            </Button>
-          </div>
-
-          {!keepPossible && <p className="text-xs text-text-muted">{DUPLICATE_IMMUTABLE_TEXT}</p>}
-
-          {/* Am Anker, nicht am Grund: Auch der Gewinner mit Schaerfe-Ablehnung (`low_quality`)
-              liegt in einer Gruppe. Ohne Anker gibt es keinen Weg ins Leere. */}
-          {eintrag.group_anchor_photo_id !== null && (
-            <Button asChild variant="outline" size="sm">
-              <Link
-                to={duplicateComparePath(projectId, eintrag.group_anchor_photo_id, {
-                  fromAusschuss: true,
-                })}
-              >
-                Duplikat-Gruppe vergleichen
-              </Link>
-            </Button>
-          )}
-
-          {decisionMutation.isError && (
-            <Alert>
-              {decisionMutation.error instanceof ApiError
-                ? decisionMutation.error.detail
-                : 'Die Entscheidung konnte nicht gespeichert werden.'}
-            </Alert>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }

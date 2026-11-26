@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import random
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, NamedTuple
@@ -37,6 +37,7 @@ from photosort.classification_comparison import (
     DEFAULT_SAMPLE_SIZE,
     PURPOSES,
     PhotoComparison,
+    PurposeCounts,
     compare_review,
     motif_present,
 )
@@ -258,6 +259,30 @@ class ReviewVerdictCountsOut(BaseModel):
     open: int
 
 
+class ReviewPurposeCountsByPurposeOut(BaseModel):
+    """Die Zaehlungen je Pruefzweck als FESTES Modell: die vier Schluessel stehen im Schema.
+
+    Der JSON-Koerper ist unveraendert (`{"motifs": {...}, "motif_feature": {...}, ...}`); ein
+    `dict[...]` haette den Schluesselraum dagegen offen gelassen und dem Erzeuger der
+    Schnittstellenbeschreibung nur `additionalProperties` gezeigt - die Erschoepfung der vier
+    Zwecke waere dann weder typisiert noch pruefbar."""
+
+    motifs: ReviewPurposeCountsOut
+    motif_feature: ReviewPurposeCountsOut
+    excluded_document: ReviewPurposeCountsOut
+    album_level: ReviewPurposeCountsOut
+
+
+class ReviewVerdictCountsByPurposeOut(BaseModel):
+    """Die Urteilszahlen je Pruefzweck als festes Modell - dieselbe Begruendung wie bei den
+    Zaehlungen: vier benannte Schluessel statt eines offenen `dict`."""
+
+    motifs: ReviewVerdictCountsOut
+    motif_feature: ReviewVerdictCountsOut
+    excluded_document: ReviewVerdictCountsOut
+    album_level: ReviewVerdictCountsOut
+
+
 class ReviewListItemOut(BaseModel):
     """Eine Zeile der Liste. `case_count`/`case_open` tragen den Stand („{n} von {m} Fällen
     offen"); `case_count == 0` heisst "keine Abweichungen" - ausser `unclassifiable_photo_count`
@@ -298,9 +323,9 @@ class ReviewDetailOut(BaseModel):
     error_message: str | None
     cancel_requested_at: datetime | None
     sides: ReviewSidesOut
-    counts_by_purpose: dict[ClassificationReviewPurpose, ReviewPurposeCountsOut]
+    counts_by_purpose: ReviewPurposeCountsByPurposeOut
     verdict_counts: ReviewVerdictCountsOut
-    verdicts_by_purpose: dict[ClassificationReviewPurpose, ReviewVerdictCountsOut]
+    verdicts_by_purpose: ReviewVerdictCountsByPurposeOut
 
 
 class ReviewCaseSideOut(BaseModel):
@@ -959,6 +984,28 @@ def _verdict_counts(verdicts: Iterable[ClassificationVerdict | None]) -> dict[st
     return counts
 
 
+def _purpose_counts(
+    counts: Mapping[str, PurposeCounts], presented: Mapping[str, int], purpose: str
+) -> ReviewPurposeCountsOut:
+    """Eine Zweckzaehlung als benanntes Feld des festen Modells - der Zweck kommt aus der
+    geschlossenen Liste `PURPOSES`, nie aus einer Anfrage."""
+    eigen = counts[purpose]
+    return ReviewPurposeCountsOut(
+        unit=_UNIT_BY_PURPOSE[purpose],
+        compared=eigen.compared,
+        matching=eigen.matching,
+        deviating=eigen.deviating,
+        presented=presented[purpose],
+    )
+
+
+def _verdict_counts_for(rows: Iterable[_CaseRow], purpose: str) -> ReviewVerdictCountsOut:
+    """Die Urteilszahlen eines Zwecks - dieselbe Zaehlung wie `verdict_counts`, gefiltert."""
+    return ReviewVerdictCountsOut(
+        **_verdict_counts(row.verdict for row in rows if row.case.purpose.value == purpose)
+    )
+
+
 class _CaseRow(NamedTuple):
     """Eine gespeicherte Fallzeile samt Urteil und dessen Schreiber (Projektion auf zwei
     Spalten)."""
@@ -1192,23 +1239,19 @@ async def get_review(
         error_message=review.error_message,
         cancel_requested_at=review.cancel_requested_at,
         sides=_sides_out(await _sides_for_review(session, review_id)),
-        counts_by_purpose={
-            ClassificationReviewPurpose(purpose): ReviewPurposeCountsOut(
-                unit=_UNIT_BY_PURPOSE[purpose],
-                compared=counts.compared,
-                matching=counts.matching,
-                deviating=counts.deviating,
-                presented=presented[purpose],
-            )
-            for purpose, counts in comparison.counts.items()
-        },
+        counts_by_purpose=ReviewPurposeCountsByPurposeOut(
+            motifs=_purpose_counts(comparison.counts, presented, "motifs"),
+            motif_feature=_purpose_counts(comparison.counts, presented, "motif_feature"),
+            excluded_document=_purpose_counts(comparison.counts, presented, "excluded_document"),
+            album_level=_purpose_counts(comparison.counts, presented, "album_level"),
+        ),
         verdict_counts=ReviewVerdictCountsOut(**_verdict_counts(row.verdict for row in rows)),
-        verdicts_by_purpose={
-            ClassificationReviewPurpose(purpose): ReviewVerdictCountsOut(
-                **_verdict_counts(row.verdict for row in rows if row.case.purpose.value == purpose)
-            )
-            for purpose in PURPOSES
-        },
+        verdicts_by_purpose=ReviewVerdictCountsByPurposeOut(
+            motifs=_verdict_counts_for(rows, "motifs"),
+            motif_feature=_verdict_counts_for(rows, "motif_feature"),
+            excluded_document=_verdict_counts_for(rows, "excluded_document"),
+            album_level=_verdict_counts_for(rows, "album_level"),
+        ),
     )
 
 
@@ -1457,7 +1500,10 @@ def _export_payload(
     }
 
 
-@router.get("/{review_id}/export")
+# `response_class`: die Antwort ist eine Datei (Download), kein JSON-Antwortkoerper dieses
+# Endpunkts - die Beschreibung behauptet sonst `application/json` mit leerem Schema. Der
+# Handler baut seine `Response` samt Kopfzeilen weiterhin selbst.
+@router.get("/{review_id}/export", response_class=Response)
 async def export_review(
     project_id: int,
     review_id: int,

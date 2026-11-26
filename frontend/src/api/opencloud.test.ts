@@ -19,7 +19,7 @@ describe('api/opencloud', () => {
 
     const result = await browseFolder('')
 
-    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse')
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse', { query: {} })
     expect(result).toEqual(ENTRIES)
   })
 
@@ -28,15 +28,20 @@ describe('api/opencloud', () => {
 
     await browseFolder('CostaRica')
 
-    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse?path=CostaRica')
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse', { query: { path: 'CostaRica' } })
   })
 
-  it('URL-encodes path segments', async () => {
+  it('reicht den Pfad unveraendert an die Aufrufgrenze (Kodierung: client.test)', async () => {
+    // Die Prozentkodierung ist Eigenschaft der einen URL-Baustelle (`client.ts`) und wird dort
+    // gegen `/`, `?`, `#`, Leerzeichen und `../` geprueft. Hier steht nur, dass der Rohwert
+    // ankommt - ein zweites `encodeURIComponent` an dieser Stelle kodierte doppelt.
     vi.mocked(apiFetch).mockResolvedValue([])
 
     await browseFolder('Costa Rica/Sub Folder')
 
-    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse?path=Costa%20Rica%2FSub%20Folder')
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse', {
+      query: { path: 'Costa Rica/Sub Folder' },
+    })
   })
 
   it('fetches folder counts for the root level when called without a path', async () => {
@@ -44,7 +49,7 @@ describe('api/opencloud', () => {
 
     const result = await fetchFolderCounts('')
 
-    expect(apiFetch).toHaveBeenCalledWith('/opencloud/folder-counts')
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/folder-counts', { query: {} })
     expect(result).toEqual(COUNTS)
   })
 
@@ -53,16 +58,18 @@ describe('api/opencloud', () => {
 
     await fetchFolderCounts('CostaRica')
 
-    expect(apiFetch).toHaveBeenCalledWith('/opencloud/folder-counts?path=CostaRica')
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/folder-counts', {
+      query: { path: 'CostaRica' },
+    })
   })
 
-  it('URL-encodes path segments for folder counts', async () => {
+  it('reicht den Pfad fuer die Zaehlung unveraendert weiter', async () => {
     vi.mocked(apiFetch).mockResolvedValue([])
 
     await fetchFolderCounts('Costa Rica/Sub Folder')
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/opencloud/folder-counts?path=Costa%20Rica%2FSub%20Folder',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/folder-counts', {
+      query: { path: 'Costa Rica/Sub Folder' },
+    })
   })
 })

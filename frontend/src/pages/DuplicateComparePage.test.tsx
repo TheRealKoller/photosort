@@ -12,8 +12,8 @@ import {
   DUPLICATE_CONSEQUENCE_TEXT,
   DUPLICATE_EMPTY_TEXT,
   DUPLICATE_HINT_TEXT,
-  DuplicateComparePage,
-} from './DuplicateComparePage'
+} from '../utils/duplicateTexts'
+import { DuplicateComparePage } from './DuplicateComparePage'
 import { makeSeriesPhoto as photo } from '../test/fixtures'
 import { makeQueryClient, queryWrapper } from '../test/render'
 

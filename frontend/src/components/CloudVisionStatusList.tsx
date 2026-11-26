@@ -86,7 +86,7 @@ export function CloudVisionStatusList({ cloudVisionStatus }: CloudVisionStatusLi
                 {/* Regulaerer React-Textknoten (nie dangerouslySetInnerHTML) - Sicherheits-Muss-
                     Kriterium der Spec, siehe Komponenten-Docstring. */}
                 <p className="text-xs text-text">{entry.error_message}</p>
-                {entry.attempted_at !== null && (
+                {entry.attempted_at != null && (
                   <p className="text-xs text-text">{formatAttemptedAt(entry.attempted_at)}</p>
                 )}
               </div>

@@ -33,27 +33,51 @@ interface Answers {
   put?: () => Promise<void>
 }
 
+type Aufruf = [
+  endpunkt: string,
+  optionen?: { method?: string; pathParams?: Record<string, number> },
+]
+
+/**
+ * Die Überladungen von `apiFetch` lassen sich für eine Antwort NACH Endpunkt nicht ausdrücken -
+ * der Mock braucht die Laufzeitform (Vorlage + Optionen), nicht die typisierte Aufrufsignatur.
+ */
+function apiMock() {
+  return vi.mocked(apiFetch) as unknown as {
+    mockImplementation: (fn: (...args: Aufruf) => Promise<unknown>) => void
+    mock: { calls: Aufruf[] }
+  }
+}
+
 function answer({
   project = () => Promise.resolve(PROJECT),
   seen = () => Promise.resolve({ seen: false }),
   put = () => Promise.resolve(),
 }: Answers = {}): void {
-  vi.mocked(apiFetch).mockImplementation((path, options) => {
-    if (path === '/projects/1/overview-seen') {
-      return (options?.method === 'PUT' ? put() : seen()) as Promise<never>
+  apiMock().mockImplementation((endpunkt, optionen) => {
+    const projectId = optionen?.pathParams?.project_id
+    if (endpunkt === '/projects/{project_id}/overview-seen' && projectId === 1) {
+      return optionen?.method === 'PUT' ? put() : seen()
     }
-    if (path === '/projects/1') {
-      return project() as Promise<never>
+    if (endpunkt === '/projects/{project_id}' && projectId === 1) {
+      return project()
     }
     // Alles übrige (die Seiten unter dem Host) bleibt offen - Gegenstand ist der Host.
     return new Promise<never>(() => {})
   })
 }
 
+/**
+ * Die Aufrufe in der Form, in der die Zusicherungen sie nennen: Methode + konkreter Pfad. Die
+ * Vorlage wird dafür mit den mitgegebenen Pfadparametern gefüllt.
+ */
 function calls(): string[] {
-  return vi
-    .mocked(apiFetch)
-    .mock.calls.map(([path, options]) => `${options?.method ?? 'GET'} ${path}`)
+  return apiMock().mock.calls.map(([endpunkt, optionen]) => {
+    const pfad = endpunkt.replace(/\{([^}]+)\}/g, (_treffer, name: string) =>
+      String(optionen?.pathParams?.[name]),
+    )
+    return `${optionen?.method ?? 'GET'} ${pfad}`
+  })
 }
 
 function LocationProbe() {

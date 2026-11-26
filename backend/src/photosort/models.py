@@ -23,8 +23,9 @@ from photosort.db import Base
 
 
 class ScanStatus(enum.StrEnum):
-    """`QUEUED` heisst eingereiht, aber vom Worker noch nicht uebernommen; `CANCELLED` ist der
-    Endzustand eines Nutzer-Abbruchs - weder erfolgreich noch fehlgeschlagen."""
+    """`queued` heisst angenommen, aber noch nicht begonnen: der Lauf ist eingereiht und vom
+    Worker noch nicht uebernommen. `cancelled` ist der Endzustand eines Nutzer-Abbruchs - weder
+    erfolgreich noch fehlgeschlagen."""
 
     QUEUED = "queued"
     RUNNING = "running"

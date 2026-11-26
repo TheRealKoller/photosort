@@ -21,7 +21,9 @@ describe('operations API (Spec 0641)', () => {
     vi.mocked(apiFetch).mockResolvedValue(payload)
 
     await expect(listOperations(7)).resolves.toEqual(payload)
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/operations')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/operations', {
+      pathParams: { project_id: 7 },
+    })
   })
 
   it('bricht GENAU einen Lauf ab - Art und Id stehen im Pfad', async () => {
@@ -34,9 +36,13 @@ describe('operations API (Spec 0641)', () => {
     vi.mocked(apiFetch).mockResolvedValue(payload)
 
     await expect(cancelOperation(7, 'scan', 4)).resolves.toEqual(payload)
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/operations/scan/4/cancel', {
-      method: 'POST',
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/operations/{kind}/{run_id}/cancel',
+      {
+        method: 'POST',
+        pathParams: { project_id: 7, kind: 'scan', run_id: 4 },
+      },
+    )
   })
 
   it('reicht `already_finished` als Ergebnis durch, nicht als Fehler', async () => {
@@ -57,7 +63,10 @@ describe('operations API (Spec 0641)', () => {
     vi.mocked(apiFetch).mockResolvedValue(payload)
 
     await expect(cancelAllOperations(7)).resolves.toEqual(payload)
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/operations/cancel-all', { method: 'POST' })
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/operations/cancel-all', {
+      method: 'POST',
+      pathParams: { project_id: 7 },
+    })
   })
 
   it('bindet den Abfrageschluessel an das Projekt', () => {

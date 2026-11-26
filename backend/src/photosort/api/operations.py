@@ -92,11 +92,21 @@ class OperationsOut(BaseModel):
     operations: list[OperationOut]
 
 
+class CancelOutcome(StrEnum):
+    """Das Ergebnis eines Abbruchs - geschlossen, zwei Werte.
+
+    `already_finished` ist KEIN Fehler: es war nichts mehr abzubrechen (der Lauf war schon
+    beendet, oder ein paralleler Abbruch kam zuvor)."""
+
+    CANCEL_REQUESTED = "cancel_requested"
+    ALREADY_FINISHED = "already_finished"
+
+
 class CancelOut(BaseModel):
     kind: OperationKind
     run_id: int
     status: ScanStatus | ExportRunStatus
-    outcome: str
+    outcome: CancelOutcome
 
 
 class CancelAllOut(BaseModel):
@@ -210,7 +220,7 @@ async def _request_cancel(
             kind=kind,
             run_id=run_id,
             status=status_enum.CANCELLED,
-            outcome="cancel_requested",
+            outcome=CancelOutcome.CANCEL_REQUESTED,
         )
 
     # Ein laufender Lauf bekommt nur den Merker: den Endzustand schreibt der Worker.
@@ -239,7 +249,7 @@ async def _request_cancel(
             kind=kind,
             run_id=run_id,
             status=status_enum.RUNNING,
-            outcome="cancel_requested",
+            outcome=CancelOutcome.CANCEL_REQUESTED,
         )
 
     current = (
@@ -256,7 +266,12 @@ async def _request_cancel(
         kind.value,
         run_id,
     )
-    return CancelOut(kind=kind, run_id=run_id, status=current, outcome="already_finished")
+    return CancelOut(
+        kind=kind,
+        run_id=run_id,
+        status=current,
+        outcome=CancelOutcome.ALREADY_FINISHED,
+    )
 
 
 @router.get("", response_model=OperationsOut)

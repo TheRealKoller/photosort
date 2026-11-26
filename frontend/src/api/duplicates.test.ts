@@ -35,7 +35,9 @@ describe('api/duplicates', () => {
 
     const result = await getDuplicateGroup(7, 42)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups/42')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/duplicate-groups/{photo_id}', {
+      pathParams: { project_id: 7, photo_id: 42 },
+    })
     expect(result).toEqual(GROUP)
   })
 
@@ -46,10 +48,14 @@ describe('api/duplicates', () => {
 
     const result = await setDuplicateDecision(7, 42, 'discard')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/photos/42/duplicate-decision', {
-      method: 'PUT',
-      body: { decision: 'discard' },
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/photos/{photo_id}/duplicate-decision',
+      {
+        method: 'PUT',
+        pathParams: { project_id: 7, photo_id: 42 },
+        body: { decision: 'discard' },
+      },
+    )
     expect(result).toEqual(GROUP)
   })
 
@@ -60,10 +66,14 @@ describe('api/duplicates', () => {
 
     const result = await setDuplicateGroupDecision(7, 42, 'keep')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups/42/decision', {
-      method: 'PUT',
-      body: { decision: 'keep' },
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/duplicate-groups/{photo_id}/decision',
+      {
+        method: 'PUT',
+        pathParams: { project_id: 7, photo_id: 42 },
+        body: { decision: 'keep' },
+      },
+    )
     expect(result).toEqual(GROUP)
   })
 
@@ -74,9 +84,13 @@ describe('api/duplicates', () => {
 
     const result = await confirmDuplicateGroup(7, 42)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups/42/confirm', {
-      method: 'POST',
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/duplicate-groups/{photo_id}/confirm',
+      {
+        method: 'POST',
+        pathParams: { project_id: 7, photo_id: 42 },
+      },
+    )
     expect(result).toEqual(GROUP)
   })
 
@@ -87,7 +101,9 @@ describe('api/duplicates', () => {
 
     const result = await getDuplicateGroupIndex(7)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/duplicate-groups', {
+      pathParams: { project_id: 7 },
+    })
     expect(result).toEqual(INDEX)
   })
 

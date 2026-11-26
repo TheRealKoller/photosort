@@ -7,12 +7,11 @@ import type { DuplicateDecision, DuplicateGroupIndexOut, DuplicateGroupOut } fro
  * Grundlage der beiden Einstiege — aus dem Ausschuss-Schritt und aus der nach Vorschlägen
  * gefilterten Fotoliste. `total === 0` heißt „es gibt nichts zu vergleichen"; der Einstieg wird
  * dann nicht gerendert, damit er nicht auf eine leere Ansicht führt.
- *
- * KEINE Liste aller Gruppen: Sie wäre eine zweite Quelle derselben Reihenfolge neben
- * `position`/`total` der Gruppenantwort. Die Nachbarn reisen dort mit.
  */
 export function getDuplicateGroupIndex(projectId: number): Promise<DuplicateGroupIndexOut> {
-  return apiFetch<DuplicateGroupIndexOut>(`/projects/${projectId}/duplicate-groups`)
+  return apiFetch('/projects/{project_id}/duplicate-groups', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
@@ -27,7 +26,9 @@ export function getDuplicateGroupIndex(projectId: number): Promise<DuplicateGrou
  * Bildqualität. Die Ansicht zeigt darauf ihren LEEREN Zustand, nicht den Fehler-Alert.
  */
 export function getDuplicateGroup(projectId: number, photoId: number): Promise<DuplicateGroupOut> {
-  return apiFetch<DuplicateGroupOut>(`/projects/${projectId}/duplicate-groups/${photoId}`)
+  return apiFetch('/projects/{project_id}/duplicate-groups/{photo_id}', {
+    pathParams: { project_id: projectId, photo_id: photoId },
+  })
 }
 
 /**
@@ -46,10 +47,11 @@ export function setDuplicateDecision(
   photoId: number,
   decision: DuplicateDecision,
 ): Promise<DuplicateGroupOut> {
-  return apiFetch<DuplicateGroupOut>(
-    `/projects/${projectId}/photos/${photoId}/duplicate-decision`,
-    { method: 'PUT', body: { decision } },
-  )
+  return apiFetch('/projects/{project_id}/photos/{photo_id}/duplicate-decision', {
+    method: 'PUT',
+    pathParams: { project_id: projectId, photo_id: photoId },
+    body: { decision },
+  })
 }
 
 /**
@@ -64,10 +66,11 @@ export function setDuplicateGroupDecision(
   photoId: number,
   decision: DuplicateDecision,
 ): Promise<DuplicateGroupOut> {
-  return apiFetch<DuplicateGroupOut>(
-    `/projects/${projectId}/duplicate-groups/${photoId}/decision`,
-    { method: 'PUT', body: { decision } },
-  )
+  return apiFetch('/projects/{project_id}/duplicate-groups/{photo_id}/decision', {
+    method: 'PUT',
+    pathParams: { project_id: projectId, photo_id: photoId },
+    body: { decision },
+  })
 }
 
 /**
@@ -75,15 +78,14 @@ export function setDuplicateGroupDecision(
  * festgeschrieben. Kein angezeigter Zustand ändert sich — ein offener Vorschlag zeigt ihn schon.
  *
  * OHNE KÖRPER: Weder die Menge noch der Wert kommen von hier. Eine Id-Liste wäre ein
- * Massen-Schreibweg auf beliebige Fotos, ein Wert ein Massen-„behalten". Ebenso untersagt ist, den
- * angezeigten Zustand über `setDuplicateDecision`/`setDuplicateGroupDecision` festzuschreiben:
- * Das schriebe „behalten" auf den Gewinner ohne Vorschlag und überschriebe gespeicherte Handlungen.
+ * Massen-Schreibweg auf beliebige Fotos, ein Wert ein Massen-„behalten".
  */
 export function confirmDuplicateGroup(
   projectId: number,
   photoId: number,
 ): Promise<DuplicateGroupOut> {
-  return apiFetch<DuplicateGroupOut>(`/projects/${projectId}/duplicate-groups/${photoId}/confirm`, {
+  return apiFetch('/projects/{project_id}/duplicate-groups/{photo_id}/confirm', {
     method: 'POST',
+    pathParams: { project_id: projectId, photo_id: photoId },
   })
 }

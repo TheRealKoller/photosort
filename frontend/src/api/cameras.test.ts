@@ -30,7 +30,9 @@ describe('api/cameras', () => {
 
     const result = await listCameras(3)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/3/cameras')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/cameras', {
+      pathParams: { project_id: 3 },
+    })
     expect(result).toEqual([CAMERA])
   })
 
@@ -50,10 +52,14 @@ describe('api/cameras', () => {
 
     const result = await setCameraTimeOffset(3, 7, -120)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/3/cameras/7/time-offset', {
-      method: 'PUT',
-      body: { offset_minutes: -120 },
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/cameras/{camera_id}/time-offset',
+      {
+        method: 'PUT',
+        pathParams: { project_id: 3, camera_id: 7 },
+        body: { offset_minutes: -120 },
+      },
+    )
     expect(result).toEqual(CAMERA)
   })
 
@@ -64,10 +70,14 @@ describe('api/cameras', () => {
 
     await setCameraTimeOffset(3, 7, 0)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/3/cameras/7/time-offset', {
-      method: 'PUT',
-      body: { offset_minutes: 0 },
-    })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/{project_id}/cameras/{camera_id}/time-offset',
+      {
+        method: 'PUT',
+        pathParams: { project_id: 3, camera_id: 7 },
+        body: { offset_minutes: 0 },
+      },
+    )
   })
 
   it('fetches the suggestion with both photo ids as query parameters', async () => {
@@ -75,9 +85,10 @@ describe('api/cameras', () => {
 
     const result = await getCameraTimeOffsetSuggestion(3, 11, 12)
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/3/camera-time-offset-suggestion?photo_id=11&reference_photo_id=12',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/camera-time-offset-suggestion', {
+      pathParams: { project_id: 3 },
+      query: { photo_id: 11, reference_photo_id: 12 },
+    })
     expect(result).toEqual(SUGGESTION)
   })
 

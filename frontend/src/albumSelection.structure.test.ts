@@ -53,6 +53,14 @@ const DRAFT_FILES = [
   'components/DraftExplainer.tsx',
   'components/UndoToast.tsx',
   'components/AlbumStateBadge.tsx',
+  'components/AlbumDraftHeader.tsx',
+  'components/AlbumDraftBar.tsx',
+  'components/AlbumDraftDay.tsx',
+  'components/AlbumDraftDayControls.tsx',
+  'components/AlbumDraftNotice.tsx',
+  'components/AlbumDraftFilterNotices.tsx',
+  'components/AlbumDraftClosing.tsx',
+  'hooks/useDraftDecisions.ts',
 ] as const
 
 /** Die Dateien der ENDAUSWAHL - sie dürfen `draftMembership` nicht importieren. */

@@ -1,7 +1,13 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-23 (Spec 0650 — Backend und e2e laufen je in Shards, der geforderte Kontext ist der Aggregator mit `if: always()` und ausdrücklicher Ergebnisprüfung, der Image-Cache wird nur hinter dem Fork-Ausschluss geschrieben, und `backend/Dockerfile` trennt Fremdpakete, geprüfte Modell-Assets und Quellcode in eigene Schichten; davor 2026-11-16: Spec 0655 — die Backend-Auflösung ist als `backend/uv.lock` versioniert, lokal installiert `uv sync --locked --extra dev`, der tragende CI-Job exportiert denselben Lock über `uv export --locked`; fixiert sind Versionen, nicht Bytes, und das Image löst weiterhin frisch auf; davor 2026-11-08: Spec 0621 — Eyes Albumstufe zählt im Album-Entwurf: das Verfahren friert der Laufstart in `criterion_scoring_runs.album_level_source` ein, die Stufe kommt aus `album_stage.py::load_album_levels` ohne Rückfall, das Urteil nennt bei Eye-Quelle die Herkunft statt einer Begründung; davor Spec 0616)
+**Letzte Aktualisierung:** 2026-11-26 (Spec 0654 — die Typen der Oberfläche entstehen aus
+`backend/openapi.json` über `openapi-typescript`, der Aufruf trägt seinen Endpunkt, und die sechs
+großen Seiten sind in Bausteine zerlegt; davor 2026-11-23: Spec 0650 — Backend und e2e laufen je in
+Shards, der geforderte Kontext ist der Aggregator mit `if: always()` und ausdrücklicher
+Ergebnisprüfung, der Image-Cache wird nur hinter dem Fork-Ausschluss geschrieben, und
+`backend/Dockerfile` trennt Fremdpakete, geprüfte Modell-Assets und Quellcode in eigene Schichten;
+ältere Einträge stehen in der Git-Historie.)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -1704,6 +1710,28 @@ Verarbeitungs-Cache (Thumbnails).
   [`specs/features/0174-browser-zugang-fuer-claude.md`](../specs/features/0174-browser-zugang-fuer-claude.md)
   und ADR
   [`decisions/0058-browsergestuetzte-oberflaechenpruefung.md`](../specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md).
+
+### Schnittstellenvertrag zur API
+
+Antwort- und Anfragekörper zwischen Backend und Oberfläche haben genau eine Quelle: die
+OpenAPI-Beschreibung aus `backend/src/photosort/main.py::create_app()`. Sie liegt als erzeugtes
+`backend/openapi.json` im Repository; daraus erzeugt `openapi-typescript`
+`frontend/src/api/generated/schema.d.ts`. Beide Dateien werden nie von Hand geändert.
+
+- `frontend/src/api/types.ts` ist die einzige Importquelle der Oberfläche. Erzeugte Strukturen
+  stehen dort als Alias auf `components["schemas"][...]`, oberflächen-eigene Ableitungen in einem
+  eigenen, gekennzeichneten Abschnitt. Eine zweite handgepflegte Fassung einer Serverstruktur gibt
+  es nicht; `scripts/tests/test_frontend_typen.py` meldet sie.
+- `frontend/src/api/client.ts::apiFetch` nimmt den Endpunkt als Vorlage samt Pfadparametern,
+  Query und Körper; Antwort- und Anfragekörper leitet es aus `paths[...]` ab. Eine Verwechslung
+  zweier Endpunkte ist ein Typfehler. Binärantworten laufen über `apiFetchBlob`.
+- Drei Prüfungen halten die Nachführung: `backend/tests/test_openapi_vertrag.py` gegen das
+  Artefakt, `npm run api:check` (Teil von `npm run typecheck`) gegen die erzeugten Typen und `tsc`
+  gegen die Aufrufstellen. Jede Meldung nennt die Abweichung und den Nachführschritt.
+- Verhaltensregeln des Servers (etwa „`null` heißt nicht erfasst, nie `0`", „`queued` heißt
+  angenommen, aber noch nicht begonnen") stehen als Docstring oder `Field(description=...)` an der
+  Struktur bzw. am Feld und erscheinen dadurch am erzeugten Typ; die Route-Docstrings tragen die
+  Feld-Wirkung eines Schreibendpunkts.
 
 ## Logging
 

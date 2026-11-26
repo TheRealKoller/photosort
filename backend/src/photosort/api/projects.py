@@ -19,6 +19,7 @@ from photosort.api.deps import (
     get_opencloud_client,
     get_session,
 )
+from photosort.api.responses import AusschussGateConfirmedOut, TriggerQueuedOut
 from photosort.api.run_guards import reject_while_a_criterion_run_is_active
 from photosort.candidate_counts import (
     count_eye_candidates,
@@ -115,7 +116,13 @@ class ScanSummary(BaseModel):
     files_found: int
     # None solange die Enumerationsphase noch nicht abgeschlossen ist, unterschieden von 0
     # (leeres Projekt) - das Frontend muss `is not None`/`!= null` statt truthy pruefen.
-    total_files: int | None
+    total_files: int | None = Field(
+        description=(
+            "`null` solange die Enumerationsphase nicht abgeschlossen ist - ausdruecklich "
+            "unterschieden von `0` (leeres Projekt). Immer auf `null` pruefen, nie auf "
+            "Wahrheitswert."
+        )
+    )
     photos_added: int
     photos_updated: int
     photos_removed: int
@@ -182,13 +189,23 @@ class CloudPhaseSummaryOut(BaseModel):
     Konfigurationshinweis."""
 
     purpose: CloudVisionPhase
-    photos_total: int | None
-    photos_processed: int | None
-    failed_calls: int | None
-    responses_used: int | None
-    input_tokens: int | None
-    output_tokens: int | None
-    cost_usd: float | None
+    photos_total: int | None = Field(
+        description="`null`, solange die Phase ihre Gesamtzahl nicht kennt - nie `0`."
+    )
+    photos_processed: int | None = Field(
+        description="Bewegt sich waehrend des Laufs; `null` vor dem ersten Stand - nie `0`."
+    )
+    failed_calls: int | None = Field(
+        description="`null` vor dem ersten abgesetzten Aufruf - nie `0` als Platzhalter."
+    )
+    responses_used: int | None = Field(
+        description="Steht erst am Phasenende fest; `null` heisst noch nicht erfasst, nie `0`."
+    )
+    input_tokens: int | None = Field(description="`null` heisst nicht erfasst - nie `0` Tokens.")
+    output_tokens: int | None = Field(description="`null` heisst nicht erfasst - nie `0` Tokens.")
+    cost_usd: float | None = Field(
+        description=("`null` heisst kein Preis hinterlegt oder nicht erfasst - nie kostenlos.")
+    )
     model: str | None
     provider: str | None
 
@@ -247,7 +264,11 @@ class CriterionScoringRunSummary(BaseModel):
     # die Oberflaeche schreibt dort sichtbar hin, dass die Angabe noch fehlt, statt ein leeres
     # Feld zu zeigen. `null` steht auch immer bei `ranking` (keine gezaehlte Menge) und bei jedem
     # beendeten Lauf.
-    phase_remaining_seconds: float | None
+    phase_remaining_seconds: float | None = Field(
+        description=(
+            "`null` heisst noch nicht abschaetzbar - nie keine Restdauer und nie sofort fertig."
+        )
+    )
     # Die Zaehler der Phase `persons`. `null` heisst "die Phase lief nicht" (keine gezeigten
     # Gesichter des aktuellen Modells, Modell nicht ladbar, oder noch nicht erreicht) - die
     # Oberflaeche blendet den Teilschritt eines beendeten Laufs mit `null` aus. Keine Namen und
@@ -275,8 +296,12 @@ class ClassificationEstimatePartOut(BaseModel):
     kind: Literal["cloud", "eye"]
     provider: str | None
     model: str | None
-    price_per_image_usd: float | None
-    candidate_count: int | None
+    price_per_image_usd: float | None = Field(
+        description="`null` heisst fuer dieses Modell ist kein Preis hinterlegt, nie `0`."
+    )
+    candidate_count: int | None = Field(
+        description=("`null` heisst die Menge ist nicht verlaesslich schaetzbar - nie `0` Fotos.")
+    )
     estimated_cost_usd: float | None
 
 
@@ -962,12 +987,16 @@ async def delete_project(
     )
 
 
-@router.post("/{project_id}/scan", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{project_id}/scan",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TriggerQueuedOut,
+)
 async def trigger_scan(
     project_id: int,
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
-) -> dict[str, str]:
+) -> TriggerQueuedOut:
     """Legt den wartenden Lauf VOR dem Einreihen an: damit ist er sofort sichtbar, adressierbar
     und abbrechbar, und der Worker uebernimmt per bedingtem UPDATE genau diese Zeile. Die
     Antwort bleibt `202 {"status": "queued"}`."""
@@ -977,15 +1006,19 @@ async def trigger_scan(
     await session.commit()
     await session.refresh(scan_run)
     await enqueuer.enqueue_job("scan_project", project_id, run_id=scan_run.id)
-    return {"status": "queued"}
+    return TriggerQueuedOut(status="queued")
 
 
-@router.post("/{project_id}/score", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{project_id}/score",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TriggerQueuedOut,
+)
 async def trigger_score(
     project_id: int,
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
-) -> dict[str, str]:
+) -> TriggerQueuedOut:
     # Analog trigger_scan oben: derselbe router-weite
     # dependencies=[Depends(get_current_user)]-Torwaechter, keine Rollenunterscheidung zwischen
     # den beiden bekannten Nutzern.
@@ -995,14 +1028,18 @@ async def trigger_score(
     await session.commit()
     await session.refresh(scoring_run)
     await enqueuer.enqueue_job("score_project", project_id, run_id=scoring_run.id)
-    return {"status": "queued"}
+    return TriggerQueuedOut(status="queued")
 
 
-@router.post("/{project_id}/confirm-ausschuss-gate", status_code=status.HTTP_200_OK)
+@router.post(
+    "/{project_id}/confirm-ausschuss-gate",
+    status_code=status.HTTP_200_OK,
+    response_model=AusschussGateConfirmedOut,
+)
 async def confirm_ausschuss_gate(
     project_id: int,
     session: AsyncSession = Depends(get_session),
-) -> dict[str, str]:
+) -> AusschussGateConfirmedOut:
     """Abschluss des Ausschuss-Schritts: uebernimmt ALLE offenen Vorschlaege und gibt den
     naechsten Schritt frei.
 
@@ -1087,16 +1124,20 @@ async def confirm_ausschuss_gate(
     elif offene_ids:
         await session.commit()
 
-    return {"status": "confirmed"}
+    return AusschussGateConfirmedOut(status="confirmed")
 
 
-@router.post("/{project_id}/classify", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{project_id}/classify",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TriggerQueuedOut,
+)
 async def trigger_classify(
     project_id: int,
     payload: ClassifyRequest,
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
-) -> dict[str, str]:
+) -> TriggerQueuedOut:
     """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet den gewaehlten Weg mit
     der Kriterien- und der Rangfolge-Phase (worker/classification.py: run_classification).
 
@@ -1236,7 +1277,7 @@ async def trigger_classify(
         landmark_model=resolved.landmark_model,
         run_id=criterion_run.id,
     )
-    return {"status": "queued"}
+    return TriggerQueuedOut(status="queued")
 
 
 @router.put("/{project_id}/cloud-vision-consent", response_model=CloudVisionConsentOut)

@@ -22,8 +22,9 @@ describe('api/ratings', () => {
 
     const result = await setRating(1, 'album_worthy')
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/1/rating', {
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/rating', {
       method: 'PUT',
+      pathParams: { photo_id: 1 },
       body: { status: 'album_worthy' },
     })
     expect(result).toEqual(WRITTEN)
@@ -35,7 +36,10 @@ describe('api/ratings', () => {
 
     const result = await deleteRating(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/1/rating', { method: 'DELETE' })
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/rating', {
+      method: 'DELETE',
+      pathParams: { photo_id: 1 },
+    })
     expect(result).toEqual(withdrawn)
   })
 
@@ -46,8 +50,9 @@ describe('api/ratings', () => {
 
     const result = await setFavorite(1, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/1/favorite', {
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/favorite', {
       method: 'PUT',
+      pathParams: { photo_id: 1 },
       body: { favorite: true },
     })
     expect(result.favorite).toBe(true)
@@ -58,8 +63,9 @@ describe('api/ratings', () => {
 
     await setFavorite(7, false)
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/7/favorite', {
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/favorite', {
       method: 'PUT',
+      pathParams: { photo_id: 7 },
       body: { favorite: false },
     })
   })

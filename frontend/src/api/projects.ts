@@ -1,37 +1,28 @@
 import { apiFetch } from './client'
 import type {
+  AusschussGateConfirmedOut,
   ClassificationEstimateOut,
   ClassificationWay,
+  CloudVisionConsentOut,
+  CreateProjectPayload,
   FineLabelCountOut,
   ModelChoiceOut,
+  ModelChoicePayload,
   ProjectOut,
   ProjectStatsOut,
+  TriggerQueuedOut,
 } from './types'
 
-export interface CloudVisionConsentOut {
-  cloud_vision_detection_enabled: boolean
-  cloud_vision_consent_at: string | null
-}
-
-export interface CreateProjectPayload {
-  name: string
-  opencloud_path: string
-}
-
-export interface TriggerScanResponse {
-  status: string
-}
-
 export function listProjects(): Promise<ProjectOut[]> {
-  return apiFetch<ProjectOut[]>('/projects')
+  return apiFetch('/projects')
 }
 
 export function createProject(payload: CreateProjectPayload): Promise<ProjectOut> {
-  return apiFetch<ProjectOut>('/projects', { method: 'POST', body: payload })
+  return apiFetch('/projects', { method: 'POST', body: payload })
 }
 
 export function getProject(id: number): Promise<ProjectOut> {
-  return apiFetch<ProjectOut>(`/projects/${id}`)
+  return apiFetch('/projects/{project_id}', { pathParams: { project_id: id } })
 }
 
 /**
@@ -40,27 +31,35 @@ export function getProject(id: number): Promise<ProjectOut> {
  *
  * `confirmName` ist der vom Nutzer eingetippte Projektname. Der Server prueft ihn ein zweites Mal
  * (`400` bei Abweichung) - eine rein clientseitige Bestaetigung waere gegen direkte API-Nutzung
- * wirkungslos. `apiFetch` traegt bei jeder Methode einen JSON-Body und behandelt `204` bereits.
+ * wirkungslos.
  */
 export function deleteProject(id: number, confirmName: string): Promise<void> {
-  return apiFetch<void>(`/projects/${id}`, {
+  return apiFetch('/projects/{project_id}', {
     method: 'DELETE',
+    pathParams: { project_id: id },
     body: { confirm_name: confirmName },
   })
 }
 
-export function triggerScan(id: number): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/scan`, { method: 'POST' })
+export function triggerScan(id: number): Promise<TriggerQueuedOut> {
+  return apiFetch('/projects/{project_id}/scan', {
+    method: 'POST',
+    pathParams: { project_id: id },
+  })
 }
 
-export function triggerScore(id: number): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/score`, { method: 'POST' })
+export function triggerScore(id: number): Promise<TriggerQueuedOut> {
+  return apiFetch('/projects/{project_id}/score', {
+    method: 'POST',
+    pathParams: { project_id: id },
+  })
 }
 
 // Ausschuss-Gate - synchron (kein Job-Trigger, kein 202), setzt gate_confirmed_at direkt.
-export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/confirm-ausschuss-gate`, {
+export function confirmAusschussGate(id: number): Promise<AusschussGateConfirmedOut> {
+  return apiFetch('/projects/{project_id}/confirm-ausschuss-gate', {
     method: 'POST',
+    pathParams: { project_id: id },
   })
 }
 
@@ -68,20 +67,17 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
  * Der EINE Ausloeser der Klassifizierung - der Server verkettet die Phasen des gewaehlten Wegs,
  * der Aufrufer kennt ihre Reihenfolge nicht.
  *
- * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
- * ScoringRunSummary.id). `mode` waehlt "wie im Projekt eingestellt"
- * (`project`) oder "nur lokal" (`local`) und hat KEINEN Vorgabewert. Den wirksamen Weg, die
- * Modelle und die Einwilligung entscheidet der Server aus der Projektwahl: ohne Einwilligung
- * wird der wirksame Cloud-Weg mit 403 abgewiesen, ein abgeschaltetes Eye ebenso, ein nicht
- * erreichbares mit 503.
+ * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring. `mode` waehlt
+ * "wie im Projekt eingestellt" (`project`) oder "nur lokal" (`local`) und hat KEINEN Vorgabewert.
  */
 export function triggerClassification(
   id: number,
   scoringRunId: number,
   mode: ClassificationWay,
-): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/classify`, {
+): Promise<TriggerQueuedOut> {
+  return apiFetch('/projects/{project_id}/classify', {
     method: 'POST',
+    pathParams: { project_id: id },
     body: { scoring_run_id: scoringRunId, mode },
   })
 }
@@ -91,8 +87,9 @@ export function setCloudVisionConsent(
   id: number,
   enabled: boolean,
 ): Promise<CloudVisionConsentOut> {
-  return apiFetch<CloudVisionConsentOut>(`/projects/${id}/cloud-vision-consent`, {
+  return apiFetch('/projects/{project_id}/cloud-vision-consent', {
     method: 'PUT',
+    pathParams: { project_id: id },
     body: { enabled },
   })
 }
@@ -106,29 +103,19 @@ export function setCloudVisionConsent(
  * des Feldes, nicht an jeden Tastendruck.
  */
 export function setSelectionTarget(id: number, target: number | null): Promise<ProjectOut> {
-  return apiFetch<ProjectOut>(`/projects/${id}/selection-target`, {
+  return apiFetch('/projects/{project_id}/selection-target', {
     method: 'PUT',
+    pathParams: { project_id: id },
     body: { target },
   })
 }
-
-// Die Schaetzung gilt JE WAHL (`?mode=project|local`): `project` nimmt die im Projekt
-// gespeicherte Wahl (Cloud-Kategorisierung, Eye-Kategorisierung oder Eye + Landmark mit
-// Einwilligung), `local` keinen Anteil. Funktioniert unabhaengig vom Consent-Schalter (auch bei
-// deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
 
 /**
  * Katalog und gespeicherte Wahl des Projekts - die Quelle fuer den Abschnitt
  * "Modellwahl" in den Einstellungen und fuer die Kurzfassung an der Laufwahl.
  */
 export function getModelChoice(id: number): Promise<ModelChoiceOut> {
-  return apiFetch<ModelChoiceOut>(`/projects/${id}/model-choice`)
-}
-
-export interface ModelChoicePayload {
-  category_method: 'cloud' | 'eye'
-  category_model: string | null
-  landmark_model: string | null
+  return apiFetch('/projects/{project_id}/model-choice', { pathParams: { project_id: id } })
 }
 
 /**
@@ -136,40 +123,41 @@ export interface ModelChoicePayload {
  * nichts; `409` heisst "es laeuft gerade eine Klassifizierung".
  */
 export function putModelChoice(id: number, payload: ModelChoicePayload): Promise<ModelChoiceOut> {
-  return apiFetch<ModelChoiceOut>(`/projects/${id}/model-choice`, {
+  return apiFetch('/projects/{project_id}/model-choice', {
     method: 'PUT',
+    pathParams: { project_id: id },
     body: payload,
   })
 }
+
+// Die Schaetzung gilt JE WAHL (`?mode=project|local`): `project` nimmt die im Projekt gespeicherte
+// Wahl, `local` keinen Anteil. Funktioniert unabhaengig vom Consent-Schalter (auch bei
+// deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
 export function getClassificationEstimate(
   id: number,
   mode: ClassificationWay,
 ): Promise<ClassificationEstimateOut> {
-  return apiFetch<ClassificationEstimateOut>(
-    `/projects/${id}/classify/estimate?mode=${encodeURIComponent(mode)}`,
-  )
+  return apiFetch('/projects/{project_id}/classify/estimate', {
+    pathParams: { project_id: id },
+    query: { mode },
+  })
 }
 
 /**
  * Haeufigste Feinlabels dieses Projekts - absteigend nach `photo_count`, Tie-Break `canonical_key`
  * aufsteigend, bereits vom Server sortiert. Die Reihenfolge wird im Frontend uebernommen, nicht neu
  * sortiert.
- *
- * Die Zaehlung ist projekt-skopiert (das Vokabular selbst ist projektuebergreifend) - ein leeres
- * Projekt liefert eine leere Liste mit `200`.
  */
 export function listFineLabels(id: number): Promise<FineLabelCountOut[]> {
-  return apiFetch<FineLabelCountOut[]>(`/projects/${id}/fine-labels`)
+  return apiFetch('/projects/{project_id}/fine-labels', { pathParams: { project_id: id } })
 }
 
 /**
  * Momentaufnahme des Projektzustands - Umfang, Speicher, Kategorien, Ist-Kosten,
- * Bearbeitungs-/Bewertungsstand, Diagnose.
- *
- * Als Projekt-Unterressource hier gefuehrt (konsistent mit `listFineLabels`/
- * `getClassificationEstimate`), obwohl sie backend-seitig aus einem eigenen Router kommt: der
- * Schnitt der Frontend-API-Module folgt der Ressource, nicht dem Server-Modul.
+ * Bearbeitungs-/Bewertungsstand, Diagnose. Als Projekt-Unterressource hier gefuehrt, obwohl sie
+ * backend-seitig aus einem eigenen Router kommt: der Schnitt der Frontend-API-Module folgt der
+ * Ressource, nicht dem Server-Modul.
  */
 export function getProjectStats(id: number): Promise<ProjectStatsOut> {
-  return apiFetch<ProjectStatsOut>(`/projects/${id}/stats`)
+  return apiFetch('/projects/{project_id}/stats', { pathParams: { project_id: id } })
 }

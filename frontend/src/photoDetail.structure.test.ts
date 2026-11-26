@@ -64,7 +64,7 @@ describe('Die Aufteilung nach has_presence_threshold steht an genau einer Stelle
    * richtig aus, schnitte Qualität und Bildinhalt aber verschieden - und die Abweichung fiele
    * erst am unterschiedlich befüllten Raster auf.
    *
-   * `api/types.ts` ist der Deklarationsort des Feldes und gehört deshalb dazu.
+   * `api/generated/schema.d.ts` ist der Deklarationsort des Feldes und gehört deshalb dazu.
    */
   it('nennt den Feldnamen nur im Typ und in der geteilten Funktion', () => {
     const treffer = productionSources()
@@ -72,7 +72,7 @@ describe('Die Aufteilung nach has_presence_threshold steht an genau einer Stelle
       .map((file) => relativePath(file.path))
       .sort()
 
-    expect(treffer).toEqual(['api/types.ts', 'utils/criterionScores.ts'])
+    expect(treffer).toEqual(['api/generated/schema.d.ts', 'utils/criterionScores.ts'])
   })
 
   /* Positiv-Gegenprobe: Der Erkenner läuft nicht gegen eine leere Menge. */
@@ -106,7 +106,7 @@ describe('Die dreistufige Ortsnamen-Wahl steht in genau einer Funktion', () => {
       .map((file) => relativePath(file.path))
       .sort()
 
-    expect(treffer).toEqual(['api/types.ts', 'utils/timeOfDay.ts'])
+    expect(treffer).toEqual(['api/generated/schema.d.ts', 'utils/timeOfDay.ts'])
   })
 
   it('lässt beide Aufrufstellen die Funktion importieren', () => {

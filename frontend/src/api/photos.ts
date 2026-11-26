@@ -1,65 +1,36 @@
 import { apiFetch, apiFetchBlob } from './client'
 import type {
   AlbumDraftOut,
+  DraftAlternativesOut,
   DraftExchangeOut,
   DraftExchangeUndoIn,
   DraftExchangeUndoOut,
+  ListDraftAlternativesParams,
+  ListPhotosParams,
   MotifCorrectionOut,
   MotifKey,
-  DraftAlternativesOut,
   PhotoListOut,
   PhotoVariant,
-  RatingFilter,
 } from './types'
 
-export interface ListPhotosParams {
-  ratingStatus?: RatingFilter
-  limit?: number
-  offset?: number
-  /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
-   * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
-  cameraId?: number
-  /** Nur Fotos, die JEDE dieser Personen wirksam tragen (höchstens zwei). */
-  personIds?: readonly number[]
-}
-
-export interface ListDraftAlternativesParams {
-  eventId: number
-  /** Das Bezugsbild des Tauschs. Es steuert die zeitliche Position (`reference_index`) und ist
-   * nie selbst dabei. Ohne (Hinzufügen-Feld) ordnet der Server nach Qualität; der Parameter fehlt
-   * dann ganz. */
-  photoId?: number
-  limit?: number
-  offset?: number
-  /** Das Band: die Aufnahmeserie um das Bezugsbild, Fenster vom Server geschnitten. Nur
-   * zusammen mit `photoId`; `limit`/`offset` werden dann nicht gesendet. */
-  series?: true
-}
-
+/**
+ * Die Fotos eines Projekts, seitenweise. Query-Werte gehen als typisiertes Objekt an die eine
+ * Aufrufgrenze; `personIds` wird dort als wiederholter Schlüssel `person_id` serialisiert.
+ */
 export function listPhotos(
   projectId: number,
   params: ListPhotosParams = {},
 ): Promise<PhotoListOut> {
-  const query = new URLSearchParams()
-  if (params.ratingStatus !== undefined) {
-    query.set('rating_status', params.ratingStatus)
-  }
-  if (params.limit !== undefined) {
-    query.set('limit', String(params.limit))
-  }
-  if (params.offset !== undefined) {
-    query.set('offset', String(params.offset))
-  }
-  if (params.cameraId !== undefined) {
-    query.set('camera_id', String(params.cameraId))
-  }
-  for (const personId of params.personIds ?? []) {
-    query.append('person_id', String(personId))
-  }
-  const queryString = query.toString()
-  return apiFetch<PhotoListOut>(
-    `/projects/${projectId}/photos${queryString ? `?${queryString}` : ''}`,
-  )
+  return apiFetch('/projects/{project_id}/photos', {
+    pathParams: { project_id: projectId },
+    query: {
+      ...(params.ratingStatus !== undefined ? { rating_status: params.ratingStatus } : {}),
+      ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      ...(params.cameraId !== undefined ? { camera_id: params.cameraId } : {}),
+      ...(params.personIds ? { person_id: [...params.personIds] } : {}),
+    },
+  })
 }
 
 /**
@@ -68,13 +39,14 @@ export function listPhotos(
  * Reihenfolge kommt vom Server und wird nie nachsortiert.
  */
 export function getAlbumDraft(projectId: number): Promise<AlbumDraftOut> {
-  return apiFetch<AlbumDraftOut>(`/projects/${projectId}/album-draft`)
+  return apiFetch('/projects/{project_id}/album-draft', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
  * Die Fotos eines Events abzueglich des eigenen Albums, seitenweise. Gestrichene sind darunter -
- * daraus folgt die Umkehrbarkeit des Tauschs. `total` der Antwort ist die RESTMENGE und damit
- * unabhaengig von `limit`/`offset`.
+ * daraus folgt die Umkehrbarkeit des Tauschs.
  *
  * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: Mit Bezugsbild ist sie zeitlich,
  * und die Stelle des Bezugsbildes liefert der Server als `reference_index` mit.
@@ -83,23 +55,17 @@ export function listDraftAlternatives(
   projectId: number,
   params: ListDraftAlternativesParams,
 ): Promise<DraftAlternativesOut> {
-  const query = new URLSearchParams({ event_id: String(params.eventId) })
-  if (params.photoId !== undefined) {
-    query.set('photo_id', String(params.photoId))
-  }
-  if (params.series === true) {
-    query.set('series', 'true')
-  } else {
-    if (params.limit !== undefined) {
-      query.set('limit', String(params.limit))
-    }
-    if (params.offset !== undefined) {
-      query.set('offset', String(params.offset))
-    }
-  }
-  return apiFetch<DraftAlternativesOut>(
-    `/projects/${projectId}/draft-alternatives?${query.toString()}`,
-  )
+  const band = params.series === true
+  return apiFetch('/projects/{project_id}/draft-alternatives', {
+    pathParams: { project_id: projectId },
+    query: {
+      event_id: params.eventId,
+      ...(params.photoId !== undefined ? { photo_id: params.photoId } : {}),
+      ...(band ? { series: true } : {}),
+      ...(band || params.limit === undefined ? {} : { limit: params.limit }),
+      ...(band || params.offset === undefined ? {} : { offset: params.offset }),
+    },
+  })
 }
 
 /**
@@ -112,7 +78,10 @@ export async function fetchPhotoImageBlobUrl(
   photoId: number,
   variant: PhotoVariant,
 ): Promise<string> {
-  const blob = await apiFetchBlob(`/photos/${photoId}/image?variant=${variant}`)
+  const blob = await apiFetchBlob('/photos/{photo_id}/image', {
+    pathParams: { photo_id: photoId },
+    query: { variant },
+  })
   return URL.createObjectURL(blob)
 }
 
@@ -121,24 +90,25 @@ export async function fetchPhotoImageBlobUrl(
  *
  * Der Body traegt AUSSCHLIESSLICH `applies` - der Nutzer schaetzt nie eine Zahl ein. Weder
  * `user_id` noch `motif_key` noch eine Staerke gehen mit; der Schluessel steht im Pfad, der Nutzer
- * kommt serverseitig aus dem Token. `encodeURIComponent` haelt einen Altwert mit Sonderzeichen aus
- * der Pfadstruktur heraus - der Server weist ihn danach ohnehin mit `422` ab.
+ * kommt serverseitig aus dem Token.
  */
 export function setMotifCorrection(
   photoId: number,
   motifKey: MotifKey,
   applies: boolean,
 ): Promise<MotifCorrectionOut> {
-  return apiFetch<MotifCorrectionOut>(
-    `/photos/${photoId}/motif-corrections/${encodeURIComponent(motifKey)}`,
-    { method: 'PUT', body: { applies } },
-  )
+  return apiFetch('/photos/{photo_id}/motif-corrections/{motif_key}', {
+    method: 'PUT',
+    pathParams: { photo_id: photoId, motif_key: motifKey },
+    body: { applies },
+  })
 }
 
 /** Nimmt die Korrektur eines Motivs zurueck - idempotent, ohne Body. */
 export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Promise<void> {
-  return apiFetch<void>(`/photos/${photoId}/motif-corrections/${encodeURIComponent(motifKey)}`, {
+  return apiFetch('/photos/{photo_id}/motif-corrections/{motif_key}', {
     method: 'DELETE',
+    pathParams: { photo_id: photoId, motif_key: motifKey },
   })
 }
 
@@ -146,19 +116,17 @@ export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Prom
  * Tauscht im eigenen Album-Entwurf ein Bild gegen ein anderes desselben Ereignisses — EIN Aufruf
  * statt zweier `setRating`.
  *
- * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht.
- *
- * Der Body trägt AUSSCHLIESSLICH die beiden Foto-Ids. Kein `event_id`, kein Gewicht, kein
- * Nutzer: Der Server löst alles über die Rangzeile des Laufs auf, und ein vom Client geliefertes
- * Gewicht ließe die eigene Korrektur in der global wirkenden Ableitung stärker zählen.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Der Body trägt
+ * AUSSCHLIESSLICH die beiden Foto-Ids: kein `event_id`, kein Gewicht, kein Nutzer.
  */
 export function exchangeDraftPhoto(
   projectId: number,
   photoId: number,
   replacedPhotoId: number,
 ): Promise<DraftExchangeOut> {
-  return apiFetch<DraftExchangeOut>(`/projects/${projectId}/draft/exchange`, {
+  return apiFetch('/projects/{project_id}/draft/exchange', {
     method: 'POST',
+    pathParams: { project_id: projectId },
     body: { photo_id: photoId, replaced_photo_id: replacedPhotoId },
   })
 }
@@ -172,8 +140,9 @@ export function undoDraftExchange(
   projectId: number,
   body: DraftExchangeUndoIn,
 ): Promise<DraftExchangeUndoOut> {
-  return apiFetch<DraftExchangeUndoOut>(`/projects/${projectId}/draft/exchange/undo`, {
+  return apiFetch('/projects/{project_id}/draft/exchange/undo', {
     method: 'POST',
+    pathParams: { project_id: projectId },
     body,
   })
 }

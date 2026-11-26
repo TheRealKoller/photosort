@@ -20,15 +20,13 @@ import type {
  * Anbieter folgt aus dem Modell, und welche Faelle es gibt, entscheidet die Pruefung.
  */
 
-function reviewBase(projectId: number): string {
-  return `/projects/${projectId}/classification-reviews`
-}
-
 /** Alle Pruefungen des Projekts, neueste zuerst. */
 export function listClassificationReviews(
   projectId: number,
 ): Promise<ClassificationReviewListItemOut[]> {
-  return apiFetch<ClassificationReviewListItemOut[]>(reviewBase(projectId))
+  return apiFetch('/projects/{project_id}/classification-reviews', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
@@ -38,7 +36,9 @@ export function listClassificationReviews(
 export function getClassificationReviewOptions(
   projectId: number,
 ): Promise<ClassificationReviewOptionsOut> {
-  return apiFetch<ClassificationReviewOptionsOut>(`${reviewBase(projectId)}/options`)
+  return apiFetch('/projects/{project_id}/classification-reviews/options', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
@@ -51,21 +51,17 @@ export function getClassificationReviewEstimate(
   projectId: number,
   sides: { a: ClassificationReviewSideIn; b: ClassificationReviewSideIn },
 ): Promise<ClassificationReviewEstimateOut> {
-  const query = new URLSearchParams({
-    a_kind: sides.a.kind,
-    b_kind: sides.b.kind,
+  return apiFetch('/projects/{project_id}/classification-reviews/estimate', {
+    pathParams: { project_id: projectId },
+    query: {
+      a_kind: sides.a.kind,
+      b_kind: sides.b.kind,
+      // Ein Modell gilt nur fuer eine Cloud-Seite; an einer Eye- oder lokalen Seite ist es
+      // wirkungslos und wird deshalb nicht gesendet.
+      ...(sides.a.kind === 'cloud' && sides.a.model ? { a_model: sides.a.model } : {}),
+      ...(sides.b.kind === 'cloud' && sides.b.model ? { b_model: sides.b.model } : {}),
+    },
   })
-  // Ein Modell gilt nur fuer eine Cloud-Seite; an einer Eye- oder lokalen Seite ist es wirkungslos
-  // und wird deshalb nicht gesendet.
-  if (sides.a.kind === 'cloud' && sides.a.model) {
-    query.set('a_model', sides.a.model)
-  }
-  if (sides.b.kind === 'cloud' && sides.b.model) {
-    query.set('b_model', sides.b.model)
-  }
-  return apiFetch<ClassificationReviewEstimateOut>(
-    `${reviewBase(projectId)}/estimate?${query.toString()}`,
-  )
 }
 
 /**
@@ -97,8 +93,9 @@ export function createClassificationReview(
   projectId: number,
   body: ClassificationReviewCreateBody,
 ): Promise<ClassificationReviewCreatedOut> {
-  return apiFetch<ClassificationReviewCreatedOut>(reviewBase(projectId), {
+  return apiFetch('/projects/{project_id}/classification-reviews', {
     method: 'POST',
+    pathParams: { project_id: projectId },
     body: {
       a: sideBody(body.a),
       b: sideBody(body.b),
@@ -112,7 +109,9 @@ export function getClassificationReview(
   projectId: number,
   reviewId: number,
 ): Promise<ClassificationReviewDetailOut> {
-  return apiFetch<ClassificationReviewDetailOut>(`${reviewBase(projectId)}/${reviewId}`)
+  return apiFetch('/projects/{project_id}/classification-reviews/{review_id}', {
+    pathParams: { project_id: projectId, review_id: reviewId },
+  })
 }
 
 /**
@@ -123,7 +122,9 @@ export function listClassificationReviewCases(
   projectId: number,
   reviewId: number,
 ): Promise<ClassificationReviewCasesOut> {
-  return apiFetch<ClassificationReviewCasesOut>(`${reviewBase(projectId)}/${reviewId}/cases`)
+  return apiFetch('/projects/{project_id}/classification-reviews/{review_id}/cases', {
+    pathParams: { project_id: projectId, review_id: reviewId },
+  })
 }
 
 /**
@@ -138,9 +139,13 @@ export function setClassificationReviewVerdict(
   caseId: number,
   verdict: ClassificationVerdict,
 ): Promise<ClassificationReviewVerdictOut> {
-  return apiFetch<ClassificationReviewVerdictOut>(
-    `${reviewBase(projectId)}/${reviewId}/cases/${caseId}/verdict`,
-    { method: 'PUT', body: { verdict } },
+  return apiFetch(
+    '/projects/{project_id}/classification-reviews/{review_id}/cases/{case_id}/verdict',
+    {
+      method: 'PUT',
+      pathParams: { project_id: projectId, review_id: reviewId, case_id: caseId },
+      body: { verdict },
+    },
   )
 }
 
@@ -149,5 +154,7 @@ export function setClassificationReviewVerdict(
  * Authorization-Header traegt. `409`, solange die Pruefung nicht `SUCCESS` ist.
  */
 export function exportClassificationReview(projectId: number, reviewId: number): Promise<Blob> {
-  return apiFetchBlob(`${reviewBase(projectId)}/${reviewId}/export`)
+  return apiFetchBlob('/projects/{project_id}/classification-reviews/{review_id}/export', {
+    pathParams: { project_id: projectId, review_id: reviewId },
+  })
 }

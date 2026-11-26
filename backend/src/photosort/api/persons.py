@@ -471,7 +471,9 @@ async def get_faces(
     ]
 
 
-@router.get("/photos/{photo_id}/faces/{index}/image")
+# `response_class`: der Ausschnitt ist ein JPEG-Bytes-Koerper, kein JSON - die Beschreibung
+# behauptet sonst einen JSON-Koerper. Die gebaute `Response` samt Kopfzeilen bleibt unveraendert.
+@router.get("/photos/{photo_id}/faces/{index}/image", response_class=Response)
 async def get_face_image(
     photo_id: _PhotoId,
     index: _FaceIndex,

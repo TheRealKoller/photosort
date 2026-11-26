@@ -16,11 +16,15 @@ import {
   triggerClassification,
   triggerScan,
   triggerScore,
-  type CreateProjectPayload,
-  type ModelChoicePayload,
 } from '../api/projects'
 import { operationsQueryKey } from '../api/operations'
-import type { ClassificationWay, ProjectOut, ScanStatus } from '../api/types'
+import type {
+  ClassificationWay,
+  CreateProjectPayload,
+  ModelChoicePayload,
+  ProjectOut,
+  ScanStatusLabel,
+} from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 
@@ -47,8 +51,23 @@ export function useProjectQuery(id: number) {
     queryFn: () => getProject(id),
     refetchInterval: (query) => {
       const data = query.state.data as ProjectOut | undefined
-      const isActive = (status: ScanStatus | undefined): boolean =>
-        status === 'running' || status === 'queued'
+      // Erschoepfend ueber das Statusvokabular: ein zusaetzlicher Serverwert faellt hier als
+      // Typfehler auf, statt still als "nicht aktiv" durchzugehen.
+      const isActive = (status: ScanStatusLabel | undefined): boolean => {
+        switch (status) {
+          case 'queued':
+          case 'running':
+            return true
+          case 'never':
+          case 'success':
+          case 'failed':
+          case 'cancelled':
+          case undefined:
+            return false
+        }
+        const unhandled: never = status
+        return unhandled
+      }
       const isRunning =
         isActive(data?.last_scan?.status) ||
         isActive(data?.last_scoring_run?.status) ||
