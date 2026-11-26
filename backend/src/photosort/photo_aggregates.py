@@ -71,7 +71,7 @@ async def photo_aggregates_by_project(
 ) -> dict[int, PhotoAggregate]:
     """Die drei Zahlen fuer MEHRERE Projekte in EINER gruppierten Abfrage.
 
-    SICHERHEIT (Spec 0375, S2): `WHERE project_id IN (ids)` zusammen mit `GROUP BY project_id`,
+    SICHERHEIT: `WHERE project_id IN (ids)` zusammen mit `GROUP BY project_id`,
     das Ergebnis strikt ueber `project_id` geschluesselt. Die Ausfallrichtung einer fehlenden
     Einschraenkung ist keine Fehlermeldung, sondern eine plausible fremde Zahl - ohne sie truege
     jede Karte den Bestand der gesamten Instanz, ohne dass irgendetwas rot wird.

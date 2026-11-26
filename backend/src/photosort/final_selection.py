@@ -5,7 +5,7 @@ ist ihre DB-gestuetzte Anwendung: Es laedt die Kandidaten eines Projekts (vorges
 entschieden ODER jemals mit einer Albumentscheidung versehen), rechnet je Foto den Zustand und
 liefert die inkludierte Menge zurueck.
 
-GENAU EINE STELLE (Auflage S9 der Spec 0431): Der Lesepfad
+GENAU EINE STELLE: Der Lesepfad
 `api/photos/album_selection.py::album_selection` und der Export-Worker rufen dieselbe Regel ueber
 denselben Einstiegspunkt. Eine zweite Ableitung
 lieferte still eine andere, plausibel aussehende Menge - ein falsch abgeleiteter Zielordner oder
@@ -41,7 +41,7 @@ from photosort.models import (
 @dataclass(frozen=True)
 class IncludedPhoto:
     """EIN zur Endauswahl gehoerendes Foto: `relative_path` ist zugleich Quell- und Zielpfad
-    (der Zielordner spiegelt die Quellstruktur, ADR 0136 Punkt 2)."""
+    (der Zielordner spiegelt die Quellstruktur)."""
 
     photo_id: int
     relative_path: str
@@ -54,8 +54,8 @@ def selection_state_of(
     `album_selection.py` und nur dort.
 
     Die beiden Zaehlungen laufen ueber `Rating.status`, NIE ueber das Vorhandensein der Zeile:
-    Seit ADR 0098 kann eine Zeile allein den Favoriten tragen, und ein Existenztest machte aus
-    einer Auszeichnung eine Streichung.
+    Eine Bewertungszeile kann allein den Favoriten tragen, und ein Existenztest machte aus einer
+    Auszeichnung eine Streichung.
 
     EINE Stelle fuer alle Leser (`to_photo_out`, der Zustandsfilter von `album_selection` und
     `included_photos`): Mehrmals geschrieben liefen die Felder an dem Tag auseinander, an dem

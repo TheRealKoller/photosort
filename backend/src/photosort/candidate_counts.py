@@ -4,7 +4,7 @@ Dieses Modul liegt außerhalb der HTTP-Schicht, weil `criterion_probe.py` diesel
 und ein Endpunkt-Modul kein Ort für einen von mehreren Seiten benutzten Baustein ist. Es enthält
 nur Datenbank-Zählungen: kein `fastapi`, kein Worker-Import.
 
-SICHERHEIT (S15/S7): Jede Zählung ist eine bewusste DUPLIKATION derselben Bedingung wie im Lauf,
+SICHERHEIT: Jede Zählung ist eine bewusste DUPLIKATION derselben Bedingung wie im Lauf,
 und deshalb ändern sich beide Stellen in derselben Änderung. Eine Schätzung, die eine andere Menge
 zählt als der Lauf sendet, ist eine falsche Grundlage für die Freigabe einer kostenpflichtigen
 Aktion; die Tests prüfen deshalb Mengengleichheit gegen den Lauf über demselben Datenbestand.
@@ -36,8 +36,8 @@ async def count_remote_category_candidates(session: AsyncSession, project_id: in
     Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
     verlaesst die Datenbank, auch nicht bei einem grossen Projekt.
 
-    SICHERHEITSAUFLAGE S15/S7: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern
-    sich beide Stellen in derselben PR. Das Kriterium ist ZUSAMMENGESETZT - eine Kopfzeile mit
+    SICHERHEIT: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern sich beide
+    Stellen in derselben Aenderung. Das Kriterium ist ZUSAMMENGESETZT - eine Kopfzeile mit
     `source='cloud'` UND eine Albumtauglichkeitszeile; nicht das bloße Vorhandensein einer
     Kopfzeile (der Kriterien-Lauf schreibt lokale). Eine Schaetzung, die eine andere Menge zaehlt
     als der Lauf sendet, ist eine falsche Grundlage fuer die Freigabe einer kostenpflichtigen
@@ -58,9 +58,9 @@ async def count_remote_category_candidates(session: AsyncSession, project_id: in
         .join(PhotoScore, PhotoScore.photo_id == Photo.id)
         .where(
             Photo.project_id == project_id,
-            # SICHERHEIT (S1 von Spec 0374): DASSELBE Praedikat wie im Lauf. Es folgt der Auswahl
-            # nicht von selbst - dies ist eine eigene Anweisung, und sie muss dieselbe Menge
-            # zaehlen, die der Lauf sendet.
+            # SICHERHEIT: DASSELBE Praedikat wie im Lauf. Es folgt der Auswahl nicht von selbst -
+            # dies ist eine eigene Anweisung, und sie muss dieselbe Menge zaehlen, die der Lauf
+            # sendet.
             survives_ausschuss(),
             or_(~cloud_assessed, ~album_rated),
         )
@@ -101,9 +101,9 @@ async def count_landmark_candidates(session: AsyncSession, project_id: int) -> i
             .join(PhotoScore, PhotoScore.photo_id == Photo.id)
             .where(
                 Photo.project_id == project_id,
-                # SICHERHEIT (S1 von Spec 0374): dieselbe Begruendung wie eine Funktion weiter
-                # oben. Der Sehenswuerdigkeits-Teilschritt wird vom Kriterien-Lauf gespeist, und
-                # dessen Fotoauswahl traegt dasselbe Praedikat.
+                # SICHERHEIT: dieselbe Begruendung wie eine Funktion weiter oben. Der
+                # Sehenswuerdigkeits-Teilschritt wird vom Kriterien-Lauf gespeist, und dessen
+                # Fotoauswahl traegt dasselbe Praedikat.
                 survives_ausschuss(),
                 PhotoCriterionScore.criterion_key.in_(LANDMARK_CANDIDATE_CRITERION_KEYS),
                 PhotoCriterionScore.photo_id.not_in(already_scored),
@@ -119,7 +119,7 @@ async def count_landmark_candidates(session: AsyncSession, project_id: int) -> i
 
 async def count_eye_candidates(session: AsyncSession, project_id: int) -> int:
     """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile, die noch
-    KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand (Spec 0621).
+    KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand.
 
     Dieselbe Bedingung wie `worker/_criterion/eye.py::run_eye_phase`, als eigenstaendige kleine
     Query dupliziert - dieselbe Begruendung wie bei `count_remote_category_candidates`: dieses
