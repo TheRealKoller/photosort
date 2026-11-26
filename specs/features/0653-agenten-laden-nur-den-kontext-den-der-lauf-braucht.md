@@ -1,6 +1,6 @@
 # 0653 - Agenten laden nur den Kontext, den der Lauf braucht
 
-**Status:** Accepted
+**Status:** Implemented ([PR #671](https://github.com/TheRealKoller/photosort/pull/671))
 **Erstellt:** 2026-11-26
 **Bezug:** Issue [#653](https://github.com/TheRealKoller/photosort/issues/653)
 
