@@ -10,19 +10,18 @@ import { cn } from '../../lib/utils'
  *
  * FORM: Radius 6px (`rounded-sm`), Polsterung 16/8px, Inter Semi-Bold 12px, sichtbare Höhe 32px.
  *
- * TREFFERFLÄCHE: keine 44px-GRÖSSENregel, sondern eine TREFFERFLÄCHENregel - `tap-target` spannt
- * ein transparentes Pseudo-Element auf mindestens 44px auf, ohne die sichtbare Dichte zu kosten.
- * Nur auf der kurzen Achse: eine beschriftete Schaltfläche ist breit genug, die Symbol-Variante
- * bekommt `tap-target-square`. Der `link`-Variante wird NICHT aufgespannt - sie ist Inline-Text im
+ * TREFFERFLÄCHE: `tap-target` spannt ein transparentes Pseudo-Element auf mindestens 44px auf,
+ * ohne die sichtbare Dichte zu kosten, und nur auf der kurzen Achse; die Symbol-Variante bekommt
+ * `tap-target-square`. Der `link`-Variante wird NICHT aufgespannt - sie ist Inline-Text im
  * Textfluss, eine 44px-Fläche darum würde Nachbarklicks schlucken.
  *
- * ZUSTAND "GEDRÜCKT" IST PFLICHT: Tailwind bindet `hover:` an `@media (hover: hover)` - am Telefon
- * fällt der Überfahren-Zustand ersatzlos weg, ein Fingertipp erzeugte ohne `active:` gar keine
- * sichtbare Rückmeldung. Jede Ausprägung trägt deshalb den Board-Zustand "Gedrückt" als `active:`.
+ * Jede Ausprägung trägt `active:`: Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon
+ * fiele der Überfahren-Zustand ersatzlos weg und ein Fingertipp erzeugte ohne `active:` keine
+ * sichtbare Rückmeldung.
  *
  * FOKUS: keine eigene Fokusdarstellung. Die eine globale, abgesetzte Kontur in index.css ist die
- * alleinige Fokusdarstellung; eine hier hartkodierte Ring-Versatzfarbe wäre auf den Seitengrund
- * verdrahtet und erzeugte auf Karten und in Dialogen einen falsch getönten Kranz.
+ * alleinige; eine hier hartkodierte Ring-Versatzfarbe wäre auf den Seitengrund verdrahtet und
+ * erzeugte auf Karten und in Dialogen einen falsch getönten Kranz.
  */
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm text-xs font-semibold ' +
@@ -35,25 +34,23 @@ const buttonVariants = cva(
         // lesbar. Überfahren/gedrückt nur über Deckkraft, die Fläche bleibt.
         default: 'bg-accent text-accent-fg hover:opacity-85 active:opacity-70',
         // Sekundär: der UMRISS ist hier das Identifikationsmerkmal, nicht die Fläche - in einem
-        // Dialog ist die Fläche identisch zum Grund. Deshalb --border-control (>= 3:1) und nicht
-        // der dekorative --border (1.04-1.45:1), der den Button dort unsichtbar machen würde.
+        // Dialog ist die Fläche identisch zum Grund. Deshalb `--border-control` (>= 3:1) und nicht
+        // der dekorative `--border`, der den Button dort unsichtbar machen würde.
         secondary:
           'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
-        // `outline` ist auf Sekundär vereinheitlicht: das Board kennt keine vierte gefüllte
-        // Ausprägung. Der Variantenname bleibt bewusst erhalten.
+        // `outline` ist auf Sekundär vereinheitlicht; der Variantenname bleibt bewusst erhalten.
         outline:
           'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
         // Unaufdringlich: nur Beschriftung; erst beim Überfahren/Drücken entsteht eine Fläche.
-        // Die gedrückte Fläche ist `--border`; die Beschriftung bleibt darauf `--text` (5.49:1).
-        // `--text-muted` wäre hier 4.36:1 und damit knapp unter AA - und "gedrückt" ist am Telefon
-        // der EINZIGE Zustand, den es gibt, also kein Randfall.
+        // Die gedrückte Fläche ist `--border`; die Beschriftung bleibt darauf `--text`.
+        // `--text-muted` läge hier unter AA - und "gedrückt" ist am Telefon der EINZIGE Zustand,
+        // den es gibt, also kein Randfall.
         ghost:
           'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text',
         // Zerstörerisch: zeichengleich zur primären, nur andere Fläche. Gefüllt statt umrandet -
-        // eine umrandete Danger-Variante ist mit dieser Palette nicht sauber baubar:
-        // --danger-text misst auf --overlay (Dialogfläche) 4.51 und auf der gedrückten
-        // Zustandsfläche --border 4.33, der am Telefon EINZIGE Zustand "gedrückt" verfehlte
-        // also AA.
+        // eine umrandete Danger-Variante wäre mit dieser Palette nicht AA-fest: `--danger-text`
+        // verfehlt auf der gedrückten Fläche `--border` die Schwelle, und "gedrückt" ist am
+        // Telefon der EINZIGE Zustand.
         //
         // EINE Ausprägung, nicht zwei: Auslöser und bestätigende Aktion im Dialog tragen
         // dieselbe. KOLLISIONSREGEL (verbindlich): gefülltes --danger mit dunkler Tinte bei
@@ -74,10 +71,9 @@ const buttonVariants = cva(
       },
     },
     // cva reiht die `size`-Klassen NACH den `variant`-Klassen ein, tailwind-merge löst Konflikte
-    // zugunsten der zuletzt vorkommenden Klasse auf - ohne diesen compoundVariant würden `size`s
-    // Höhen-/Polsterungsklassen die bewusst kompakten link-Klassen (h-auto/min-w-0/p-0) immer
-    // überschreiben, unabhängig von der gewählten Größe. Das Fehlen von `size` als Bedingung heißt
-    // laut cva "passt auf jede Größe" - ein einziger Eintrag deckt deshalb alle drei Größen ab.
+    // zugunsten der zuletzt vorkommenden Klasse auf - ohne diesen compoundVariant überschrieben
+    // `size`s Höhen-/Polsterungsklassen die bewusst kompakten link-Klassen (h-auto/min-w-0/p-0).
+    // `size` fehlt als Bedingung, weil der Eintrag für jede Größe gilt.
     compoundVariants: [
       {
         variant: 'link',
@@ -96,7 +92,7 @@ export interface ButtonProps
   /**
    * Busy-Button-Muster: erzwingt den deaktivierten Zustand zentral in der Komponente, statt sich
    * darauf zu verlassen, dass jeder Aufrufer `disabled` UND `busy` synchron hält. Der
-   * Label-Text-Wechsel (z.B. "Anmelden…") bleibt bewusst Aufgabe des Aufrufers.
+   * Label-Text-Wechsel (z.B. "Anmelden…") bleibt Aufgabe des Aufrufers.
    */
   busy?: boolean
   /** Rendert die Styling-/Verhaltens-Props auf das einzelne Kind-Element (Radix Slot) statt auf
@@ -124,27 +120,23 @@ export function Button({
   const isDisabled = disabled || busy
   const isDisabledSlot = asChild && isDisabled
 
-  // Die Trefferflächen-Aufspannung steht bewusst hier und nicht in der `size`-Variante: sie hängt
-  // an BEIDEN Achsen der gewählten Größe UND daran, dass es sich nicht um die link-Variante
-  // handelt. tailwind-merge kennt `tap-target` nicht und könnte es aus einer Variante heraus nicht
-  // wieder entfernen.
+  // Die Trefferflächen-Aufspannung steht hier und nicht in der `size`-Variante: sie hängt an
+  // BEIDEN Achsen der gewählten Größe UND daran, dass es sich nicht um die link-Variante handelt.
+  // tailwind-merge kennt `tap-target` nicht und könnte es aus einer Variante heraus nicht wieder
+  // entfernen.
   const tapTargetClass =
     variant === 'link' ? undefined : size === 'icon' ? 'tap-target-square' : 'tap-target'
 
-  // Radix Slot verlangt genau EIN valides Element als Kind (klont Props direkt auf das Kind statt
-  // ein eigenes DOM-Element zu rendern) - der Spinner wird deshalb nur im nativen <button>-Fall
-  // zusätzlich eingefügt. `asChild` wird in dieser App ausschließlich für navigierende Links (kein
-  // eigener Pending-Zustand) verwendet, `busy` für native Aktions-Buttons - beide Props
-  // gleichzeitig sind kein vorgesehener Anwendungsfall.
+  // Radix Slot verlangt genau EIN valides Element als Kind (klont Props direkt auf das Kind) -
+  // der Spinner wird deshalb nur im nativen <button>-Fall zusätzlich eingefügt. `asChild` wird
+  // ausschließlich für navigierende Links verwendet, `busy` für native Aktions-Buttons.
   //
-  // DEAKTIVIERTE LINKS: `aria-disabled` allein blockiert bei `asChild` keine echte Interaktion,
-  // weil das native `disabled`-Attribut nicht an ein `<a href>` gebunden werden kann - und ein
-  // `onClick`, der nur `event.preventDefault()` aufruft, reicht bei react-router `Link` NICHT aus:
-  // Radix Slot ruft laut eigener `mergeProps`-Implementierung IMMER zuerst den Handler des Kindes
-  // auf (Links eigener Klick-Handler löst synchron `navigate()` aus) und erst danach den hier
-  // übergebenen - `preventDefault()` kommt zu spät. Stattdessen wird die Interaktion an der Wurzel
-  // unterbunden: `pointer-events-none` verhindert, dass ein Mausklick das Element überhaupt trifft
-  // (kein Klick-Event entsteht), `tabIndex={-1}` entfernt es aus der Tab-Reihenfolge, sodass
+  // DEAKTIVIERTE LINKS: `aria-disabled` allein blockiert bei `asChild` keine echte Interaktion -
+  // das native `disabled`-Attribut lässt sich nicht an ein `<a href>` binden, und ein `onClick`
+  // mit `event.preventDefault()` kommt zu spät: Radix Slot ruft IMMER zuerst den Handler des
+  // Kindes auf, und react-router `Link` löst dort synchron `navigate()` aus. Stattdessen wird die
+  // Interaktion an der Wurzel unterbunden: `pointer-events-none` verhindert, dass ein Mausklick
+  // das Element überhaupt trifft, `tabIndex={-1}` entfernt es aus der Tab-Reihenfolge, sodass
   // Enter/Leertaste es nicht auslösen können.
   return (
     <Comp
