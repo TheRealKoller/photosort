@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Rendert alle D2-Diagramm-Quellen unter specs/diagrams/*.d2 zu SVGs (--sketch-Modus).
 #
+# Eigenstaendiges Bash-Skript ohne eigene Testsuite: reines Binary-Wrapping.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
