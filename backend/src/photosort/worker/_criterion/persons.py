@@ -27,7 +27,7 @@ from photosort.person_matching import decide_assignments, similarities_to
 from photosort.persons import current_centroids
 from photosort.thumbnails import variant_path
 
-# Analog, fuer CriterionScoringRun.persons_photos_processed: je Block werden die Erkennungen der
+# Fuer CriterionScoringRun.persons_photos_processed: je Block werden die Erkennungen der
 # verarbeiteten Fotos geschrieben und committet. Ein Block ist zugleich die Einheit, die ein
 # Fremdschluesselfehler nach einer Personenloeschung verwirft.
 PERSONS_COMMIT_BATCH_SIZE = 5
@@ -49,8 +49,8 @@ def _persons_on_photo(
     Ein uebersehenes Foto ist zulaessig, eine Erkennung, deren Gesicht in "Ohne Namen" steht,
     nicht.
 
-    LOG-HYGIENE (S11): Eine Ausnahme erscheint nur als Typname samt `photo_id` - nie ihr Text, der
-    einen Wert tragen koennte."""
+    LOG-HYGIENE: Eine Ausnahme erscheint nur als Typname samt `photo_id` - nie ihr Text, der einen
+    Wert tragen koennte."""
     image = load_image(variant_path(cache_dir, photo_id, etag, "display"))
     if image is None:
         return None

@@ -47,18 +47,17 @@ if TYPE_CHECKING:
 def select_landmark_candidates(
     candidate_values: dict[int, dict[str, float]], already_scored_photo_ids: set[int]
 ) -> list[int]:
-    """Vorfilterung + Skip-bereits-gescorter-Fotos für den landmark-Cloud-Aufruf - reine, DB-freie
-    Funktion, isoliert unit-testbar (analog classify_scan_entries). Ein Foto wird nur dann
-    Kandidat, wenn im selben Lauf content_landscape ODER gebaeude die jeweils registrierte
-    presence_threshold erreicht (`>=`, inklusiv; die Registry-Schwellwerte werden
-    wiederverwendet, es gibt hier KEINEN zweiten, doppelt gepflegten Grenzwert) UND noch keine
+    """Vorfilterung + Skip-bereits-gescorter-Fotos fuer den landmark-Cloud-Aufruf - reine,
+    DB-freie Funktion, isoliert unit-testbar. Ein Foto wird nur dann Kandidat, wenn im selben Lauf
+    content_landscape ODER gebaeude die jeweils registrierte presence_threshold erreicht (`>=`,
+    inklusiv; es gibt hier KEINEN zweiten, doppelt gepflegten Grenzwert) UND noch keine
     landmark-Zeile aus einem frueheren Lauf existiert - die einzige, bewusst dokumentierte Ausnahme
     vom sonst projektweiten "jeder Lauf scort neu"-Prinzip. Gibt die photo_id-Reihenfolge von
-    candidate_values zurueck, keine weitere Sortierung noetig.
+    candidate_values zurueck.
 
-    Die eigentliche Schwellenwert-Prüfung lebt in criteria.py::is_landmark_candidate, gemeinsam
-    mit der API-seitigen Read-Time-Ableitung genutzt. Hier steht nur das
-    Skip-bereits-gescorter-Fotos-Verhalten, das worker-spezifisch ist (keine API-Entsprechung)."""
+    Die Schwellenwert-Pruefung lebt in criteria.py::is_landmark_candidate, gemeinsam mit der
+    API-seitigen Read-Time-Ableitung genutzt. Hier steht nur das worker-spezifische
+    Skip-bereits-gescorter-Fotos-Verhalten (keine API-Entsprechung)."""
     candidates: list[int] = []
     for photo_id, values in candidate_values.items():
         if photo_id in already_scored_photo_ids:
@@ -73,10 +72,9 @@ def landmark_place_hints(
 ) -> dict[int, PlaceHint | None]:
     """Die Ortsangabe je Kandidatenfoto - rein, DB-frei und ohne Netzwerk.
 
-    Ausschliesslich aus der EIGENEN gemessenen Koordinate des Fotos (S3, ADR 0106 Punkt 4): Die
-    Inferenzbasis aus `events.py::infer_locations` wird hier nicht gelesen und diese Funktion
-    bekommt sie gar nicht erst zu sehen. Ein Foto ohne eigene Koordinate bekommt `None`, und das
-    ist kein Fehlerfall.
+    Ausschliesslich aus der EIGENEN gemessenen Koordinate des Fotos: Die Inferenzbasis aus
+    `events.py::infer_locations` wird hier nicht gelesen und diese Funktion bekommt sie gar nicht
+    erst zu sehen. Ein Foto ohne eigene Koordinate bekommt `None`, und das ist kein Fehlerfall.
 
     Die Stufenwahl selbst liegt in `landmark.py::place_hint_for`; hier steht nur die Zuordnung von
     Foto zu abgelegter Auskunft."""
@@ -107,13 +105,12 @@ def landmark_place_cells(photos: Collection[Photo]) -> set[tuple[float, float]]:
 async def detect_landmark_for_photo(
     client: LandmarkClientLike, cache_dir: Path, photo: Photo, hint: PlaceHint | None
 ) -> LandmarkDetection:
-    """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten (analog
-    _fetch_and_thumbnail) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher parallel
-    per asyncio.gather laufen koennen (siehe die Block-Schleife in run_criterion_scoring). Nutzt
-    ausschliesslich die bereits vorhandene display-Cache-Variante, nie das
-    Original - kein erneuter OpenCloud-Zugriff. Ein fehlender/nicht lesbarer Cache-Eintrag
-    propagiert als gewoehnliche Exception (best-effort ueber return_exceptions=True in der
-    aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
+    """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten - bewusst OHNE
+    Session-Zugriff, damit mehrere Aufrufe sicher parallel per asyncio.gather laufen koennen. Nutzt
+    ausschliesslich die bereits vorhandene display-Cache-Variante, nie das Original - kein erneuter
+    OpenCloud-Zugriff. Ein fehlender oder nicht lesbarer Cache-Eintrag propagiert als gewoehnliche
+    Exception (best-effort ueber return_exceptions=True in der aufrufenden Block-Schleife
+    abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
     return await client.detect(image_bytes, runs.CLOUD_VISION_IMAGE_MIME_TYPE, hint)
@@ -128,17 +125,15 @@ async def upsert_landmark_detection(
     canonical_name: str | None,
 ) -> None:
     """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
-    wurde (kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn detection.name is not None
-    (siehe Aufrufer). `provider` wird atomar mit name/confidence gesetzt -dieser Aufruf feuert
-    praktisch nie fuer ein bereits gescortes Foto (Skip ueber select_landmark_candidates anhand von
-    PhotoCriterionScore, providerunabhaengig), ein
+    wurde (kein Platzhalter-"unbekannt"). `provider` wird atomar mit name/confidence gesetzt: dieser
+    Aufruf feuert praktisch nie fuer ein bereits gescortes Foto (Skip ueber
+    select_landmark_candidates anhand von PhotoCriterionScore, providerunabhaengig), ein
     Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht.
 
     ZWEI VERSCHIEDENE ZUSAGEN in einer Zeile: `name` und `confidence` gehen UNGEFILTERT hinein -
     die Antwort ist bezahlt und bleibt vollstaendig erhalten, ob aus ihr ein verwendbarer Name wird,
     entscheidet die Lesestelle. `canonical_name` dagegen setzt der Aufrufer nur oberhalb von
-    `LANDMARK_CONFIDENCE_THRESHOLD` und nur mit gebautem Einbetter; sonst bleibt er `None`, und die
-    Zeile verhaelt sich exakt wie vor dem Register."""
+    `LANDMARK_CONFIDENCE_THRESHOLD` und nur mit gebautem Einbetter; sonst bleibt er `None`."""
     assert detection.name is not None
     existing = await session.get(PhotoLandmarkDetection, photo_id)
     if existing is None:
@@ -168,25 +163,22 @@ async def _landmark_register(
     context: CriterionRunContext, models: ModelSet, *, has_candidates: bool
 ) -> tuple[LabelEmbedderLike | None, list[LandmarkNameEntry]]:
     """DAS NAMENSREGISTER dieses Projekts, einmal je Lauf geladen und danach mutierbar
-    durchgereicht (Muster `run_remote_category_classification`): Ein in diesem Lauf neu entstandener
-    Eintrag ergaenzt den Schnappschuss sofort, sodass ein zweiter aehnlicher Name im selben Lauf auf
-    ihn trifft statt eine zweite Zeile anzulegen.
+    durchgereicht: Ein in diesem Lauf neu entstandener Eintrag ergaenzt den Schnappschuss sofort,
+    sodass ein zweiter aehnlicher Name im selben Lauf auf ihn trifft statt eine zweite Zeile
+    anzulegen.
 
-    SICHERHEIT (S8): Die Bindung an `project.id` steht in der Abfrage ausgeschrieben, und es gibt
-    keinen Rueckfall auf das Register eines anderen Projekts - ein solcher Rueckfall fuehrte die
-    Reisen verschiedener Projekte zusammen.
+    SICHERHEIT: Die Bindung an `project.id` steht in der Abfrage ausgeschrieben, und es gibt keinen
+    Rueckfall auf das Register eines anderen Projekts - ein solcher Rueckfall fuehrte die Reisen
+    verschiedener Projekte zusammen.
 
-    Der Einbetter ist BEST-EFFORT: Ohne ihn entsteht kein kanonischer Name und kein Registereintrag,
-    der Lauf laeuft unveraendert durch, und jede Erkennungszeile verhaelt sich wie vor dem Register
-    (sie faellt auf ihren Rohnamen zurueck). Gebaut wird er erst HIER, innerhalb der
-    Landmark-Phase - `rebuild_run_grouping` erreicht diese Stelle nie und laedt deshalb kein
-    113-MB-Modell in einen Anfragepfad (S10).
+    Der Einbetter ist BEST-EFFORT: Ohne ihn entsteht kein kanonischer Name und kein
+    Registereintrag, der Lauf laeuft unveraendert durch, und jede Erkennungszeile faellt auf ihren
+    Rohnamen zurueck. Gebaut wird er erst HIER, innerhalb der Landmark-Phase - ein Request-Pfad
+    laedt so kein 113-MB-Modell.
 
     UND NUR, WENN ES UEBERHAUPT KANDIDATEN GIBT: Die Phase wird auch dann betreten, wenn
     `select_landmark_candidates` alles herausgefiltert hat (ein zweiter Lauf ueber ein bereits
-    vollstaendig gescortes Projekt) - dann laeuft die Blockschleife null Mal, und ein geladenes
-    113-MB-Modell waere Arbeit ohne Gegenwert. Dieselbe Begruendung wie beim `place_infos` im
-    Orchestrator."""
+    vollstaendig gescortes Projekt) - dann liefe ein geladenes 113-MB-Modell ohne Gegenwert."""
     embedder = runs.try_build(models.build_embedder) if has_candidates else None
     if embedder is None:
         # Der Schnappschuss haengt am Einbetter und nicht umgekehrt: Ohne ihn wird er nie gelesen,
@@ -220,8 +212,7 @@ async def _canonical_landmark_name(
 ) -> str | None:
     """DIE KANONISIERUNG, und nur OBERHALB DER GRENZE: Ein unsicherer und wahrscheinlich falscher
     Name soll nicht die Anzeigeform eines Registereintrags besetzen, dem sich spaeter der richtige
-    anschliesst (ADR 0107 Punkt 5). Ohne Einbetter entsteht kein kanonischer Name - kein
-    Fehlerfall.
+    anschliesst. Ohne Einbetter entsteht kein kanonischer Name - kein Fehlerfall.
 
     `name` und `confidence` gehen dagegen UNGEFILTERT in die Zeile (siehe
     `upsert_landmark_detection`): Die Antwort ist bezahlt und bleibt vollstaendig erhalten."""
@@ -349,12 +340,11 @@ async def _run_landmark_block(
     # Abbruch mitten im Block ein `processed` da, dem weder ein Aufruf noch ein Fehlschlag
     # gegenuebersteht (Invariante `landmark_photos_processed == api_calls + failed_calls`).
     #
-    # `last_progress_at` gehoert VERBINDLICH dazu. Bleibt der Zeitstempel in dieser Phase
-    # unberuehrt, setzt `reap_stalled_runs` einen Lauf mit mehr als STALL_THRESHOLD (15 min)
-    # Landmark-Arbeit auf FAILED - OHNE die Coroutine abzubrechen. Der Lauf ruft danach unveraendert
-    # weiter kostenpflichtig beim Anbieter an, waehrend die Oberflaeche "fehlgeschlagen" sagt, und
-    # die Kostenerfassung des `finally` schreibt ihren Betrag auf eine bereits als gescheitert
-    # ausgewiesene Zeile.
+    # `last_progress_at` gehoert VERBINDLICH dazu. Bleibt der Zeitstempel hier unberuehrt, setzt
+    # `reap_stalled_runs` einen Lauf mit mehr als STALL_THRESHOLD (15 min) Landmark-Arbeit auf
+    # FAILED - OHNE die Coroutine abzubrechen. Der Lauf ruft danach unveraendert weiter
+    # kostenpflichtig beim Anbieter an, waehrend die Oberflaeche "fehlgeschlagen" sagt, und die
+    # Kostenerfassung schreibt ihren Betrag auf eine bereits als gescheitert ausgewiesene Zeile.
     totals.processed += handled
     run.landmark_photos_processed = totals.processed
     run.landmark_failed_calls = totals.failures
@@ -375,12 +365,11 @@ async def run_landmark_phase(
     """DIE Sehenswuerdigkeits-Phase eines Kriterien-Laufs - eine Einheit, die ohne die uebrigen
     Phasen laeuft (die Kandidaten und ihre Ortshinweise kommen fertig herein).
 
-    Das Modell kommt als Parameter herein (im Ausloeser aus der Projektwahl aufgeloest) und wird
-    EINMAL je Cloud-Phase gebunden: derselbe lokale Wert baut den Client, bestimmt den
-    Schrittmacher, rechnet die Ist-Kosten und landet in der Modellspalte des Laufs. "Angezeigt =
-    abgerechnet = tatsaechlich aufgerufen" ist damit strukturell wahr, nicht das Ergebnis dreier
-    zufaellig gleicher Lesevorgaenge. Fehlt der Parameter (Job aus der Zeit vor dem Update), gilt
-    die Installationsvorgabe."""
+    Das Modell kommt als Parameter herein und wird EINMAL je Cloud-Phase gebunden: derselbe lokale
+    Wert baut den Client, bestimmt den Schrittmacher, rechnet die Ist-Kosten und landet in der
+    Modellspalte des Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit
+    strukturell wahr, nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge. Fehlt der
+    Parameter (Job aus der Zeit vor dem Update), gilt die Installationsvorgabe."""
     session = context.session
     run = context.run
     landmark_model = landmark_model or settings.resolved_landmark_model()
@@ -405,8 +394,7 @@ async def run_landmark_phase(
     # `NULL` bleibt damit die Aussage "diesen Teilschritt gab es in diesem Lauf nicht", `0` heisst
     # "gab es, nichts zu tun". `landmark_photos_total` ist zugleich der Marker, an dem die API
     # entscheidet, ob dieser Lauf einen Landmark-Eintrag in `cloud_phases` bekommt - er muss
-    # deshalb schon VOR dem ersten Aufruf dastehen, sonst saehe die Oberflaeche den Teilschritt
-    # genau dann nicht, wenn er laeuft.
+    # deshalb schon VOR dem ersten Aufruf dastehen.
     run.landmark_photos_total = totals.attempts
     run.landmark_photos_processed = 0
     run.landmark_failed_calls = 0
@@ -456,8 +444,7 @@ async def run_landmark_phase(
             ),
         )
         # `run.landmark_model` - die Preisgrundlage des eben eingefrorenen Betrags - steht bereits
-        # vom PHASENANFANG her da und ist derselbe lokale `landmark_model`, aus dem hier der Betrag
-        # entsteht. Deshalb KEINE zweite Zuweisung an dieser Stelle.
+        # vom PHASENANFANG her da. Deshalb KEINE zweite Zuweisung an dieser Stelle.
         await runs.commit_phase_costs(session)
     # Hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsaechlich gewartet wurde.
     runs.log_cloud_vision_throttling(

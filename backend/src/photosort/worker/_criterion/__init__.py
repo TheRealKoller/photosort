@@ -1,9 +1,9 @@
 """Die gemeinsame Basis der Kriterien-Phasen: der Run-Kontext, den der Orchestrator einmal baut,
 und die Schreib-/Loeschhilfe fuer Kriterienzeilen, die mehrere Phasen benutzen.
 
-Warum ein eigenes Modul und keine Funktion in `_criterion/local.py`: `landmark.py` schreibt
-ebenfalls `landmark`-Zeilen, und eine Phase darf keine andere Phase importieren (§ "keine Kante
-zwischen zwei Phasen"). Die Basis hier haengt nur an `_runs` und an den Modellen.
+Die Basis liegt nicht in einer Phase: `landmark.py` schreibt ebenfalls `landmark`-Zeilen, und eine
+Phase darf keine andere Phase importieren (§ "keine Kante zwischen zwei Phasen"). Dieses Modul
+haengt nur an `_runs` und an den Modellen.
 """
 
 from __future__ import annotations
