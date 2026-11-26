@@ -31,17 +31,15 @@ export function useProjectsQuery() {
 }
 
 /**
- * Pollt, solange einer der vier dokumentierten Laeufe LAEUFT ODER WARTET (`running`/`queued`,
- * Spec 0641), und stoppt automatisch, sobald alle fertig sind - dritte Anwendung desselben
- * granularen Live-Fortschritt-Polling-Musters.
+ * Pollt, solange einer der vier dokumentierten Laeufe LAEUFT ODER WARTET (`running`/`queued`),
+ * und stoppt automatisch, sobald alle fertig sind.
  *
  * `queued` ist ein eigener, sichtbarer Zustand: ohne ihn bliebe die Seite bis zum ersten
  * Worker-Takt auf dem alten Stand stehen, obwohl der Auftrag schon angenommen ist.
  *
- * Die vierte fruehere Bedingung (`last_remote_category_classification_run`) ist mit dem Feld
- * ersatzlos entfallen und wird NICHT ersetzt - sie war redundant. Der Klassifizierungslauf ist
- * waehrend des GESAMTEN verketteten Durchlaufs `running`, also auch waehrend seiner Remote-Phase;
- * die dritte Bedingung deckt sie mit ab.
+ * Eine eigene Bedingung fuer die Remote-Phase gibt es nicht: Der Klassifizierungslauf ist waehrend
+ * des GESAMTEN verketteten Durchlaufs `running`, also auch seiner Remote-Phase; die dritte
+ * Bedingung deckt sie mit ab.
  */
 export function useProjectQuery(id: number) {
   return useQuery({

@@ -39,8 +39,7 @@ export function useAlbumSelectionQuery(projectId: number) {
  * die gerade gedrückte Kachel unter dem Finger an eine andere Stelle - und der nächste Druck
  * landete auf einem anderen Bild.
  *
- * Fortgeschrieben wird ausschließlich die SERVERANTWORT, nie der lokal beabsichtigte Wert
- * (Auflage S5).
+ * Fortgeschrieben wird ausschließlich die SERVERANTWORT, nie der lokal beabsichtigte Wert.
  */
 export function useAlbumDecisionMutation(projectId: number) {
   const queryClient = useQueryClient()

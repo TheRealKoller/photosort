@@ -6,31 +6,17 @@ import { POLL_INTERVAL_MS } from './useProjects'
 /**
  * Ueberbrueckt das Zeitfenster zwischen erfolgreichem Trigger (202) und dem ersten Poll, der den
  * neuen Scan-/Scoring-Lauf tatsaechlich bestaetigt: der Button bleibt deaktiviert, bis entweder
- * Polling running bestaetigt oder der Trigger selbst fehlschlaegt. Nur auf status==="running" zu
- * warten reicht NICHT, aus zwei Gruenden:
+ * Polling running bestaetigt oder der Trigger selbst fehlschlaegt.
  *
- * 1. Bei einem bereits zuvor gelaufenen Projekt ist der beobachtete Status VOR dem Klick schon
- *    nicht-null (z.B. "failed" vom letzten Lauf) - der Worker setzt status="running" erst
- *    asynchron (backend/src/photosort/worker.py), der Invalidierungs-Refetch direkt nach der
- *    202-Antwort kann also noch den ALTEN Status liefern.
- * 2. Fast-Path: laeuft der Job im Worker so schnell durch, dass zwischen dem Setzen von
- *    status="running" und dem finalen Commit kein einziger await-Punkt liegt (z.B. Scoring bei
- *    photos_total < 25 == SCORE_COMMIT_BATCH_SIZE) - weit unter dem 2-Sekunden-Poll-Intervall.
- *    Der Zwischenzustand "running" wird dann nie beobachtet, der Status springt direkt von null
- *    auf "success"/"failed".
+ * Nur auf `status === 'running'` zu warten reicht NICHT: Bei einem zuvor gelaufenen Projekt ist
+ * der beobachtete Status schon nicht-null, und ein sehr schneller Lauf springt direkt von null auf
+ * `success`/`failed` - der Zwischenzustand wird nie beobachtet. Ein blosses `status !== null`
+ * reicht ebenfalls NICHT: Der Refetch direkt nach der 202-Antwort kann noch den Endzustand des
+ * VORHERIGEN Laufs liefern.
  *
- * Ein blosses `status !== null` reicht ebenfalls NICHT: bei einem erneuten, ebenso schnellen Lauf
- * auf einem bereits zuvor gelaufenen Projekt kann der unmittelbare Invalidierungs-Refetch noch
- * denselben (stale) Endzustand vom VORHERIGEN Lauf liefern (z.B. wieder "failed") - der wuerde
- * faelschlich als Bestaetigung des NEUEN Laufs durchgehen.
- *
- * Unterschieden wird deshalb ueber `started_at`: jeder Lauf bekommt serverseitig einen frischen
- * Zeitstempel (neue ScanRun/ScoringRun-Zeile, backend/src/photosort/worker.py). Das
- * awaiting-Flag wird zurueckgesetzt, sobald "running" beobachtet wird (kann nie ein stale Wert
- * sein, das Projekt kann nicht schon vor dem Klick "running" gewesen sein) ODER sobald ein NEUER
- * `started_at` zusammen mit einem beliebigen Endzustand (success/failed) beobachtet wird. Eine
- * Kollision zweier `started_at`-Werte ist praktisch ausgeschlossen: Postgres `func.now()` liefert
- * Mikrosekunden-Praezision.
+ * Unterschieden wird deshalb ueber `started_at`: Jeder Lauf bekommt serverseitig einen frischen
+ * Zeitstempel. Das awaiting-Flag wird zurueckgesetzt, sobald "running" oder "queued" beobachtet
+ * wird ODER ein NEUER `started_at` zusammen mit einem beliebigen Endzustand (success/failed).
  */
 export function useTriggerConfirmation(
   status: ProcessStatus | null,

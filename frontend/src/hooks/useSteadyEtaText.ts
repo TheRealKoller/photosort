@@ -4,10 +4,8 @@ import { useEffect, useRef, useState } from 'react'
  * Hält den angezeigten Restdauer-Text ruhig: Ein geänderter Text wird erst übernommen, wenn er in
  * ZWEI aufeinanderfolgenden Antworten steht.
  *
- * Das ist das vierte der vier Mittel gegen eine zappelnde Anzeige - neben dem kumulierten
- * Durchsatz, den Schwellen und der Stufenleiter. Es fängt genau den Fall, den die drei anderen
- * nicht abfangen: Ein Wert dicht an einer Stufengrenze pendelt im Zwei-Sekunden-Takt zwischen zwei
- * Stufentexten hin und her.
+ * Es fängt den Fall, den die übrigen Mittel gegen eine zappelnde Anzeige nicht abfangen: Ein Wert
+ * dicht an einer Stufengrenze pendelt im Zwei-Sekunden-Takt zwischen zwei Stufentexten hin und her.
  *
  * **Ein Wechsel des Teilschritts setzt sofort zurück**, und der Rücksetzfall gewinnt gegen die
  * Verzögerung: Der Text des vorigen Teilschritts beschreibt eine andere Arbeit und darf nie in den
