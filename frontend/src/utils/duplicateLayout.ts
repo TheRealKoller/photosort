@@ -9,8 +9,7 @@ import type { JustifiedRow } from './justifiedRows'
  *
  * Anders als in der Kuratierung traegt jede Kachel einen waagerechten Rand um die Bildflaeche.
  * `justifiedRows` bleibt dafuer ungeaendert: Es plant die BILDFLAECHEN mit einem um den Rand
- * vergroesserten Zwischenraum auf einer um einen Rand verkleinerten Breite. Fuer eine volle Reihe
- * mit n Kacheln gilt dann Σb + (n−1)(12+20) = W − 20, also Σ(b+20) + (n−1)·12 = W.
+ * vergroesserten Zwischenraum auf einer um einen Rand verkleinerten Breite.
  */
 
 export const DUPLICATE_TARGET_ROW_HEIGHT_PX = 280
@@ -26,16 +25,16 @@ export const DUPLICATE_MAX_ROW_HEIGHT_PX = 350
  */
 export const DUPLICATE_TILE_INSET_X_PX = 20
 
-/** Die breiteste einzelne Wahlschaltflaeche (gedrueckt „Ausschuss", ≈ 101 px) plus Reserve. */
+/** Die breiteste einzelne Wahlschaltflaeche (gedrueckt „Ausschuss") plus Reserve. */
 export const DUPLICATE_MIN_IMAGE_WIDTH_PX = 112
 
-/** Schmaler wird nicht geplant: 112 / 200. Liegt unter 9:16, also bleiben uebliche Hochformate
+/** Schmaler wird nicht geplant: Der Wert liegt unter 9:16, also bleiben uebliche Hochformate
  * unverzerrt; ein noch schmaleres steht eingepasst im Feld. */
 export const DUPLICATE_MIN_PLANNING_RATIO =
   DUPLICATE_MIN_IMAGE_WIDTH_PX / DUPLICATE_MIN_ROW_HEIGHT_PX
 
-/** Breiter wird nicht geplant: (360 − 2·16 − 20) / 44. Damit ist eine Bildflaeche auch allein an
- * der schmalsten Breite mindestens 44 px hoch. */
+/** Breiter wird nicht geplant: Eine Bildflaeche ist auch allein an der schmalsten Breite
+ * mindestens 44 px hoch. */
 export const DUPLICATE_MAX_PLANNING_RATIO = 7
 
 /**

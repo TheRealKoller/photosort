@@ -165,10 +165,8 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   },
 ]
 
-/** Die vier Nebenziele. "Personen" steht HINTER Einstellungen und Statistik (Spec 0551): Die
- * bestehenden Ziele behalten ihren Platz, das ist bei wiederkehrender Nutzung verlässlicher als
- * eine Umsortierung. "Klassifizierung prüfen" ist der vierte Eintrag, hinter "Personen"
- * (Spec 0616). */
+/** Die vier Nebenziele in Anzeigereihenfolge: "Personen" steht hinter Einstellungen und Statistik,
+ * "Klassifizierung prüfen" ist der vierte Eintrag, hinter "Personen". */
 export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
   {
     id: 'settings',

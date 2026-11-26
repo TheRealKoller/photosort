@@ -4,8 +4,7 @@
  * Dialog bedient dieselbe Umrechnung wie die Liste und der Vorschlagsfluss, und drei Kopien
  * liefen auseinander.
  *
- * Durchgehend deutsche Darstellung - die Anwendung hat zwei deutschsprachige Nutzer und keine
- * Lokalisierungsschicht.
+ * Durchgehend deutsche Darstellung ohne Lokalisierungsschicht.
  */
 
 /** ±100 Jahre in Minuten - derselbe Wert wie `backend/src/photosort/cameras.py`. Bewusst
@@ -66,8 +65,8 @@ export function formatTimeOffset(offsetMinutes: number): string {
 
 /** Felder -> Minuten. `behind` (Uhr ging nach) ergibt einen POSITIVEN Versatz.
  *
- * Die Addition von `0` normalisiert `-0` auf `0` (IEEE 754, dasselbe Mittel wie in
- * `places.py::place_cell`): Ohne sie liefert die zurückstellende Richtung bei lauter Nullen ein
+ * Die Addition von `0` normalisiert `-0` auf `0` (IEEE 754): Ohne sie liefert die
+ * zurückstellende Richtung bei lauter Nullen ein
  * `-0`, das sich durch jeden `=== 0`-Vergleich schmuggelt, aber in `Object.is` und in einem
  * Zustandsvergleich als eigener Wert auftritt. */
 export function offsetFromFields(fields: OffsetFields): number {

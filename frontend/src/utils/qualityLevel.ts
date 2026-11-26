@@ -1,8 +1,8 @@
 export type QualityLevel = 'low' | 'medium' | 'high'
 
-// Grobe, verstaendliche 3-Stufen-Einordnung statt eines Rohwerts - aus PhotoRanking.rank_score
-// abgeleitet, der seit Spec 0428 der QUALITAETSWERT ist: die normierte Modellstufe der
-// Albumtauglichkeit plus ein lokales Korrekturband von +-0,1 (backend quality.py).
+// Grobe, verstaendliche 3-Stufen-Einordnung statt eines Rohwerts. PhotoRanking.rank_score ist der
+// QUALITAETSWERT: die normierte Modellstufe der Albumtauglichkeit plus ein lokales Korrekturband
+// von +-0,1 (backend quality.py).
 //
 // DIE SCHWELLEN LIEGEN AUF DEN STUFENMITTEN (0,375 = Mitte zwischen Stufe 2 und 3, 0,625 =
 // Mitte zwischen 3 und 4). Damit ist diese Anzeige eine DETERMINISTISCHE VERGROEBERUNG der
@@ -32,9 +32,9 @@ export function qualityLevel(rankScore: number | null): QualityLevel | null {
   return rankScore >= LOW_MEDIUM_THRESHOLD ? 'medium' : 'low'
 }
 
-// Die Beschriftungen benennen die ALBUMTAUGLICHKEIT und nicht mehr die Bildqualität: der Wert
-// misst keine Bildgüte mehr, und ein gestochen scharfes, aber langweiliges Foto trüge sonst die
-// Beschriftung „Einfache Bildqualität". Dieselbe Vokabel gilt in Datenmodell, API und Oberfläche.
+// Die Beschriftungen benennen die ALBUMTAUGLICHKEIT und nicht die Bildqualität: der Wert misst
+// keine Bildgüte, und ein gestochen scharfes, aber langweiliges Foto trüge sonst die Beschriftung
+// „Einfache Bildqualität". Dieselbe Vokabel gilt in Datenmodell, API und Oberfläche.
 export const QUALITY_LEVEL_LABELS: Record<QualityLevel, string> = {
   low: 'Wenig albumtauglich',
   medium: 'Bedingt albumtauglich',

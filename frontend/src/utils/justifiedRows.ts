@@ -16,9 +16,9 @@
  */
 
 /**
- * Die Ausfallrichtung fuer ein Bild ohne bekanntes Verhaeltnis (`aspect_ratio: null`, ADR 0110
- * Punkt 4). Es wird mit 3:2 eingeplant und in seinem Feld eingepasst (`object-contain`) und
- * bekommt dadurch einen Rand - das ist bewusst: Beschneiden ist ausgeschlossen, und ein Rand an
+ * Die Ausfallrichtung fuer ein Bild ohne bekanntes Verhaeltnis (`aspect_ratio: null`). Es wird mit
+ * 3:2 eingeplant und in seinem Feld eingepasst (`object-contain`) und bekommt dadurch einen Rand -
+ * das ist bewusst: Beschneiden ist ausgeschlossen, und ein Rand an
  * einem einzelnen Bild ist sichtbar falsch statt still falsch.
  */
 export const FALLBACK_ASPECT_RATIO = 3 / 2

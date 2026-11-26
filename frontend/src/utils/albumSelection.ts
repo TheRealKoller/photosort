@@ -31,8 +31,8 @@ export type ParticipantStance = 'taken' | 'struck' | 'untouched'
  * dar - genau das, was diese Ansicht ausschließt. Auch der `username` taugt nicht als Schlüssel:
  * er ist fremdbestimmter Text, `user_id` ist die Identität.
  *
- * GELESEN WIRD `status`, NICHT DAS VORHANDENSEIN DER ZEILE: Seit ADR 0098 kann eine Zeile allein
- * das Favoriten-Kennzeichen tragen, und das ist keine Albumentscheidung.
+ * GELESEN WIRD `status`, NICHT DAS VORHANDENSEIN DER ZEILE: Eine Zeile kann allein das
+ * Favoriten-Kennzeichen tragen, und das ist keine Albumentscheidung.
  */
 export function participantStance(
   photo: PhotoOut,
