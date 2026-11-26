@@ -47,8 +47,8 @@ _TOKENS_PER_MTOK = 1_000_000
 # Mengengleichheit dieser Tabelle mit `cloud_vision.py::VISION_MODELS_BY_PROVIDER` ist per
 # Invariantentest erzwungen (tests/test_pricing.py) - der einzige automatisierte Schutz davor,
 # dass ein wählbares Modell ohne Preis in die Auswahl gerät, und zugleich davor, dass ein Eintrag
-# ohne Leser als unbeaufsichtigt alternde Tatsachenbehauptung liegenbleibt. Wird ein abgelöstes
-# Modell wieder aufgenommen, wird `verified_on` NEU verifiziert, nie aus dem Altbestand geerbt.
+# ohne Leser als unbeaufsichtigte Tatsachenbehauptung liegenbleibt. Wird ein abgelöstes Modell
+# wieder aufgenommen, wird `verified_on` NEU verifiziert, nie aus dem Altbestand geerbt.
 #
 # Beide Werte je Eintrag sind gegen `source_url` zum Stand `verified_on` verifiziert. Die dort
 # ebenfalls gelisteten Cache-Tarife sind bewusst NICHT abgebildet: das Projekt setzt kein
@@ -57,10 +57,10 @@ _TOKENS_PER_MTOK = 1_000_000
 # `mistral-small-2603` ist das erste asymmetrisch bepreiste Mistral-Modell - der Ausgabepreis ist
 # das Vierfache des Eingabepreises, beide Ministral-Einträge sind symmetrisch. Ein vertauschtes
 # oder versehentlich symmetrisch übernommenes Paar fällt durch KEINEN der Ordnungstests
-# ("stärker => teurer"), weil auch $0,00045 und $0,0017 über der Voreinstellung $0,0003 liegen;
-# dagegen steht allein der Literal-Pin auf $0,000582 je Bild in tests/test_pricing.py. Die
-# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 512` in BEIDEN Clients hart gedeckelt
-# (höchstens $0,00031 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
+# ("stärker => teurer"); dagegen steht allein der Literal-Pin auf $0,000582 je Bild in
+# tests/test_pricing.py. Die Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 512` in
+# BEIDEN Clients hart gedeckelt (höchstens $0,00031 Ausgabekosten je Aufruf) - wer den Deckel
+# anhebt, stellt diese Rechnung neu.
 #
 # Bekannte Grenze, bewusst nicht automatisiert abgesichert: die inhaltliche RICHTIGKEIT dieser
 # Werte gegen echte Anbieter-Abrechnungen ist nicht testbar. Ersatzverfahren: Abgleich der ersten
@@ -123,27 +123,22 @@ class AssumedImageUsage:
     output_tokens: int
 
 
-# Die abgeleitete Schätzung für das jeweilige VOREINSTELLUNGS-Modell liegt bei $0,0055 anthropic
-# bzw. $0,000306 mistral - beide Beträge sind in tests/test_pricing.py gepinnt. Jede Änderung hier
-# verschiebt genau diese Pins.
+# Die abgeleitete Schätzung für das jeweilige VOREINSTELLUNGS-Modell ist in tests/test_pricing.py
+# gepinnt; jede Änderung hier verschiebt genau diese Pins.
 #
-# anthropic: 4600 Input-Tokens = ~3900 Bild- + ~700 Prompt-Tokens, der Bildanteil nach der
-#   offiziellen Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750`, gerechnet auf die real
-#   versendete `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante).
-# mistral: 2880 Input-Tokens = ~2030 Bild- + ~850 Prompt-Tokens.
-#   Mistral veröffentlicht KEINE offizielle Bild-Token-Formel (anders als Anthropic) - dieser
-#   Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT. Der Eintrag deckt zwei Modellfamilien
-#   ab: `mistral-small-2603` erbt die Annahme über eine Familiengrenze hinweg und ist damit
-#   ebenfalls unkalibriert, die gefährliche Abweichungsrichtung ist die Unterschätzung. Zeigt die
-#   erste reale Rechnung deutlich mehr als 180 Ausgabe-Tokens je Bild, ist das der Anlass für eine
-#   eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) - nie für eine stille Korrektur
-#   hier.
+# anthropic: 4600 Input-Tokens (~3900 Bild- + ~700 Prompt-Tokens) nach der offiziellen
+#   Anthropic-Formel für die real versendete `display`-Variante (DISPLAY_MAX_SIZE=2048px lange
+#   Kante).
+# mistral: 2880 Input-Tokens (~2030 Bild- + ~850 Prompt-Tokens). Mistral veröffentlicht KEINE
+#   offizielle Bild-Token-Formel - dieser Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT.
+#   Der Eintrag deckt zwei Modellfamilien ab: `mistral-small-2603` erbt die Annahme über eine
+#   Familiengrenze hinweg und ist damit ebenfalls unkalibriert; die gefährliche
+#   Abweichungsrichtung ist die Unterschätzung. Zeigt die erste reale Rechnung deutlich mehr als
+#   180 Ausgabe-Tokens je Bild, ist das der Anlass, die Annahme je MODELL statt je Anbieter zu
+#   führen - nie eine stille Korrektur hier.
 #
-# AUSGABESEITE, beide Anbieter: 250 Tokens, hergeleitet gegen die vollbesetzte Antwort
-# (`{"motifs": {acht Schlüssel-Zahl-Paare}, "excluded": false, "fine_labels": [zwei kurze],
-# "album_suitability": {"level": 4, "reason": "<160 Zeichen>"}}`, 451 Zeichen kompakt bzw. 547
-# eingerückt und damit überschlägig 201 bzw. 245 Tokens). 250 liegt über dieser Obergrenze und
-# bewahrt die Reserve-Invariante `remote_classification.py::_MAX_RESPONSE_TOKENS >= 2 x Annahme`
+# AUSGABESEITE, beide Anbieter: 250 Tokens, oberhalb der vollbesetzten Antwort und damit mit
+# Reserve gegen die Invariante `remote_classification.py::_MAX_RESPONSE_TOKENS >= 2 x Annahme`
 # (512 >= 500). Wird die Schranke erneut angehoben oder die Zeichengrenze der Begründung
 # verschoben, ist dieser Wert erneut herzuleiten - nicht umgekehrt die Invariante an ihn
 # anzupassen.

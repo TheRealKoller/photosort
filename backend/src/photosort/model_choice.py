@@ -1,4 +1,4 @@
-"""Die EINE Aufloesung der Modellwahl je Projekt und Taetigkeit (ADR 0143 Punkt 2).
+"""Die EINE Aufloesung der Modellwahl je Projekt und Taetigkeit.
 
 Das Projekt speichert die Wahl je Taetigkeit; dieses Modul loest sie zu Modell und Anbieter auf.
 Ausloeser, Schaetzung und Job benutzen dieselbe Funktion, damit "angezeigt = aufgerufen =
@@ -23,8 +23,8 @@ class UnknownModelChoiceError(ValueError):
     """Ein gespeichertes Modell steht nicht mehr in `VISION_MODELS_BY_PROVIDER`.
 
     Erbt von `ValueError`, weil die Client-Factories (`build_landmark_client`,
-    `build_category_classification_client`) genau dafuer seit jeher einen `ValueError` zusagen -
-    eine Regel, ein Ausnahmetyp, und der Zusagentext bleibt wahr.
+    `build_category_classification_client`) einen `ValueError` zusagen - eine Regel, ein
+    Ausnahmetyp.
 
     Ausloeser und Schaetzung antworten darauf mit `409`; Lesepfade zeigen die Modell-ID mit
     `provider: null`. Ein Rueckfall auf die Installationsvorgabe waere ein stiller Wechsel des
