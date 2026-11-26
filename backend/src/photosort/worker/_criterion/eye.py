@@ -45,15 +45,15 @@ from photosort.motif_strengths import upsert_assessment
 from photosort.remote_classification import MAX_FINE_LABEL_LENGTH
 from photosort.thumbnails import variant_path
 
-# --- Eye-Sidecar (Spec 0609, ADR 0138) ------------------------------------------------------
+# --- Eye-Sidecar ---------------------------------------------------------------------------
 
-# Fortschritt wird in Bloecken committet - Muster von `persons_*`. Die ERGEBNISZEILEN bleiben bis
-# zum Phasenende ungeschrieben (eine Transaktion), nur der Zaehler wandert frueher.
+# Fortschritt wird in Bloecken committet. Die ERGEBNISZEILEN bleiben bis zum Phasenende
+# ungeschrieben (eine Transaktion), nur der Zaehler wandert frueher.
 EYE_PROGRESS_COMMIT_BATCH_SIZE = 20
 
 
 def _sanitized_eye_labels(analysis: EyeAnalysis) -> list[tuple[str, float]]:
-    """Eyes Feinlabels als Text, den die Oberflaeche gefahrlos rendern kann (S12).
+    """Eyes Feinlabels als Text, den die Oberflaeche gefahrlos rendern kann.
 
     Dieselbe Sanierung und dieselbe Laengengrenze wie der Cloud-Pfad - eine zweite Fassung liefe
     beim naechsten Sonderzeichen auseinander. Leere Texte und Doppelungen fallen weg; die
@@ -124,14 +124,12 @@ async def run_eye_phase(
     build_client: Callable[[], EyeClientLike] = build_eye_client,
 ) -> None:
     """Der Teilschritt `eye`: Schattenzeilen fuer die ueberlebenden, lesbaren Fotos, die noch keine
-    Eye-Zeile haben, und deren Kopfzeilen-Promotion (Spec 0609, Spec 0621).
-
-    Reihenfolge und Grenzen:
+    Eye-Zeile haben, und deren Kopfzeilen-Promotion.
 
     * NACHHOLEN, NICHT NEUBEWERTEN: Kandidat ist nur, wer ueberlebt, lesbar ist UND noch keine
       Zeile in `photo_eye_results` hat. Ein bereits ausgewertetes Foto wird kein zweites Mal an den
       Dienst geschickt; seine Zeile behaelt `computed_at`, `mapping_version` und ihre Werte, und
-      seine Kopfzeile wird nicht befördert. `eye_photos_total` ist damit die Nachhol-Menge.
+      seine Kopfzeile wird nicht befoerdert. `eye_photos_total` ist damit die Nachhol-Menge.
     * SEQUENZIELL, ein Client, 30 s je Aufruf, kein Retry. Ein Modell, eine Anfrage - und ein
       Test haelt fest, dass nie zwei Aufrufe gleichzeitig laufen.
     * Die Gesundheitspruefung laeuft auch bei NULL Kandidaten: Ein Lauf, der den Dienst gar nicht
@@ -144,10 +142,10 @@ async def run_eye_phase(
       bleibt dann unter `eye_photos_total`. Jeder andere Fehler bricht die Phase ab.
     * Die Promotion laeuft ueber `upsert_assessment`, das die Rangfolge `local < eye < cloud`
       selbst durchsetzt. Eine Cloud-Kopfzeile bleibt damit unberuehrt und die Schattenzeile steht
-      daneben - genau die Zusage aus S8.
+      daneben.
     * Geschrieben wird NICHTS in `photo_album_suitability`, `photo_fine_labels` oder
       `fine_labels`: Die Eye-Stufe ist eine Schattenzeile in eigener Tabelle. Sie zaehlt im
-      Entwurf genau dann, wenn der Lauf sie als seine Quelle eingefroren hat (ADR 0144);
+      Entwurf genau dann, wenn der Lauf sie als seine Quelle eingefroren hat;
       `album_stage.load_album_levels` liest sie dann von dort."""
     photos = (
         (

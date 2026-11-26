@@ -42,11 +42,10 @@ from photosort.scoring import (
 )
 from photosort.thumbnails import variant_path
 
-# Wie oft ScoringRun.photos_processed waehrend der Verarbeitung zwischen-committet wird ("mind. alle
-# 25 Fotos", damit ein pollender Client echten, monoton wachsenden Fortschritt sieht statt nur
-# Start-/Endzustand). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
-# monkeypatch.setattr(worker, "SCORE_COMMIT_BATCH_SIZE", ...) verkleinern koennen, ohne echte 25+
-# Testfotos anlegen zu muessen.
+# Kadenz der Zwischen-Commits von ScoringRun.photos_processed: ein pollender Client sieht echten,
+# monoton wachsenden Fortschritt statt nur Start-/Endzustand. Modul-Konstante statt
+# Default-Parameterwert, damit Tests sie per monkeypatch.setattr(worker, "SCORE_COMMIT_BATCH_SIZE",
+# ...) verkleinern koennen, ohne echte 25+ Testfotos anzulegen.
 SCORE_COMMIT_BATCH_SIZE = 25
 
 
@@ -65,10 +64,9 @@ class PhotoMetrics:
 
 
 def _compute_photo_metrics(path: Path) -> PhotoMetrics | None:
-    """Best-effort wie thumbnails.py::generate_variants: ein nicht (mehr) dekodierbares oder
-    ungewoehnliches Bild darf den ScoringRun nicht abbrechen, sondern wird fuer die Metrik-
-    Berechnung übersprungen. SICHERHEIT: das deckt insbesondere den
-    `DecompressionBombError` ab."""
+    """Best-effort: ein nicht (mehr) dekodierbares oder ungewoehnliches Bild darf den ScoringRun
+    nicht abbrechen, sondern wird fuer die Metrik-Berechnung uebersprungen. SICHERHEIT: das deckt
+    insbesondere den `DecompressionBombError` ab."""
     try:
         with Image.open(path) as opened:
             opened.load()
@@ -99,9 +97,9 @@ async def _take_over_or_start_scoring_run(
     else:
         scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
         session.add(scoring_run)
-    # Ein neuer Lauf beginnt ohne automatische Entscheidung (ADR 0146 Punkt 3): Der Merker ist eine
-    # Aussage UEBER DIESEN Lauf, keine Historie. Der projektweite Reset laeuft in derselben Anweisung
-    # wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt. Er steht hinter der
+    # Ein neuer Lauf beginnt ohne automatische Entscheidung: Der Merker ist eine Aussage UEBER
+    # DIESEN Lauf, keine Historie. Der projektweite Reset laeuft in derselben Anweisung wie die
+    # Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt. Er steht hinter der
     # Uebernahme: ein in der Warteschlange abgebrochener Lauf setzt nichts zurueck.
     await session.execute(
         update(PhotoScore)
@@ -122,11 +120,10 @@ async def _compute_scores(
 ) -> dict[int, PhotoMetrics]:
     """Die Metriken ALLER Fotos aus je EINER Dekodierung, inklusive der feinen Signatur.
 
-    Bekannte, akzeptierte Lücke: wird die display-Cache-Datei eines bereits in einem frueheren Lauf
-    erfolgreich gescorten Fotos bis zu diesem Lauf unlesbar, bleibt dessen alte PhotoScore-Zeile
-    unveraendert stehen statt geloescht/invalidiert zu werden - dieser Zweig wird dann einfach nicht
-    betreten. In der Praxis unwahrscheinlich (persistentes Cache-Volume ohne Eviction), aber
-    relevant fuer Phase B, die auf phash/cluster_key aufbaut."""
+    Bewusste Luecke: wird die display-Cache-Datei eines bereits erfolgreich gescorten Fotos bis zu
+    diesem Lauf unlesbar, bleibt dessen alte PhotoScore-Zeile unveraendert stehen, statt geloescht
+    oder invalidiert zu werden - dieser Zweig wird dann einfach nicht betreten. Relevant ist das
+    fuer Phase B, die auf phash/cluster_key aufbaut."""
     now = datetime.now(UTC).replace(tzinfo=None)
     computed: dict[int, PhotoMetrics] = {}
     processed = 0
@@ -156,7 +153,7 @@ async def _compute_scores(
         processed += 1
         if processed % SCORE_COMMIT_BATCH_SIZE == 0:
             scoring_run.photos_processed = processed
-            # Fortschritts-Watchdog (Schicht 2) - analog run_project_scan.
+            # Fortschritts-Watchdog (Schicht 2).
             scoring_run.last_progress_at = runs.now_utc()
             await session.commit()
 
@@ -259,9 +256,9 @@ async def _assign_duplicates_and_clusters(
 async def _mark_auto_decided(session: AsyncSession, auto_candidate_losers: set[int]) -> set[int]:
     """Setzt den Merker der automatischen Entscheidung und liefert die tatsaechlich gesetzten Ids.
 
-    Der NOT-EXISTS steht in DERSELBEN Anweisung wie das Setzen (Auflage S4): Eine Nutzerentscheidung,
-    die waehrend des Laufs entsteht, gewinnt gegen den Automaten. Geprueft wird der Gewinner UND
-    jedes Mitglied des Sterns; die Mitglieder sind ueber den soeben gesetzten `duplicate_of`-Stern
+    Der NOT-EXISTS steht in DERSELBEN Anweisung wie das Setzen: Eine Nutzerentscheidung, die
+    waehrend des Laufs entsteht, gewinnt gegen den Automaten. Geprueft wird der Gewinner UND jedes
+    Mitglied des Sterns; die Mitglieder sind ueber den soeben gesetzten `duplicate_of`-Stern
     erreichbar, ohne eine zweite Liste."""
     if not auto_candidate_losers:
         return set()
@@ -306,17 +303,11 @@ async def run_project_scoring(
     """Scort alle Fotos eines Projekts neu (kein inkrementelles Scoring) auf Basis der bereits vom
     Scan gecachten display-Variante - kein erneuter OpenCloud-Download.
 
-    Ablauf: ScoringRun anlegen -> photos_total setzen -> pro Foto Heuristiken berechnen,
-    PhotoScore upserten, photos_processed periodisch committen -> projektweite
-    Duplikat-/Cluster-Erkennung -> suggested_status setzen -> ScoringRun auf success/failed
-    setzen. Ranking-Grundlage ist die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
-
     Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf (None, wenn der in der
     Warteschlange abgebrochen wurde). Ein Abbruchwunsch wird vor jedem Commit-Batch und vor dem
     Clustering gelesen: die geschriebenen `PhotoScore`-Zeilen bleiben, Clustering, automatische
     Entscheidung, Vorschlagszahl und Gate entfallen - ein abgebrochener Lauf bestaetigt den
-    Ausschuss nie.
-    """
+    Ausschuss nie."""
     scoring_run = await _take_over_or_start_scoring_run(session, project, run_id)
     if scoring_run is None:
         return None
@@ -369,16 +360,15 @@ async def run_project_scoring(
         await runs.finish_cancelled(session, scoring_run)
         return scoring_run
     except asyncio.CancelledError:
-        # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan.
+        # Schicht 1 des Fortschritts-Watchdogs.
         await runs.fail_run(
             session, scoring_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
     except Exception as exc:
-        # Kein Rollback bereits committeter PhotoScore-Zeilen/des letzten committeten
+        # Kein Rollback bereits committeter PhotoScore-Zeilen und des letzten committeten
         # photos_processed-Stands - session.rollback() verwirft nur die seit dem letzten commit()
-        # offene, noch nicht persistierte Transaktion, exakt wie im OpenCloudError-Pfad von
-        # run_project_scan.
+        # offene, noch nicht persistierte Transaktion.
         await runs.fail_run(session, scoring_run, str(exc))
         return scoring_run
 

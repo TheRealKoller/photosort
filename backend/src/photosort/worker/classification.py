@@ -92,9 +92,9 @@ async def _take_over_or_start_classification_run(
 
 def _initial_phase(cloud_active: bool, mode: ClassificationMode) -> ClassificationPhase:
     """Die ERSTE Phase des Laufs - ueber denselben Weg wie jede spaetere gesetzt, statt als
-    Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
-    Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
-    dauerhaft "wird noch ermittelt", schweigend."""
+    Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung an `set_phase`, und
+    die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte dauerhaft "wird
+    noch ermittelt", schweigend."""
     if cloud_active:
         return ClassificationPhase.REMOTE_CATEGORIES
     if mode is ClassificationMode.EYE:
@@ -194,65 +194,52 @@ async def run_classification(
     build_eye_client: Callable[[], EyeClientLike] = build_eye_client,
     session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
 ) -> CriterionScoringRun | None:
-    """Der EINE, verkettete Klassifizierungslauf:
+    """Der EINE, verkettete Klassifizierungslauf: "remote_categories" (nur bei mode=cloud und
+    aktiver Cloud-Nutzung) -> "eye" (nur bei mode=eye) -> "criteria" (immer; inklusive
+    Landmark-Teilphase bei mode=cloud mit Einwilligung oder bei mode=eye MIT Einwilligung).
 
-        Phase "remote_categories" (nur bei mode=cloud und aktiver Cloud-Nutzung)
-            -> run_remote_category_classification
-        Phase "eye" (nur bei mode=eye)
-            -> run_eye_phase
-        Phase "criteria" (immer)
-            -> run_criterion_scoring (inkl. Landmark-Teilphase: bei mode=cloud mit Einwilligung
-               oder bei mode=eye MIT Einwilligung)
-
-    `mode` ist der gewaehlte Weg (`cloud`, `eye`, `local`). Fehlt er, wird er aus dem alten
-    `use_cloud` abgeleitet - ein Aufrufer, der die Signatur noch nicht kennt, verliert dadurch
-    nichts. WIDERSPRECHEN sich beide, ist das ein Programmierfehler und kein stiller Vorrang:
-    `use_cloud=False` mit `mode="cloud"` waere ein Lauf, der Geld ausgibt, obwohl der Aufrufer
-    "kein Cloud" gesagt hat.
+    `mode` ist der gewaehlte Weg (`cloud`, `eye`, `local`); Ableitung aus `use_cloud` und der
+    Fehler bei widersprechender Angabe stehen in `_resolve_launch_mode`.
 
     Die Reihenfolge ist der eigentliche Zweck dieser Funktion: `run_criterion_scoring` liest die
     Remote-Ergebnisse ueber `_remote_category_evidence` aus der Datenbank und kann sie nur dann in
     die Kategorieableitung einrechnen, wenn sie bereits geschrieben sind.
 
     "Aktive Cloud-Nutzung" ist die Konjunktion `use_cloud and
-    project.cloud_vision_detection_enabled`: die laufbezogene Checkbox kann eine
-    fehlende projektweite Einwilligung nie ersetzen, nur eine vorhandene fuer diesen einen Lauf
-    ungenutzt lassen. Ist sie falsch, wird run_remote_category_classification GAR NICHT ERST
-    aufgerufen - es entsteht dann auch kein RemoteCategoryClassificationRun.
+    project.cloud_vision_detection_enabled`: die laufbezogene Checkbox kann eine fehlende
+    projektweite Einwilligung nie ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt
+    lassen. Ist sie falsch, wird run_remote_category_classification GAR NICHT ERST aufgerufen - es
+    entsteht dann auch kein RemoteCategoryClassificationRun.
 
     Der Lauf-Datensatz (`CriterionScoringRun`) wird HIER angelegt, vor der ersten Phase, und an
     run_criterion_scoring durchgereicht: sonst zeigte `last_criterion_scoring_run` waehrend der
-    Remote-Phase noch auf den Lauf davor und die Oberflaeche haette keinen Anker fuer den
-    laufenden Vorgang.
+    Remote-Phase noch auf den Lauf davor und die Oberflaeche haette keinen Anker fuer den laufenden
+    Vorgang.
 
-    Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab: der lokale
-    Bewertungsanteil ist der Kern des Laufs und laeuft vollstaendig durch, die Fehlermeldung
-    wandert in `cloud_error_message`.
+    Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab: der lokale Bewertungsanteil ist der
+    Kern des Laufs und laeuft vollstaendig durch, die Fehlermeldung wandert in
+    `cloud_error_message`.
 
-    Zwei Zusätze:
-
-    - Der `RemoteCategoryClassificationRun` wird HIER angelegt und hineingereicht, und sein
-      Fremdschluessel steht an der Lauf-Zeile, BEVOR Phase 1 startet. Damit ist die Zuordnung
-      "welcher Remote-Lauf gehoert zu diesem Durchlauf" ein Schluessel statt einer Sortierung -
-      noetig, weil die Bilanz einen GELDBETRAG einem bestimmten Durchlauf zuschreibt.
-    - `estimated_cost_usd` ist die im Ausloese-Endpunkt serverseitig berechnete Schaetzung dieses
-      Laufs. Sie wird hier nur DURCHGEREICHT und gespeichert, NIE neu gerechnet: die Modulgrenze
-      "API zaehlt fuer die Schaetzung, Worker selektiert fuer den Lauf" bleibt bestehen. Sie ist
-      ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest sie.
+    Zusaetze: Der `RemoteCategoryClassificationRun` wird HIER angelegt und hineingereicht, und sein
+    Fremdschluessel steht an der Lauf-Zeile, BEVOR Phase 1 startet. Damit ist die Zuordnung
+    "welcher Remote-Lauf gehoert zu diesem Durchlauf" ein Schluessel statt einer Sortierung -
+    noetig, weil die Bilanz einen GELDBETRAG einem bestimmten Durchlauf zuschreibt.
+    `estimated_cost_usd` ist die im Ausloese-Endpunkt serverseitig berechnete Schaetzung dieses
+    Laufs; sie wird hier nur DURCHGEREICHT und gespeichert, NIE neu gerechnet - die Modulgrenze
+    "API zaehlt fuer die Schaetzung, Worker selektiert fuer den Lauf" bleibt bestehen, und sie ist
+    ein BELEG, keine Eingabe.
 
     `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle der beiden
-    Taetigkeiten. Sie werden unveraendert an die jeweilige Phase weitergereicht; `None` heisst
-    "Job aus der Zeit vor dem Update" und laesst die Phase die Installationsvorgabe aufloesen.
+    Taetigkeiten; `None` laesst die Phase die Installationsvorgabe aufloesen.
 
     Mit `run_id` uebernimmt der Lauf die von der API angelegte, wartende Zeile (None, wenn sie in
     der Warteschlange abgebrochen wurde). `session_factory` speist den Abbruch-Beobachter, der die
     Wartezeiten der Cloud-Drosselung unterbricht; sie ist injizierbar, damit ein Test denselben
-    Datenbestand beobachtet.
-    """
+    Datenbestand beobachtet."""
     mode = _resolve_launch_mode(mode, use_cloud)
 
     # Cloud-Kontakt heisst: mode=cloud ODER (mode=eye UND projektweite Einwilligung) - nur dann
-    # laeuft die Sehenswuerdigkeits-Phase, und nur dann ist `cloud_requested` wahr (S6). Der
+    # laeuft die Sehenswuerdigkeits-Phase, und nur dann ist `cloud_requested` wahr. Der
     # Remote-Kategorie-Client wird ausschliesslich unter mode=cloud gebaut.
     cloud_active = mode is ClassificationMode.CLOUD and project.cloud_vision_detection_enabled
     cloud_requested = mode is ClassificationMode.CLOUD or (
@@ -355,23 +342,21 @@ async def classify(
     """Der einzige Klassifizierungs-Job.
 
     `estimated_cost_usd` ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist
-    verbindlich - ein zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument
-    nicht und darf nicht an der Signaturaenderung scheitern.
+    verbindlich - ein bereits eingereihter Job traegt das Argument nicht und darf nicht an der
+    Signaturaenderung scheitern.
 
     `use_cloud` bleibt der VIERTE POSITIONSPARAMETER vom Typ `bool | None`, `mode` ist
-    keyword-only. Fehlt `mode`, wird er aus `use_cloud` abgeleitet (`True` -> cloud, sonst
-    local). Ein ALTER Worker kennt die Parameter nicht und verwirft den Job sichtbar mit
-    `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe.
+    keyword-only. Fehlt `mode`, wird er aus `use_cloud` abgeleitet (`True` -> cloud, sonst local).
+    Ein ALTER Worker kennt die Parameter nicht und verwirft den Job sichtbar mit `TypeError` - er
+    liest `"eye"` also nie als Cloud-Freigabe.
 
-    `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle. Fehlt eines
-    (Job aus der Zeit vor dem Update), loest der Job selbst ueber `resolve_model_choice` auf -
-    derselbe Weg wie im Ausloeser, kein Rueckfall auf einen geratenen Wert. Ein nicht mehr
-    waehlbares Modell wirft dort `UnknownModelChoiceError` und laesst den Lauf sichtbar
-    scheitern (ADR 0143 Punkt 2).
+    `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle. Fehlt eines,
+    loest der Job selbst ueber `resolve_model_choice` auf - derselbe Weg wie im Ausloeser, kein
+    Rueckfall auf einen geratenen Wert. Ein nicht mehr waehlbares Modell wirft dort
+    `UnknownModelChoiceError` und laesst den Lauf sichtbar scheitern.
 
-    `run_id` ist die von der API angelegte, wartende Zeile; ohne sie (Altjob) legt der Lauf sie
-    selbst an. Ist die Zeile in der Warteschlange abgebrochen worden, endet der Job ohne jede
-    Arbeit."""
+    `run_id` ist die von der API angelegte, wartende Zeile; ohne sie legt der Lauf sie selbst an.
+    Ist die Zeile in der Warteschlange abgebrochen worden, endet der Job ohne jede Arbeit."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:

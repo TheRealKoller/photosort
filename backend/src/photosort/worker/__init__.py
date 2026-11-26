@@ -2,7 +2,7 @@
 werden.
 
 Das Paket ist die EINE Adresse fuer den Einstiegspunkt (`python -m arq photosort.worker.
-WorkerSettings`, unveraendert): `WorkerSettings` steht hier, die fuenf Jobs, der eine Cron und der
+WorkerSettings`): `WorkerSettings` steht hier, die fuenf Jobs, der eine Cron und der
 Logging-Hook ebenfalls. Die Laeufe selbst liegen in je einer Datei, die gemeinsame Schicht in
 `_runs`, die Kriterien-Phasen in `_criterion/`.
 
@@ -111,11 +111,11 @@ class WorkerSettings:
         # EIN verketteter Job (Remote-Kategorisierung -> Kriterien-Bewertung), nicht zwei
         # einzelne - die Reihenfolge steckt in run_classification, nicht in einer Bedienanweisung.
         arq_func(classify, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        # Der Export: "ein Trigger -> genau ein Lauf" (ADR 0136 Punkt 5), wie die anderen Jobs.
+        # Der Export: "ein Trigger -> genau ein Lauf", wie die anderen Jobs.
         arq_func(export_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        # Der Prueflauf (Spec 0616, ADR 0139 Punkt 2): eigener Lauf mit eigenen Tabellen. Auch er
-        # kennt genau einen Versuch - ein Fehlschlag ist ein Endzustand mit fester Meldung, kein
-        # automatischer Hintergrund-Retry.
+        # Der Prueflauf: eigener Lauf mit eigenen Tabellen. Auch er kennt genau einen Versuch -
+        # ein Fehlschlag ist ein Endzustand mit fester Meldung, kein automatischer
+        # Hintergrund-Retry.
         arq_func(run_classification_review, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs: run_at_startup=True sorgt dafuer, dass ein

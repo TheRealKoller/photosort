@@ -61,11 +61,10 @@ from photosort.worker._criterion.ranking import (
 
 
 class CriterionScoringGuardError(Exception):
-    """Fachliche Vorbedingung fuer run_criterion_scoring nicht erfuellt (die uebergebene
-    scoring_run_id ist nicht mehr der aktuell neueste erfolgreiche ScoringRun, z.B. wegen eines
-    zwischenzeitlichen Re-Scan/Re-Scoring) - wird wie jede andere Exception im umgebenden
-    try/except als FAILED-Lauf mit error_message behandelt. Der Guard sitzt im Worker-Job,
-    zusaetzlich zum eigenen 409 der API-Schicht."""
+    """Fachliche Vorbedingung fuer run_criterion_scoring nicht erfuellt (scoring_run_id ist nicht
+    mehr der aktuell neueste erfolgreiche ScoringRun) - wird wie jede andere Exception im
+    umgebenden try/except als FAILED-Lauf mit error_message behandelt. Der Guard sitzt im
+    Worker-Job, zusaetzlich zum eigenen 409 der API-Schicht."""
 
 
 class CriterionScoringReferenceError(Exception):
@@ -75,7 +74,7 @@ class CriterionScoringReferenceError(Exception):
     FAILED zu markieren. Dieses INSERT haette keine Zeile, auf die sein Fremdschluessel zeigen
     koennte, und risse auf der Zieldatenbank die Transaktion ab - der bisher gepruefte "saubere
     Fehlschlag" mit FAILED-Lauf ist dort kein erreichbarer Zustand. Die Ausnahme verlaesst die
-    Funktion deshalb, statt als FAILED-Lauf verschluckt zu werden (Spec 0350, ADR 0122 Punkt 4)."""
+    Funktion deshalb, statt als FAILED-Lauf verschluckt zu werden."""
 
 
 async def _latest_successful_criterion_run(
@@ -103,7 +102,7 @@ async def rebuild_run_selection(session: AsyncSession, project_id: int) -> None:
     Rangfolge.
 
     Kein erfolgreicher Lauf: nichts zu tun. Weder `commit` noch eigene Transaktionsgrenze - die
-    gehoert dem Aufrufer (Muster `rebuild_run_grouping`)."""
+    gehoert dem Aufrufer."""
     run = await _latest_successful_criterion_run(session, project_id)
     if run is None:
         return
@@ -116,14 +115,13 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
 
     Aufgerufen vom Versatz-Endpunkt: Reihenfolge, Anzeige und Ortsherleitung sind mit der
     Bedeutungsumkehr von `taken_at` sofort richtig, die EVENTS sind dagegen persistierte
-    Lauf-Artefakte (ADR 0087) und waeren es nicht.
+    Lauf-Artefakte und waeren es nicht.
 
     LOESCHEN UND NEUSCHREIBEN statt Umhaengen: `UniqueConstraint(criterion_scoring_run_id,
     position)` laesst alte und neue Events desselben Laufs nicht gleichzeitig zu.
 
     Kein erfolgreicher Lauf oder keine einzige Rangzeile: nichts zu tun. Weder `commit` noch
-    eigene Transaktionsgrenze - die gehoert dem Aufrufer, der genau EINMAL committet (Muster
-    `project_deletion`)."""
+    eigene Transaktionsgrenze - die gehoert dem Aufrufer, der genau EINMAL committet."""
     run = await _latest_successful_criterion_run(session, project_id)
     if run is None:
         return
@@ -168,15 +166,15 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     # Unique-Constraint ueber `(Lauf, position)`.
     await session.flush()
 
-    # `None` STATT EINES AUFLOESERS (S10): Dieser Pfad laeuft in einem Request (Versatz-Endpunkt).
-    # Er baut die Namen ausschliesslich aus bereits abgelegten Auskuenften neu und fragt niemanden;
+    # `None` STATT EINES AUFLOESERS: Dieser Pfad laeuft in einem Request (Versatz-Endpunkt). Er
+    # baut die Namen ausschliesslich aus bereits abgelegten Auskuenften neu und fragt niemanden;
     # eine noch nie gefragte Zelle bleibt hier ohne Namen, bis der naechste Kriterien-Lauf sie
     # beschafft. Ohne diese Grenze koennte ein Request-Pfad nach aussen wirken.
     #
-    # `None` STATT EINES VERZEICHNISSES (S8): dasselbe Argument fuer die Ortsplausibilitaet des
-    # Sehenswuerdigkeitsnamens - ein Durchgang ueber den zweiten Auszug dauerte gemessen 43 s und
-    # waere ueber eine authentifizierte Anfrage beliebig oft wiederholbar. Der Neuaufbau liest die
-    # abgelegte Auskunft; unbekannte Namen behalten ihre Namen (Zustand 1).
+    # `None` STATT EINES VERZEICHNISSES: dasselbe Argument fuer die Ortsplausibilitaet des
+    # Sehenswuerdigkeitsnamens - ein Durchgang ueber den zweiten Auszug waere ueber eine
+    # authentifizierte Anfrage beliebig oft wiederholbar. Der Neuaufbau liest die abgelegte
+    # Auskunft; unbekannte Namen behalten ihre Namen (Zustand 1).
     await build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
     # Der Vorschlag gehoert zur neuen Gliederung: ohne ihn stuende `selection_position` nach dem
     # Loeschen der Rangzeilen ueberall auf `NULL`.
@@ -197,11 +195,11 @@ async def start_criterion_scoring_run(
 
     Die Pruefung ist GLOBAL (`session.get(ScoringRun, ...)`), nicht projektgebunden: ein ScoringRun
     existiert projektunabhaengig, und eine vorhandene, aber projektfremde oder veraltete id
-    "existiert" - sie gehoert damit in den Aktualitaets-Guard hinter dem INSERT (FAILED-Lauf) und
-    nicht in den ReferenceError (Spec 0350, ADR 0122 Punkt 4).
+    "existiert" - sie gehoert damit in den Aktualitaets-Guard hinter dem INSERT und nicht in den
+    ReferenceError.
 
     Das INSERT selbst bleibt ungeschuetzt: das Restfenster, in dem der Bewertungslauf zwischen
-    Pruefung und INSERT verschwindet, wird benannt und nicht zugedeckt (ADR 0122 Punkt 5)."""
+    Pruefung und INSERT verschwindet, wird benannt und nicht zugedeckt."""
     if await session.get(ScoringRun, scoring_run_id) is None:
         raise CriterionScoringReferenceError(
             f"Der referenzierte Bewertungslauf {scoring_run_id} existiert nicht (mehr); es wird "
@@ -214,12 +212,12 @@ async def start_criterion_scoring_run(
         status=ScanStatus.RUNNING,
         cloud_requested=cloud_requested,
         estimated_cost_usd=estimated_cost_usd,
-        # Der gewaehlte Weg wird EINGEFROREN (Spec 0609): die Anzeige liest ihn nie zurueck, aber
-        # eine Auswertung muss spaeter wissen, welcher Weg zu einem Ergebnis gefuehrt hat. Altzeilen
+        # Der gewaehlte Weg wird EINGEFROREN: die Anzeige liest ihn nie zurueck, aber eine
+        # Auswertung muss spaeter wissen, welcher Weg zu einem Ergebnis gefuehrt hat. Altzeilen
         # bleiben `NULL` - "unbekannt" ist die wahre Aussage ueber sie.
         mode=mode,
-        # Die einzige Schreibstelle der Stufenquelle (ADR 0144 Punkt 1) - fuer jeden Weg, auch
-        # `local`: Auch ein Lauf ohne Eye und ohne Cloud bildet Rangwerte aus einer Stufe.
+        # Die einzige Schreibstelle der Stufenquelle - fuer jeden Weg, auch `local`: Auch ein
+        # Lauf ohne Eye und ohne Cloud bildet Rangwerte aus einer Stufe.
         album_level_source=project.category_method,
     )
     session.add(run)
@@ -284,11 +282,9 @@ async def _surviving_rows(
 ) -> Sequence[Row[tuple[Photo, PhotoScore]]]:
     """Die Ausschuss-Ueberlebenden des Projekts mit ihrem Score - die Arbeitsmenge des Laufs.
 
-    Bekannter, akzeptierter Performance-Trade-off: HIER gibt es bewusst KEINEN
-    Kandidatenpool-Vorfilter pro Cluster - N ist beim Scoren nicht bekannt (es wird erst beim Lesen
-    ueber top_n_per_event angewendet), also werden ALLE Ausschuss-Ueberlebenden verarbeitet, nicht
-    nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell spuerbar, siehe
-    docs/architecture.md."""
+    Bewusst KEIN Kandidatenpool-Vorfilter pro Cluster: N ist beim Scoren nicht bekannt (es wird
+    erst beim Lesen ueber top_n_per_event angewendet), also werden ALLE Ausschuss-Ueberlebenden
+    verarbeitet, nicht nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell spuerbar."""
     return (
         await session.execute(
             select(Photo, PhotoScore)
@@ -352,36 +348,28 @@ async def run_criterion_scoring(
     build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
-    abgeleitete Rangfolge je Partition (event_id). Ablauf:
-    CriterionScoringRun anlegen -> Guard (scoring_run_id muss der aktuell neueste erfolgreiche
-    ScoringRun sein) -> Run-Kontext und Modellsatz bauen -> lokale Kriterienphase ->
-    Sehenswuerdigkeits-Phase (nur mit Cloud-Freigabe) -> lokale Motiv-Kopfzeile -> Rangfolge
-    (rank_photos je Partition, reine In-Memory-Aggregation ueber die in diesem Lauf berechneten
-    Werte, PhotoRanking-Zeilen) -> Personenangabe -> Auswahlvorschlag -> CriterionScoringRun auf
-    success/failed setzen. Die Phasen selbst liegen in `_criterion/` und bekommen den Modellsatz als
-    einen Parameter. `build_detector`/`build_animal_detector`/`build_classifier`/
-    `build_aesthetics`/`build_landmarker` sind injizierbar (Default: die echte, teure
-    Modellkonstruktion) - Tests uebergeben stattdessen Fakes ohne echtes Modell
+    abgeleitete Rangfolge je Partition (event_id). Die Phasen selbst liegen in `_criterion/` und
+    bekommen den Modellsatz als einen Parameter. `build_detector`/`build_animal_detector`/
+    `build_classifier`/`build_aesthetics`/`build_landmarker` sind injizierbar (Default: die echte,
+    teure Modellkonstruktion) - Tests uebergeben stattdessen Fakes ohne echtes Modell
     (build_object_detector/build_scene_classifier/build_aesthetics_model/
     build_face_landmarker dürfen wie build_face_detector NIE in einem automatisierten Test
     aufgerufen werden).
 
-    Dies ist die ZWEITE Phase eines verketteten Klassifizierungslaufs, kein eigenständig
-    ausgelöster Lauf. Drei keyword-only Parameter:
+    Dies ist die ZWEITE Phase eines verketteten Klassifizierungslaufs, kein eigenstaendig
+    ausgeloester Lauf. Drei keyword-only Parameter:
 
-    - `run`: der bereits von run_classification angelegte Lauf-Datensatz. Wird keiner uebergeben,
-      legt diese Funktion ihn selbst an (Direktaufruf, z.B. in Tests).
-    - `use_cloud`: laufbezogene Cloud-Freigabe (die Checkbox am Ausloeser). Das Gate fuer die
-      Landmark-Phase ist ab hier die KONJUNKTION `use_cloud and
-      project.cloud_vision_detection_enabled` - `use_cloud` kann eine fehlende Einwilligung nie
-      ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt lassen.
-      Default `False` und damit FAIL-CLOSED: ein Aufrufer, der den Parameter vergisst, verliert
-      die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
+    - `run`: der bereits von run_classification angelegte Lauf-Datensatz; fehlt er, legt diese
+      Funktion ihn selbst an (Direktaufruf, z.B. in Tests).
+    - `use_cloud`: laufbezogene Cloud-Freigabe. Das Gate fuer die Landmark-Phase ist ab hier die
+      KONJUNKTION `use_cloud and project.cloud_vision_detection_enabled` - `use_cloud` kann eine
+      fehlende Einwilligung nie ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt
+      lassen. Default `False` und damit FAIL-CLOSED: ein Aufrufer, der den Parameter vergisst,
+      verliert die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
       auszuloesen.
-    - `landmark_model`: das im Projekt aufgeloeste Modell der Sehenswuerdigkeits-Erkennung.
-      Fehlt es (Job aus der Zeit vor dem Update), loest diese Funktion die
-      Installationsvorgabe auf. Client, Schrittmacher, Kosten und `provider`-Spalte lesen
-      denselben Wert."""
+    - `landmark_model`: das im Projekt aufgeloeste Modell der Sehenswuerdigkeits-Erkennung. Fehlt
+      es (Job aus der Zeit vor dem Update), loest diese Funktion die Installationsvorgabe auf.
+      Client, Schrittmacher, Kosten und `provider`-Spalte lesen denselben Wert."""
     if run is None:
         run = await start_criterion_scoring_run(
             session, project, scoring_run_id, cloud_requested=use_cloud
@@ -413,11 +401,10 @@ async def run_criterion_scoring(
 
         await run_local_phase(context, models)
 
-        # Die Cloud-Phase laeuft NACH der obigen (rein lokalen/synchronen) Foto-Schleife und VOR
-        # der Kategorieableitung/rank_photos, damit landmark-Werte noch in die
-        # Kategorie-/Rangfolgenbildung einfliessen können. `project.cloud_vision_detection_enabled`
-        # wird hier EINMALIG gelesen (kein Live-Reread während des Laufs, dokumentierte
-        # Vereinfachung).
+        # Die Cloud-Phase laeuft NACH der rein lokalen Foto-Schleife und VOR der
+        # Kategorieableitung/rank_photos, damit landmark-Werte noch in die Rangfolgenbildung
+        # einfliessen koennen. `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen
+        # (kein Live-Reread waehrend des Laufs, dokumentierte Vereinfachung).
         #
         # SICHERHEIT - das Gate ist die KONJUNKTION aus projektweiter Einwilligung UND
         # laufbezogener `use_cloud`-Freigabe: fehlt eine der beiden, wird
@@ -446,13 +433,13 @@ async def run_criterion_scoring(
             # DIE ORTSAUSKUNFT, VOR der Blockschleife und in EINEM Zug fuer alle Kandidaten -
             # nicht je Foto: derselbe Auflöser, dieselbe Tabelle, ein Durchgang durch den
             # Ortsdatensatz statt einem je Aufnahme. Die Event-Phase findet ihre Zellen danach
-            # ueberwiegend bereits abgelegt vor und baut dann gar keinen Auflöser mehr (ADR 0106,
-            # Konsequenzen).
+            # ueberwiegend bereits abgelegt vor und baut dann gar keinen Auflöser mehr.
             #
-            # Ausschliesslich die EIGENE gemessene Koordinate des Fotos (S3): `infer_locations`
-            # wird hier nicht aufgerufen, und ein Syntaxbaum-Waechter in
-            # tests/test_worker_criterion_scoring_landmark_names.py haelt das fest - ein hinzugefuegter Aufruf
-            # roetet sonst keinen Verhaltenstest, solange die Messlage echte Koordinaten traegt.
+            # Ausschliesslich die EIGENE gemessene Koordinate des Fotos: `infer_locations` wird
+            # hier nicht aufgerufen, und ein Syntaxbaum-Waechter in
+            # tests/test_worker_criterion_scoring_landmark_names.py haelt das fest - ein
+            # hinzugefuegter Aufruf roetet sonst keinen Verhaltenstest, solange die Messlage echte
+            # Koordinaten traegt.
             landmark_place_infos = await place_infos(
                 session,
                 project.id,
@@ -472,12 +459,11 @@ async def run_criterion_scoring(
         await write_local_motif_header(context)
 
         # Der RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
-        # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
+        # PhotoRanking-Zeilen) gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
         # Landmark-Phase und braucht deshalb einen eigenen Namen: sonst bliebe `phase` hier auf
-        # `landmark` bei 100 % Fortschritt stehen ("haengt oder laeuft?") oder muesste auf
-        # `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
-        # Pruefpunkt vor der Rangfolge: ein Abbruch nach dem letzten Kriterium ueberspringt
-        # Rangfolge, Personenangabe und Auswahlvorschlag - der Lauf bleibt ein Teilstand.
+        # `landmark` bei 100 % Fortschritt stehen ("haengt oder laeuft?"). Der vierte Wert macht
+        # die Abfolge monoton. Der Pruefpunkt davor laesst einen Abbruch nach dem letzten Kriterium
+        # Rangfolge, Personenangabe und Auswahlvorschlag ueberspringen - der Lauf bleibt Teilstand.
         await runs.raise_if_cancel_requested(session, run)
         runs.set_phase(run, ClassificationPhase.RANKING)
         await session.commit()
@@ -500,11 +486,10 @@ async def run_criterion_scoring(
         # keine Motivstaerke und keine Rangfolge ein.
         await recognize_persons(session, run, project_id, cache_dir, models.build_face_analyzer)
 
-        # DER AUSWAHLVORSCHLAG hinter der Phase `persons` und AUSSERHALB von
-        # `recognize_persons`: Er liest die Namen, die dieser Lauf ergeben hat - auch beim ersten
-        # Lauf eines Projekts -, und entsteht auch dann, wenn die Phase entfaellt. Kein eigener
-        # `ClassificationPhase`-Wert: er rechnet unter der zuletzt gesetzten Phase und landet
-        # im selben Commit wie der Erfolgsvermerk.
+        # DER AUSWAHLVORSCHLAG hinter der Phase `persons` und AUSSERHALB von `recognize_persons`:
+        # Er liest die Namen, die dieser Lauf ergeben hat, und entsteht auch dann, wenn die Phase
+        # entfaellt. Kein eigener `ClassificationPhase`-Wert: er rechnet unter der zuletzt
+        # gesetzten Phase und landet im selben Commit wie der Erfolgsvermerk.
         await apply_run_selection(session, run, project_id)
 
         run.status = ScanStatus.SUCCESS
@@ -516,11 +501,10 @@ async def run_criterion_scoring(
         await runs.finish_cancelled(session, run)
         return run
     except asyncio.CancelledError:
-        # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan/run_project_scoring.
+        # Schicht 1 des Fortschritts-Watchdogs.
         await runs.fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
-        # Kein Rollback bereits committeter Fortschritts-/Kriterien-Zwischenstaende - identisches
-        # Muster wie run_project_scoring.
+        # Kein Rollback bereits committeter Fortschritts-/Kriterien-Zwischenstaende.
         await runs.fail_run(session, run, str(exc))
         return run

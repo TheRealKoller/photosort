@@ -75,40 +75,39 @@ async def _upsert_album_suitability(
 async def _classify_photo_for_remote_category(
     client: CategoryDetectionClientLike, cache_dir: Path, photo: Photo
 ) -> RemoteClassification:
-    """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten (analog
-    detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
-    parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene,
-    auf 2048 px begrenzte display-Cache-Variante - nie das OpenCloud-Original,
-    kein EXIF/GPS, kein Dateiname und kein Pfad im Request - SICHERHEIT, Muss-Kriterium."""
+    """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten - bewusst OHNE
+    Session-Zugriff, damit mehrere Aufrufe sicher parallel per asyncio.gather laufen koennen. Nutzt
+    ausschliesslich die bereits vorhandene, auf 2048 px begrenzte display-Cache-Variante - nie das
+    OpenCloud-Original, kein EXIF/GPS, kein Dateiname und kein Pfad im Request - SICHERHEIT,
+    Muss-Kriterium."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
     return await client.classify(image_bytes, runs.CLOUD_VISION_IMAGE_MIME_TYPE, photo.id)
 
 
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
-    """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
-    Ausschuss-Überlebender-Bestand (`duplicates.py::survives_ausschuss`) OHNE Vorfilter
-    (anders als landmark), abzüglich der bereits VOLLSTÄNDIG von der Cloud beurteilten Fotos.
+    """Kandidatenmenge fuer die Remote-Kategorie-Klassifizierung: der KOMPLETTE
+    Ausschuss-Ueberlebender-Bestand (`duplicates.py::survives_ausschuss`) OHNE Vorfilter,
+    abzueglich der bereits VOLLSTAENDIG von der Cloud beurteilten Fotos.
 
-    DAS SKIP-KRITERIUM IST ZUSAMMENGESETZT (Sicherheitsauflage S6): eine Kopfzeile mit
-    `source='cloud'` UND eine Albumtauglichkeitszeile. Beide Hälften tragen je einen eigenen
-    Fehler:
+    DAS SKIP-KRITERIUM IST ZUSAMMENGESETZT: eine Kopfzeile mit `source='cloud'` UND eine
+    Albumtauglichkeitszeile. Beide Haelften tragen je einen eigenen Fehler:
 
     - Ein reiner Existenztest auf die Kopfzeile (statt auf `source='cloud'`) machte jedes lokal
-      beurteilte Foto dauerhaft zum Nicht-Kandidaten - der Kriterien-Lauf schreibt für JEDES
-      beurteilte Foto eine LOKALE Kopfzeile. Die Cloud-Klassifizierung wäre ein stilles No-op.
+      beurteilte Foto dauerhaft zum Nicht-Kandidaten - der Kriterien-Lauf schreibt fuer JEDES
+      beurteilte Foto eine LOKALE Kopfzeile. Die Cloud-Klassifizierung waere ein stilles No-op.
     - Eine Lockerung auf nur EINES der beiden Merkmale schickt fertig bewertete Fotos erneut an
       den Anbieter: Kosten und wiederholte Datenexposition.
 
-    Die zweite Hälfte ist zugleich die NACHBEWERTUNG: ein Foto aus einem früheren Lauf, das eine
-    Cloud-Kopfzeile, aber noch keine Albumtauglichkeit trägt, wird wieder Kandidat - ohne Re-Scan
-    und ohne zweiten Auslöser.
+    Die zweite Haelfte ist zugleich die NACHBEWERTUNG: ein Foto aus einem frueheren Lauf, das eine
+    Cloud-Kopfzeile, aber noch keine Albumtauglichkeit traegt, wird wieder Kandidat - ohne Re-Scan
+    und ohne zweiten Ausloeser.
 
-    Das lokale Ausschuss-Gate bleibt dabei unberührt und steht ausgeschrieben in DERSELBEN
-    Anweisung wie der Skip-Term (S8 jener Spec, S1/S2 von Spec 0374): `join(PhotoScore)` plus
-    `survives_ausschuss()` begrenzen weiterhin, welche Fotos den Homeserver überhaupt verlassen
-    dürfen. Das Prädikat tritt als weiterer Konjunktionsteil in DIESE Anweisung ein, nie als
-    nachgelagerter Filter über einer bereits gebildeten Menge.
+    Das lokale Ausschuss-Gate bleibt unberuehrt und steht ausgeschrieben in DERSELBEN Anweisung wie
+    der Skip-Term: `join(PhotoScore)` plus `survives_ausschuss()` begrenzen weiterhin, welche Fotos
+    den Homeserver ueberhaupt verlassen duerfen. Das Praedikat tritt als weiterer
+    Konjunktionsteil in DIESE Anweisung ein, nie als nachgelagerter Filter ueber einer bereits
+    gebildeten Menge.
 
     Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
     genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
@@ -183,9 +182,8 @@ def _open_remote_models(
 
 
 async def _load_fine_label_snapshot(session: AsyncSession) -> list[FineLabelSnapshotEntry]:
-    """Das Feinlabel-Vokabular, einmal je Lauf geladen und danach mutierbar durchgereicht (Muster
-    Namensregister in der Landmark-Phase): ein in diesem Lauf neu entstandener Eintrag ergaenzt den
-    Schnappschuss sofort."""
+    """Das Feinlabel-Vokabular, einmal je Lauf geladen und danach mutierbar durchgereicht: ein in
+    diesem Lauf neu entstandener Eintrag ergaenzt den Schnappschuss sofort."""
     return [
         FineLabelSnapshotEntry(
             canonical_key=row.canonical_key,
@@ -211,9 +209,9 @@ async def _store_remote_classification(
 
     Pro Foto genau EINE Kopfzeile (`source='cloud'`) samt vollstaendigem Achter-Staerkevektor. Der
     Vektor kommt VALIDIERT aus dem Parser - SICHERHEIT: nie die Rohabbildung des Modells, sonst
-    wanderte unvalidierter Fremdtext ueber einen zweiten Kanal in API-Antwort und UI (S8/S9), und ein
-    entarteter Zahlenwert legte ueber Starlettes `allow_nan=False` die gesamte Fotoliste des Projekts
-    auf 500."""
+    wanderte unvalidierter Fremdtext ueber einen zweiten Kanal in API-Antwort und UI, und ein
+    entarteter Zahlenwert legte ueber Starlettes `allow_nan=False` die gesamte Fotoliste des
+    Projekts auf 500."""
     # `upsert_assessment` setzt die Regel durch, die beide Grundlagen auseinanderhaelt: eine
     # Cloud-Grundlage schreibt immer und ersetzt eine vorhandene lokale VOLLSTAENDIG. Die
     # Korrekturzeilen bleiben unangetastet - sie haengen am Foto und nicht an der Kopfzeile.
@@ -250,13 +248,11 @@ async def _store_remote_classification(
         entries_by_canonical.setdefault(entry.canonical_key, (entry, raw_label))
 
     # Die Feinlabel-Zeilen der VORHERIGEN Antwort fallen VOLLSTAENDIG, bevor die neuen entstehen -
-    # dieselbe Regel wie beim Staerkevektor: eine Antwort ist vollstaendig oder sie existiert nicht,
-    # ein Gemisch aus zwei Antworten gibt es nicht. Seit der geweiteten Kandidatenauswahl ist das
-    # keine Kosmetik: ein erneut gesendetes Foto traegt seine alten Zeilen noch, und ein zweiter
-    # INSERT desselben Labels verletzte `UniqueConstraint(photo_id, fine_label_id)` - die
-    # IntegrityError rollt die Transaktion zurueck und laesst den GESAMTEN Lauf scheitern, nicht nur
-    # dieses eine Foto. Die `fine_labels`-Registry selbst bleibt unberuehrt (projektuebergreifendes
-    # Vokabular).
+    # eine Antwort ist vollstaendig oder sie existiert nicht, ein Gemisch aus zwei Antworten gibt es
+    # nicht. Ein erneut gesendetes Foto traegt seine alten Zeilen noch, und ein zweiter INSERT
+    # desselben Labels verletzte `UniqueConstraint(photo_id, fine_label_id)` - die IntegrityError
+    # rollt die Transaktion zurueck und laesst den GESAMTEN Lauf scheitern, nicht nur dieses eine
+    # Foto. Die `fine_labels`-Registry selbst bleibt unberuehrt (projektuebergreifendes Vokabular).
     await session.execute(delete(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id))
 
     for entry, raw_label in entries_by_canonical.values():
@@ -372,28 +368,25 @@ async def run_remote_category_classification(
     parent_run: CriterionScoringRun | None = None,
     model: str | None = None,
 ) -> RemoteCategoryClassificationRun:
-    """Eigenständiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene
-    Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner
-    Fehlschlag bricht den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
+    """Eigenstaendiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene Run-Tabelle,
+    eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner Fehlschlag bricht den Lauf
+    nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
     `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
-    dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
-    ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-
-    Kriterium, geteiltes Consent-Gate mit `landmark`).
+    dokumentierte Vereinfachung) - ist der Schalter aus (Default) ODER der Kandidatenpool leer,
+    wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-Kriterium, geteiltes
+    Consent-Gate mit `landmark`).
 
-    `run` ist der bereits von run_classification angelegte Lauf-Datensatz - dasselbe Muster wie bei
-    CriterionScoringRun/run_criterion_scoring, eine Ebene tiefer. Der übergeordnete
+    `run` ist der bereits von run_classification angelegte Lauf-Datensatz. Der uebergeordnete
     Klassifizierungslauf setzt seinen Fremdschluessel darauf, BEVOR Phase 1 startet; ohne diesen
     frueheren Anlagezeitpunkt haette die Oberflaeche waehrend der Remote-Phase keinen Anker fuer
-    den laufenden Vorgang. Wird keiner uebergeben (Direktaufruf, Tests), legt diese Funktion die
-    Zeile selbst an.
+    den laufenden Vorgang. Fehlt er (Direktaufruf, Tests), legt diese Funktion die Zeile selbst an.
 
     `parent_run` ist der uebergeordnete Klassifizierungslauf; er wird an jedem Block-Commit
-    mitgestempelt. Ohne ihn (Direktaufruf, Tests) stempelt die Funktion nur ihre
-    eigene Zeile.
+    mitgestempelt. Ohne ihn stempelt die Funktion nur ihre eigene Zeile.
 
-    `model` ist das Modell der Kategorisierung, im Ausloeser aus der Projektwahl aufgeloest.
-    Fehlt es (Direktaufruf, Altjob), gilt die Installationsvorgabe. Aus DIESEM Wert folgen
-    Anbieter, Client, Schrittmacher, Preis und die `provider`-Spalten je Foto."""
+    `model` ist das Modell der Kategorisierung, im Ausloeser aus der Projektwahl aufgeloest. Fehlt
+    es (Direktaufruf, Altjob), gilt die Installationsvorgabe. Aus DIESEM Wert folgen Anbieter,
+    Client, Schrittmacher, Preis und die `provider`-Spalten je Foto."""
     if run is None:
         run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
         session.add(run)
@@ -413,14 +406,11 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        # Eine Auflösung je Cloud-Phase, danach durchgereicht: Client, Schrittmacher, Preis und
-        # die `provider`-Spalten je Foto lesen denselben Wert.
         model, provider, client, embedder = _open_remote_models(build_client, build_embedder, model)
         if client is None or embedder is None:
-            # Best-effort auf Job-Ebene (analog try_build-Philosophie der uebrigen Modell-
-            # Builder): ein Ladefehler eines der beiden noetigen Bausteine laesst den Lauf
-            # erfolgreich, aber wirkungslos enden - kein Crash, kein FAILED-Zustand fuer ein
-            # Infrastrukturproblem, das der naechste Lauf ggf. von selbst behebt.
+            # Best-effort auf Job-Ebene: ein Ladefehler eines der beiden noetigen Bausteine laesst
+            # den Lauf erfolgreich, aber wirkungslos enden - kein Crash, kein FAILED-Zustand fuer
+            # ein Infrastrukturproblem, das der naechste Lauf ggf. von selbst behebt.
             run.status = ScanStatus.SUCCESS
             run.finished_at = runs.now_utc()
             await session.commit()

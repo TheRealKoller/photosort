@@ -41,7 +41,7 @@ from photosort.selection import (
 )
 
 # Der geschlossene eigene Vorrat von `place_lookups.source` - er hat genau einen Eintrag, weil es
-# genau einen Weg zur Ortsauskunft gibt (ADR 0105 Punkt 1). Er stammt NIE aus der Antwort.
+# genau einen Weg zur Ortsauskunft gibt. Er stammt NIE aus der Antwort.
 PLACE_LOOKUP_SOURCE = "geonames"
 
 
@@ -57,27 +57,26 @@ async def place_infos(
     build_resolver: PlaceResolverFactory | None,
 ) -> dict[tuple[float, float], PlaceInfo]:
     """Die Ortsauskunft je vergroeberter Zelle - aus dem Bestand gelesen, nur fuer die FEHLENDEN
-    gefragt (Muster `event_inputs.py::_landmark_names`: die reine Logik im Modul, der
-    Datenbankzugriff hier).
+    gefragt (die reine Logik liegt im Modul, der Datenbankzugriff hier).
 
-    SICHERHEIT (S6): Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt
-    KEINEN Rueckfall auf die Zeile eines anderen Projekts - ein solcher Rueckfall waere der stille
-    Weg, auf dem die Lebensdauer-Bindung der Ortsspur aufhoert zu gelten.
+    SICHERHEIT: Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt KEINEN
+    Rueckfall auf die Zeile eines anderen Projekts - ein solcher Rueckfall waere der stille Weg, auf
+    dem die Lebensdauer-Bindung der Ortsspur aufhoert zu gelten.
 
-    `build_resolver` ist `None` im Request-Pfad (S10) und wird sonst erst gerufen, wenn es
-    tatsaechlich etwas zu fragen gibt: ein Durchgang durch den Ortsdatensatz ohne offene Zelle
-    waere reine Arbeit. Liefert die Fabrik `None` (Datensatz fehlt oder weicht von seinem Hash
-    ab), wird nichts beschafft und nichts geschrieben; die Events behalten Nummer und Zeitspanne.
+    `build_resolver` ist `None` im Request-Pfad und wird sonst erst gerufen, wenn es tatsaechlich
+    etwas zu fragen gibt: ein Durchgang durch den Ortsdatensatz ohne offene Zelle waere reine
+    Arbeit. Liefert die Fabrik `None` (Datensatz fehlt oder weicht von seinem Hash ab), wird nichts
+    beschafft und nichts geschrieben; die Events behalten Nummer und Zeitspanne.
 
-    DREI AUSGAENGE, und sie sind verschieden (ADR 0102 Punkt 5): **keine Antwort** schreibt KEINE
-    Zeile - sonst vergiftete eine voruebergehende Stoerung die Zelle dauerhaft; eine **Antwort
-    ohne brauchbare Ebene** schreibt eine Zeile mit leeren Namensstufen und wird nicht erneut
-    gefragt; der dritte Ausgang (mehrere Namen in einem Event) faellt erst in `assign_place_names`.
+    DREI AUSGAENGE, und sie sind verschieden: **keine Antwort** schreibt KEINE Zeile - sonst
+    vergiftete eine voruebergehende Stoerung die Zelle dauerhaft; eine **Antwort ohne brauchbare
+    Ebene** schreibt eine Zeile mit leeren Namensstufen und wird nicht erneut gefragt; der dritte
+    Ausgang (mehrere Namen in einem Event) faellt erst in `assign_place_names`.
 
-    SCHREIBRAND (S7): Jede Namensstufe laeuft EINZELN durch `sanitize_place_name` - eine
-    unbrauchbare Stufe wird `NULL`, nie die ganze Antwort verworfen, und verworfen wird ganz, nie
-    abgeschnitten. `matched_level` wird gegen `PLACE_LEVELS` geprueft; ein Wert ausserhalb heisst
-    `NULL`. Beides wirkt hier auch fuer einen kuenftigen Auflöser hinter demselben Protokoll.
+    SCHREIBRAND: Jede Namensstufe laeuft EINZELN durch `sanitize_place_name` - eine unbrauchbare
+    Stufe wird `NULL`, nie die ganze Antwort verworfen, und verworfen wird ganz, nie abgeschnitten.
+    `matched_level` wird gegen `PLACE_LEVELS` geprueft; ein Wert ausserhalb heisst `NULL`. Beides
+    wirkt hier auch fuer einen kuenftigen Auflöser hinter demselben Protokoll.
 
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
     if not cells:
@@ -140,7 +139,7 @@ async def place_infos(
 # Die Fabrik des Namensverzeichnisses: aus der Menge der noch offenen, bereits GEFALTETEN Namen
 # entsteht ein Verzeichnis oder `None`. `None` heisst "es wird keines gebaut" - weil der zweite
 # Auszug fehlt oder von seinem Hash abweicht. Der Lauf bleibt arbeitsfaehig und `SUCCESS`, die
-# Namen ohne Zeile fallen aber an der Ortspruefung (S4, fail-closed).
+# Namen ohne Zeile fallen aber an der Ortspruefung (fail-closed).
 LandmarkGazetteerFactory = Callable[[Collection[str]], LandmarkGazetteer | None]
 
 
@@ -151,25 +150,25 @@ async def landmark_points_by_name(
     build_gazetteer: LandmarkGazetteerFactory | None,
 ) -> LandmarkPointsByName:
     """Die Fundorte je Sehenswuerdigkeitsname - aus dem Bestand gelesen, nur fuer die FEHLENDEN
-    gefragt (Muster `event_inputs.py::_landmark_names`).
+    gefragt.
 
-    S7: Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt KEINEN
+    SICHERHEIT: Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt KEINEN
     Rueckfall auf die Zeile eines anderen Projekts - ein solcher Rueckfall waere der stille Weg, auf
     dem die Lebensdauer-Bindung der Fundorte aufhoert zu gelten.
 
-    `build_gazetteer` ist `None` im Request-Pfad (S8) und wird sonst erst gerufen, wenn es
-    tatsaechlich etwas zu fragen gibt: ein Durchgang durch den zweiten Auszug ohne offenen Namen
-    waere reine Arbeit. Liefert die Fabrik `None` (Auszug fehlt oder weicht von seinem Hash ab),
-    wird nichts beschafft und nichts geschrieben; die Namen fehlen im ERGEBNIS und fallen damit an
-    der Ortspruefung (S4, fail-closed).
+    `build_gazetteer` ist `None` im Request-Pfad und wird sonst erst gerufen, wenn es tatsaechlich
+    etwas zu fragen gibt: ein Durchgang durch den zweiten Auszug ohne offenen Namen waere reine
+    Arbeit. Liefert die Fabrik `None` (Auszug fehlt oder weicht von seinem Hash ab), wird nichts
+    beschafft und nichts geschrieben; die Namen fehlen im ERGEBNIS und fallen damit an der
+    Ortspruefung (fail-closed).
 
-    DREI AUSGAENGE der Ablage (ADR 0123 Punkt 2): **keine Zeile** heisst "nie nachgeschlagen" -
-    der Name faellt am Event, und beim naechsten Lauf mit Auszug wird nachgeschlagen; eine
-    **nachgeschlagene, leere Punktmenge** heisst "nachgeschlagen, ohne Fund" und der Name faellt;
-    eine **gefuellte Punktmenge** entscheidet die Umkreispruefung. Geschluesselt ist das Ergebnis
-    mit dem ROhen Namen - genau der, den
-    `events.py::_name_of` spaeter als Gewinnername liefert und mit dem die Pruefung nachschlaegt.
-    Gefragt und abgelegt wird dagegen der GEFALTETE Name: `Trevi-Brunnen` trifft `trevi brunnen`.
+    DREI AUSGAENGE der Ablage: **keine Zeile** heisst "nie nachgeschlagen" - der Name faellt am
+    Event, und beim naechsten Lauf mit Auszug wird nachgeschlagen; eine **nachgeschlagene, leere
+    Punktmenge** heisst "nachgeschlagen, ohne Fund" und der Name faellt; eine **gefuellte
+    Punktmenge** entscheidet die Umkreispruefung. Geschluesselt ist das Ergebnis mit dem ROhen
+    Namen - genau der, den `events.py::_name_of` spaeter als Gewinnername liefert und mit dem die
+    Pruefung nachschlaegt. Gefragt und abgelegt wird dagegen der GEFALTETE Name: `Trevi-Brunnen`
+    trifft `trevi brunnen`.
 
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
     folded_by_name = folded_landmark_names(names)
@@ -228,30 +227,28 @@ async def build_grouping_and_rankings(
     Neuaufbau nach einer Versatz-Aenderung (`rebuild_run_grouping`). Ein zweiter Rechenweg fuer
     dasselbe liefe auseinander.
 
-    Die Kandidatenmenge IST `values_by_photo_id.keys()`; alles Weitere liest die Funktion selbst.
-    Das kostet gegenueber dem durchgereichten Zustand eine Abfrage mehr JE LAUF - der Preis
-    dafuer, dass beide Aufrufer garantiert dasselbe tun.
+    Die Kandidatenmenge IST `values_by_photo_id.keys()`; alles Weitere liest die Funktion selbst -
+    eine Abfrage mehr JE LAUF, dafuer garantiert dasselbe Verhalten beider Aufrufer.
 
     `build_place_resolver` hat BEWUSST KEINEN Vorgabewert: Mit einer Vorgabe `None` waere eine
     vergessene Aufrufstelle ein stiller Totalausfall der Ortsauflösung; ohne Vorgabe meldet ihn
     `mypy --strict`. `None` heisst hier "liest nur den Bestand und fragt niemanden" und ist der
-    Request-Pfad (S10).
+    Request-Pfad.
 
-    `build_landmark_gazetteer` hat aus DEMSELBEN Grund KEINEN Vorgabewert (S8): `None` heisst
-    "liest nur die abgelegte Auskunft, baut kein Verzeichnis" - auch das ist der Request-Pfad. Eine
-    Vorgabe waere der stille Weg, auf dem eine vergessene Aufrufstelle den zweiten Auszug nie
-    oeffnete und jeden Namen durchliesse.
+    `build_landmark_gazetteer` hat aus DEMSELBEN Grund KEINEN Vorgabewert: `None` heisst "liest nur
+    die abgelegte Auskunft, baut kein Verzeichnis" - auch das ist der Request-Pfad. Eine Vorgabe
+    waere der stille Weg, auf dem eine vergessene Aufrufstelle den zweiten Auszug nie oeffnete und
+    jeden Namen durchliesse.
 
     DIE PARTITION IST ALLEIN DAS EVENT. Ein Foto bekommt je Lauf genau eine Rangzeile; es gibt
-    keine Kategorie-Ebene und keine Uebersteuerung mehr, und die Motivstaerken bilden
-    ausdruecklich keine: eine Staerke ist eine Aussage ueber den Bildinhalt, keine Zugehoerigkeit,
-    und keine Schwelle macht daraus eine.
+    keine Kategorie-Ebene und keine Uebersteuerung, und die Motivstaerken bilden ausdruecklich
+    keine: eine Staerke ist eine Aussage ueber den Bildinhalt, keine Zugehoerigkeit, und keine
+    Schwelle macht daraus eine.
 
-    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
-    `project_deletion`)."""
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
     # DIE KANDIDATENMENGE kommt aus `event_inputs` - derselben Stelle, aus der auch das rein
-    # lesende Messkommando sie bezieht (ADR 0117 Punkt 5). Eine zweite, nachbildende Fassung maesse
-    # dort etwas anderes, als dieser Lauf tut, waehrend beide fuer sich gruen blieben.
+    # lesende Messkommando sie bezieht. Eine zweite, nachbildende Fassung maesse dort etwas anderes,
+    # als dieser Lauf tut, waehrend beide fuer sich gruen blieben.
     event_inputs = await read_event_inputs(session, project_id, list(values_by_photo_id))
 
     # DIE EVENT-BILDUNG. Beim Kriterien-Lauf liegt die Stelle bewusst NACH dem `finally` der
@@ -261,10 +258,10 @@ async def build_grouping_and_rankings(
     # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
     # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring laeuft.
     # Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
-    # DIE ORTSPLAUSIBILITAET DES SEHENSWUERDIGKEITSNAMENS (Spec 0529), zwischen dem Einlesen und
-    # der Event-Bildung: gefragt wird die KANDIDATENMENGE, nicht nur die Gewinnermenge - der
-    # Gewinner entsteht erst INNERHALB von `_built`, und nur-Gewinner hiesse, die Eventbildung
-    # zweimal zu rechnen oder die Namenswahl aus `_built` herauszuziehen.
+    # DIE ORTSPLAUSIBILITAET DES SEHENSWUERDIGKEITSNAMENS, zwischen dem Einlesen und der
+    # Event-Bildung: gefragt wird die KANDIDATENMENGE, nicht nur die Gewinnermenge - der Gewinner
+    # entsteht erst INNERHALB von `_built`, und nur-Gewinner hiesse, die Eventbildung zweimal zu
+    # rechnen oder die Namenswahl aus `_built` herauszuziehen.
     landmark_names = {
         candidate.landmark_name
         for candidate in event_inputs.candidates
@@ -277,10 +274,10 @@ async def build_grouping_and_rankings(
     built_events = build_events(event_inputs.candidates, landmark_points_by_name=points_by_name)
 
     # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird fuer JEDES
-    # Event mit einer gemessenen Zelle - auch fuer ein benanntes (Spec 0514, ADR 0120): der
-    # Sehenswuerdigkeitsname steht seitdem NEBEN dem Ortsnamen und verdeckt ihn nicht mehr, also
-    # braucht auch ein benanntes Event seine Ortsaufloesung. Seine `place_kind` bleibt trotzdem
-    # `landmark` - verdraengt bleibt allein die KOORDINATENSTUFE (`_place_of`).
+    # Event mit einer gemessenen Zelle - auch fuer ein benanntes: der Sehenswuerdigkeitsname steht
+    # NEBEN dem Ortsnamen und verdeckt ihn nicht mehr, also braucht auch ein benanntes Event seine
+    # Ortsaufloesung. Seine `place_kind` bleibt trotzdem `landmark` - verdraengt bleibt allein die
+    # KOORDINATENSTUFE (`_place_of`).
     cells = {cell for built in built_events for cell in built.place_cells}
     info_by_cell = await place_infos(session, project_id, cells, build_place_resolver)
     place_names = assign_place_names(built_events, info_by_cell)
@@ -310,20 +307,20 @@ async def build_grouping_and_rankings(
     }
 
     # DIE ZAEHLENDE MODELLSTUFE als Grundlage des Qualitaetswerts - gelesen aus der Tabelle des am
-    # LAUF eingefrorenen Verfahrens (ADR 0144), nie aus der heutigen Projekteinstellung und nie aus
-    # einer laufinternen Abbildung: Diese Funktion hat auch den zweiten Aufrufer
+    # LAUF eingefrorenen Verfahrens, nie aus der heutigen Projekteinstellung und nie aus einer
+    # laufinternen Abbildung: Diese Funktion hat auch den zweiten Aufrufer
     # (`rebuild_run_grouping`), der keine Bewertungsphase kennt. Fehlt die Stufe dieses Verfahrens,
     # wird der Qualitaetswert `NULL` - es gibt keinen Rueckfall auf das andere Verfahren und keinen
-    # lokal gebildeten Wert (ADR 0095, Abschnitt 1).
+    # lokal gebildeten Wert.
     level_by_photo_id = await load_album_levels(
         session, run.album_level_source, values_by_photo_id.keys()
     )
 
-    # DIE GEWICHTE EINMAL JE LAUF, vor der Partitionsschleife - nicht je Foto (Spec 0432): Die
-    # geltende Fassung aendert sich waehrend eines Laufs nicht, und ein Lesegang je Foto fiele an
-    # keinem Ergebnis auf. Welche Fassung gerechnet hat, haelt die Lauf-Zeile fest; ohne sie ist
-    # ein vergangener Rang-Score nach der naechsten Anpassung nicht mehr nachrechenbar. `NULL`
-    # heisst dort "Startwerte oder Altzeile".
+    # DIE GEWICHTE EINMAL JE LAUF, vor der Partitionsschleife - nicht je Foto: Die geltende Fassung
+    # aendert sich waehrend eines Laufs nicht, und ein Lesegang je Foto fiele an keinem Ergebnis
+    # auf. Welche Fassung gerechnet hat, haelt die Lauf-Zeile fest; ohne sie ist ein vergangener
+    # Rang-Score nach der naechsten Anpassung nicht mehr nachrechenbar. `NULL` heisst dort
+    # "Startwerte oder Altzeile".
     weights = await effective_weights(session)
     used_weight_set = await latest_weight_set(session)
     run.quality_weight_set_id = None if used_weight_set is None else used_weight_set.id
@@ -372,19 +369,18 @@ async def apply_run_selection(
     Versatz-Aenderung, Aenderung des Richtwerts). Ein zweiter Rechenweg liefe auseinander.
 
     AUSWAHLFAEHIG ist eine Rangzeile dieses Laufs mit `rank_score IS NOT NULL` und ohne
-    `excluded_document` am Foto. Der zweite Teil ist die fortgeschriebene Zusage aus ADR 0091
-    Punkt 2: ein als Dokument oder Bildschirmabbild erkanntes Foto erscheint in keiner
-    Motivauswahl, und der Vorschlag ist eine - es zaehlt deshalb auch nicht als Motivtraeger und
-    lenkt die Vergabe nicht um.
+    `excluded_document` am Foto: ein als Dokument oder Bildschirmabbild erkanntes Foto erscheint in
+    keiner Motivauswahl, und der Vorschlag ist eine - es zaehlt deshalb auch nicht als Motivtraeger
+    und lenkt die Vergabe nicht um.
 
-    SICHERHEIT (S2): `PhotoRanking` traegt keine `project_id` - die Lauf-Id ist die einzige
+    SICHERHEIT: `PhotoRanking` traegt keine `project_id` - die Lauf-Id ist die einzige
     Projektbindung. `criterion_scoring_run_id == run.id` steht deshalb AUSGESCHRIEBEN in jeder
     lesenden und jeder schreibenden Anweisung hier. Fehlte es auch nur in der Schreibanweisung,
     setzte ein Aufruf unter Projekt A `selection_position` auf Rangzeilen eines fremden Laufs -
     ein kohaerenter, aber fremder Vorschlag, dem die Antwort nichts ansieht.
 
-    SICHERHEIT (S8): `user_id` fliesst in keine Abfrage und in keine Schreibanweisung. Der
-    Vorschlag ist lauf-global; eine je Nutzer verschiedene Position entsteht nicht.
+    SICHERHEIT: `user_id` fliesst in keine Abfrage und in keine Schreibanweisung. Der Vorschlag ist
+    lauf-global; eine je Nutzer verschiedene Position entsteht nicht.
 
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
     project = await session.get(Project, project_id)

@@ -58,19 +58,11 @@ _EXIF_RANGE_BYTES = 131_072
 _OFFSET_REASON_OUT_OF_RANGE = "ausserhalb_darstellbarem_bereich"
 
 
-# Analog SCORE_COMMIT_BATCH_SIZE, aber für ScanRun.files_found. Modul-Konstante statt
-# Default-Parameterwert, damit Tests sie per monkeypatch.setattr(worker,
-# "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern können. Dieselbe Kadenz gilt ueber den gemeinsamen
-# Helfer _maybe_commit_progress_checkpoint (unten), einmal aufgerufen aus Phase 1
-# (_enumerate_scan_entries, je gelistetem Eintrag) und einmal aus der Skip-Schleife von Phase 2a
-# in run_project_scan (je Skip-Entscheidung).
-#
-# 1, nicht 25 wie SCORE_COMMIT_BATCH_SIZE: run_project_scan ist netzwerkgebunden (EXIF-Range-Read
-# und Thumbnail-Generierung pro Datei ueber OpenCloud-WebDAV), ein zusaetzlicher DB-Commit pro
-# Datei faellt gegenueber der Netzwerklatenz nicht messbar ins Gewicht. Ein groesserer Wert friert
-# den Live-Zaehler bei jedem Scan mit weniger Dateien als der Batch waehrend der gesamten Laufzeit
-# auf 0 ein - und der dominante Realweltfall ist der Re-Scan mit ueberwiegend unveraenderten
-# Dateien.
+# Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# `monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...)` verkleinern können. Ueber
+# `_maybe_commit_progress_checkpoint` gilt dieselbe Kadenz in Phase 1 und in der Skip-Schleife von
+# Phase 2a. Ein Wert groesser als 1 friert den Live-Zaehler bei jedem Scan mit weniger Dateien als
+# der Batch waehrend der gesamten Laufzeit auf 0 ein.
 SCAN_COMMIT_BATCH_SIZE = 1
 
 
@@ -91,11 +83,9 @@ def _extension(relative_path: str) -> str:
 
 
 class SkipReason(enum.Enum):
-    """Phase 2a: warum ein Eintrag NICHT zu einem Arbeitsposten für Phase 2b wird. Zwei
-    getrennte Werte statt eines einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION
-    zusätzlich ScanRun.files_skipped hochzählt (siehe run_project_scan) - UNCHANGED_ETAG
-    zählt nur in
-    files_found (Fortschritt), nicht in files_skipped."""
+    """Phase 2a: warum ein Eintrag NICHT zu einem Arbeitsposten wird. Zwei getrennte Werte statt
+    eines einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION in `ScanRun.files_skipped` zaehlt -
+    UNCHANGED_ETAG nur in `files_found` (Fortschritt)."""
 
     UNSUPPORTED_EXTENSION = "unsupported_extension"
     UNCHANGED_ETAG = "unchanged_etag"
@@ -103,24 +93,19 @@ class SkipReason(enum.Enum):
 
 @dataclass
 class ScanWorkItem:
-    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei,
-    geaenderter Etag, oder eine der einmaligen Nachhol-Runden fuer Kamera/Aufloesung) -
+    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss -
     `existing_photo` ist `None` fuer neue Dateien, sonst die zu aktualisierende Zeile.
 
-    `probe_only` heisst: die Datei ist UNVERAENDERT, gelesen wird nur ihr EXIF-Fenster, um die
-    Kamera-Angabe nachzutragen. Die Thumbnails existieren bereits und waeren identisch - ihre
-    Neuerzeugung waere ein Voll-Download je Bestandsfoto.
+    `probe_only` heisst: die Datei ist UNVERAENDERT, gelesen wird nur ihr EXIF-Fenster. Die
+    Thumbnails existieren bereits; ihre Neuerzeugung waere ein Voll-Download je Bestandsfoto.
 
-    `probe_dimensions` heisst: der Range-Read entsteht (auch) aus der offenen Aufloesung. Das ist
-    unabhaengig von der Endung - `extract_pixel_count` liest nur den Kopf, waehrend der EXIF-Teil
-    weiterhin an `_EXIF_CANDIDATE_EXTENSIONS` gebunden bleibt.
+    `probe_dimensions` heisst: der Range-Read entsteht (auch) aus der offenen Aufloesung,
+    unabhaengig von der Endung - `extract_pixel_count` liest nur den Kopf.
 
-    `dimensions_only` heisst: dieser Posten liest AUSSCHLIESSLICH die Aufloesung. Dann wird
-    `extract_pixel_count` auf dem Range-Fenster ausgefuehrt; Zeit, Ort und Kamera bleiben
-    unberuehrt (Spec 0639, ADR 0146 Punkt 2). Ein Kamera-Nachhol-Posten an einer EXIF-Endung ist
-    ausdruecklich KEIN `dimensions_only`-Posten: er liest die Masse aus demselben Fenster mit.
-    Eine Nicht-EXIF-Endung mit offener Kamera UND offener Auflosung ist dagegen
-    `dimensions_only` - es gibt fuer sie nichts auszulesen ausser der Masse."""
+    `dimensions_only` heisst: dieser Posten liest AUSSCHLIESSLICH die Aufloesung; Zeit, Ort und
+    Kamera bleiben unberuehrt. Ein Kamera-Nachhol-Posten an einer EXIF-Endung ist KEIN
+    `dimensions_only`-Posten (er liest die Masse mit); eine Nicht-EXIF-Endung mit offener Kamera
+    UND offener Aufloesung ist es, weil es fuer sie ausser der Masse nichts auszulesen gibt."""
 
     relative_path: str
     entry: DavEntry
@@ -133,7 +118,7 @@ class ScanWorkItem:
 @dataclass
 class ScanEntryDecision:
     """Ergebnis der Klassifikation eines einzelnen Phase-1-Eintrags: entweder ein Skip-Grund ODER
-    ein Arbeitsposten, nie beides - siehe classify_scan_entries."""
+    ein Arbeitsposten, nie beides."""
 
     relative_path: str
     skip_reason: SkipReason | None
@@ -144,9 +129,9 @@ class ScanEntryDecision:
 class ScanClassification:
     """Ergebnis von classify_scan_entries fuer die vollstaendige Phase-1-Liste.
 
-    `decisions` behaelt bewusst die Eingabereihenfolge bei (run_project_scan iteriert sie fuer die
-    Checkpoint-Kadenz von files_found/files_skipped in Phase 2a) - `work_items` ist
-    eine reine Teilmenge davon (nur die Eintraege mit skip_reason is None), fuer Phase 2b."""
+    `decisions` behaelt die Eingabereihenfolge bei - `run_project_scan` iteriert sie fuer die
+    Checkpoint-Kadenz; `work_items` ist eine reine Teilmenge davon (nur Eintraege ohne
+    `skip_reason`)."""
 
     decisions: list[ScanEntryDecision] = field(default_factory=list)
     work_items: list[ScanWorkItem] = field(default_factory=list)
@@ -158,21 +143,15 @@ def classify_scan_entries(
     existing_photos: dict[str, Photo],
 ) -> ScanClassification:
     """Phase 2a: reine Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
-    test_worker_scan_classification.py). Entscheidungslogik: unsupported extension -> Skip +
-    files_skipped; unveraenderter Etag UND beide Merker gesetzt (Kamera bzw. HEIC-Ausnahme UND
-    Aufloesung) -> Skip ohne files_skipped; unveraenderter Etag mit offenem Kamera-Merkmal ->
-    `probe_only=True` (liest Kamera UND Masse); unveraenderter Etag mit offener Aufloesung ->
-    zusaetzlich `dimensions_only=True`; sonst -> voller Arbeitsposten. Die Verarbeitung selbst
-    gehoert nicht hierher.
+    test_worker_scan_classification.py). Die Verarbeitung selbst gehoert nicht hierher.
 
-    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0090,
-    Konsequenzen): Ohne sie bliebe die Kameraliste in bereits gescannten Projekten leer, denn ein
-    unveraendertes Foto wird nie wieder gelesen. Sie laeuft genau einmal je Foto - danach steht
-    der Merker, AUCH wenn die Datei keine Kamera nennt. HEIC/HEIF sind von der KAMERA-Nachholung
-    ausgenommen: diese Endungen wurden vor ihrer Unterstuetzung nie gelesen, ein Nachtrag wuerde
-    Bestandsprojekte rueckwirkend veraendern. Die AUFLOESUNGS-Nachholung gilt dagegen fuer alle
-    Bildendungen (ADR 0146 Punkt 2): eine geschaetzte Zahl verschoebe die Gewinnerregel, und ein
-    fehlender Wert ist von einem echten Nullwert nicht zu unterscheiden."""
+    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos: ein unveraendertes
+    Foto wird nie wieder gelesen, ohne sie bliebe die Kameraliste bereits gescannter Projekte
+    leer. Sie laeuft genau einmal je Foto - danach steht der Merker, AUCH wenn die Datei keine
+    Kamera nennt. HEIC/HEIF sind von der KAMERA-Nachholung ausgenommen: diese Endungen wurden vor
+    ihrer Unterstuetzung nie gelesen, ein Nachtrag wuerde Bestandsprojekte rueckwirkend veraendern.
+    Die AUFLOESUNGS-Nachholung gilt fuer alle Bildendungen: eine geschaetzte Zahl verschoebe die
+    Gewinnerregel, und ein fehlender Wert ist von einem echten Nullwert nicht zu unterscheiden."""
     classification = ScanClassification()
     for relative_path, entry in entries:
         extension = _extension(relative_path)
@@ -238,20 +217,16 @@ async def _generate_thumbnails(
     etag: str,
     cache_dir: Path,
 ) -> VariantResult | None:
-    """Best-effort: weder ein Download- noch ein
-    Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
-    OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
-    Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
+    """Best-effort: weder ein Download- noch ein Dekodierfehler duerfen den Scan des Projekts
+    abbrechen, anders als die uebrigen OpenCloudError-Faelle unten - ein fehlendes Thumbnail
+    aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
 
     Gibt das Ergebnis der einen Dekodierung zurueck: gezeigtes Seitenverhaeltnis UND Aufloesung -
-    oder `None`, wenn keine Vorschau geschrieben werden konnte (Downloadfehler, nicht dekodierbar,
-    Schreibfehler).
+    oder `None`, wenn keine Vorschau geschrieben werden konnte.
 
-    Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen: wird als Teil
-    von _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
-    deshalb keinerlei Session-Zugriff ausloesen - ein ORM-Objekt hier entgegenzunehmen wuerde dazu
-    verleiten, versehentlich weitere (nicht nebenlaeufigkeitssichere) Attribute zu lesen/zu
-    setzen."""
+    Nimmt `photo_id`/`etag` statt eines `Photo`-Objekts entgegen: wird parallel zu
+    Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf deshalb keinerlei Session-Zugriff
+    ausloesen."""
     try:
         content = await client.download(webdav_url, relative_path)
     except OpenCloudError:
@@ -265,26 +240,21 @@ class ScanExifResult:
     Range-Read-Fenster.
 
     Eingefroren und zusammengesetzt statt zweier nackter Rueckgabewerte, damit die Typzusicherung
-    nach `asyncio.gather` in `_process_scan_block` weiterhin die FORM festnageln kann - eine
-    durchgereichte `BaseException` (mit `return_exceptions=True` faengt `gather` ein
-    `CancelledError` einer Kind-Coroutine NICHT ab) darf nicht in die Felder entpackt werden.
+    nach `asyncio.gather` die FORM festnageln kann - eine durchgereichte `BaseException` (mit
+    `return_exceptions=True` faengt `gather` ein `CancelledError` einer Kind-Coroutine NICHT ab)
+    darf nicht in die Felder entpackt werden.
 
-    `gps` ist ein Paar oder `None` - nie eine halbe Koordinate (Paar-Invariante von
-    `extract_gps`).
+    `gps` ist ein Paar oder `None` - nie eine halbe Koordinate.
 
-    `taken_at` ist hier die AUFGEZEICHNETE Zeit (EXIF `DateTimeOriginal`, sonst der Rueckfall auf
-    `last_modified`) - die Korrektur um den Kamera-Versatz passiert erst im sequentiellen Teil von
-    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind.
+    `taken_at` ist die AUFGEZEICHNETE Zeit; die Korrektur um den Kamera-Versatz passiert erst im
+    sequentiellen Teil von `_process_scan_block`.
 
-    `aspect_ratio` ist das Seitenverhaeltnis des GEZEIGTEN Bildes, das die Thumbnail-Erzeugung
-    ohnehin kennt - `None` fuer einen `probe_only`-Posten (es wurde gar nichts dekodiert) und fuer
-    jeden Fehlerfall. Es faellt bei derselben Dekodierung an wie die Vorschau; es entsteht kein
-    zusaetzlicher Abruf und kein zweites Dekodieren.
+    `aspect_ratio` ist das Seitenverhaeltnis des GEZEIGTEN Bildes; `None` fuer einen
+    `probe_only`-Posten (es wurde nichts dekodiert) und fuer jeden Fehlerfall.
 
-    `pixel_count` ist die Aufloesung des GEZEIGTEN Bildes. Sie kommt beim vollen Posten aus
-    derselben Dekodierung, beim Nachhol-Posten aus demselben Range-Fenster wie die uebrigen
-    EXIF-Werte (`extract_pixel_count`); `None` heisst "nicht lesbar" und setzt den Merker
-    trotzdem."""
+    `pixel_count` ist die Aufloesung des GEZEIGTEN Bildes - beim vollen Posten aus derselben
+    Dekodierung, beim Nachhol-Posten aus dem Range-Fenster; `None` heisst "nicht lesbar" und setzt
+    den Merker trotzdem."""
 
     taken_at: datetime
     gps: tuple[float, float] | None
@@ -313,28 +283,20 @@ async def _fetch_and_thumbnail(
     """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: ein Range-Fenster fuer
     `taken_at`, die GPS-Koordinate UND die Kamera-Angabe (nur EXIF-Kandidaten), zusaetzlich die
     Aufloesung fuer jeden Dimensions-Nachhol-Posten; danach best-effort Download +
-    Thumbnail-Erzeugung -
-    bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
-    asyncio.gather laufen koennen (_process_scan_block unten). Ein EXIF-Lesefehler wird NICHT
-    abgefangen: ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen.
+    Thumbnail-Erzeugung - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher parallel per
+    `asyncio.gather` laufen koennen. Ein EXIF-Lesefehler wird NICHT abgefangen: ein einzelner
+    OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen.
 
-    Alle DREI EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
-    Netzwerkzugriff fuer Koordinate oder Kamera. Fuer Nicht-JPEG-Posten wird gar kein EXIF
+    Alle DREI EXIF-Werte stammen aus DEMSELBEN Byte-Fenster. Fuer Nicht-JPEG-Posten wird kein EXIF
     gelesen: der Zeitpunkt faellt auf `fallback_taken_at` zurueck, Koordinate und Kamera bleiben
     `None`.
 
-    `probe_only` ueberspringt AUSSCHLIESSLICH die Thumbnail-Erzeugung (die Nachhol-Runde der
-    Kamera-Angabe an einer unveraenderten Datei - die Thumbnails existieren und waeren identisch).
-    Das EXIF-Fenster wird weiterhin gelesen; genau darum geht es.
+    `probe_only` ueberspringt AUSSCHLIESSLICH die Thumbnail-Erzeugung; das EXIF-Fenster wird
+    weiterhin gelesen. `probe_dimensions` loest den Range-Read unabhaengig von der Endung aus.
 
-    `probe_dimensions` loest den Range-Read unabhaengig von der Endung aus: `extract_pixel_count`
-    liest nur den Kopf, das ist kein zweiter Lesevorgang fuer den vollen Posten.
-
-    `dimensions_only` liest dasselbe Fenster, aber ausschliesslich fuer die Aufloesung. Zeit, Ort
-    und Kamera bleiben dann unberuehrt: Es ist die Nachhol-Runde fuer `pixel_count`, und ein
-    Schreibzugriff auf die anderen Werte uebernaehme einen Stand, den dieser Posten gar nicht
-    geprueft hat. `exif_read` sagt dem Schreibteil, ob ueberhaupt ein EXIF-Fenster geparst wurde -
-    ein Kamera-Nachhol-Posten an einer Nicht-EXIF-Endung setzt nur den Kamera-Merker."""
+    `dimensions_only` liest dasselbe Fenster, aber ausschliesslich fuer die Aufloesung: ein
+    Schreibzugriff auf Zeit, Ort oder Kamera uebernaehme einen Stand, den dieser Posten nicht
+    geprueft hat. `exif_read` sagt dem Schreibteil, ob ueberhaupt ein EXIF-Fenster geparst wurde."""
     taken_at = fallback_taken_at
     gps: tuple[float, float] | None = None
     camera: CameraIdentity | None = None
@@ -380,9 +342,8 @@ async def _resolve_project_camera(
     """Die Kamerazeile DIESES Projekts zur uebergebenen Identitaet - angelegt, falls es sie noch
     nicht gibt, mit `offset_minutes = 0`.
 
-    Der `cache` wird von `run_project_scan` ueber alle Bloecke eines Laufs durchgereicht: ohne ihn
-    entstuende eine Abfrage JE FOTO statt je Kamera, und ein Projekt hat typischerweise zwei
-    Kameras und tausende Fotos.
+    Der `cache` wird ueber alle Bloecke eines Laufs durchgereicht: ohne ihn entstuende eine
+    Abfrage JE FOTO statt je Kamera.
 
     SICHERHEIT (Projektgrenze): `project_id` steht in derselben Anweisung, die die Zeile
     aufloest - `Photo.camera_id` zeigt damit ausschliesslich auf eine Zeile desselben Projekts."""
@@ -419,14 +380,11 @@ async def _process_scan_block(
     block: list[ScanWorkItem],
     camera_cache: dict[tuple[str, str], ProjectCamera] | None = None,
 ) -> tuple[int, int]:
-    """Verarbeitet einen einzelnen Block von Arbeitsposten, Blockgröße
-    settings.scan_download_concurrency: zunächst sequentiell Photo-Zeilen
-    anlegen/aktualisieren + flush() - KEIN commit() hier, ein
-    Absturz in diesem Fenster ist dadurch folgenlos, die Transaktion wird beim Neuverbinden
-    verworfen), danach die reinen I/O-Coroutinen des Blocks parallel per asyncio.gather. Der
-    Aufrufer (run_project_scan) committet erst NACH erfolgreicher Rueckkehr dieser Funktion - ein
-    Commit pro vollstaendig abgearbeitetem Block. Gibt (photos_added, photos_updated) fuer diesen
-    Block zurueck."""
+    """Verarbeitet einen Block von Arbeitsposten der Groesse settings.scan_download_concurrency:
+    zunaechst sequentiell Photo-Zeilen anlegen/aktualisieren + flush() - KEIN commit() hier, ein
+    Absturz in diesem Fenster ist dadurch folgenlos - danach die reinen I/O-Coroutinen parallel
+    per asyncio.gather. Der Aufrufer committet erst NACH erfolgreicher Rueckkehr, also ein Commit
+    pro Block. Gibt (photos_added, photos_updated) zurueck."""
     photos: list[Photo] = []
     added = 0
     updated = 0
@@ -482,14 +440,11 @@ async def _process_scan_block(
         return_exceptions=True,
     )
 
-    # Python-Async-Fallstrick: mit return_exceptions=True faengt asyncio.gather() ein
-    # CancelledError, das eine EINZELNE Kind-Coroutine wirft, NICHT als Exception ab, sondern
-    # reicht es als gewoehnliches Element der Ergebnisliste durch - `await gather(...)` selbst
-    # wirft in diesem Fall NICHTS. Ohne diese explizite Pruefung erreichte ein Abbruch mitten in
-    # einer parallelen I/O-Coroutine den `except asyncio.CancelledError`-Zweig in run_project_scan
-    # nicht. Eine ECHTE aeussere Task-Cancellation (arq job_timeout) propagiert dagegen ohne
-    # Sonderbehandlung roh durch `await gather(...)` hindurch - dieser Fall betrifft ausschliesslich
-    # eine Kind-Coroutine, die CancelledError selbst wirft/traegt.
+    # Mit return_exceptions=True reicht asyncio.gather() ein CancelledError, das eine EINZELNE
+    # Kind-Coroutine wirft, als gewoehnliches Element der Ergebnisliste durch - `await gather(...)`
+    # selbst wirft dann NICHTS. Ohne diese explizite Pruefung erreichte ein Abbruch mitten in einer
+    # parallelen I/O-Coroutine den `except asyncio.CancelledError`-Zweig in run_project_scan nicht.
+    # Eine ECHTE aeussere Task-Cancellation propagiert dagegen roh durch `await gather(...)`.
     # Bricht in tests/test_worker_scan_project.py.
     for result in results:
         if isinstance(result, asyncio.CancelledError):
@@ -508,8 +463,8 @@ async def _process_scan_block(
         # unberuehrt, weil er ueber sie nichts geprueft hat. Ein Schreiben uebernaehme hier einen
         # Stand, den der Posten gar nicht gelesen hat.
         if not item.dimensions_only:
-            # UNBEDINGT schreiben, auch zurueck auf None - dieselbe Begruendung wie bei `gps_lat`
-            # unten: verliert eine Datei ihre Kamera-Angabe, verliert das Foto sie auch. Der
+            # UNBEDINGT schreiben, auch zurueck auf None: verliert eine Datei ihre Kamera-Angabe,
+            # verliert das Foto sie auch. Der
             # Merker wird AUCH OHNE FUND gesetzt, sonst liest jeder weitere Scan den Bestand
             # erneut.
             camera = (
@@ -524,8 +479,8 @@ async def _process_scan_block(
             # schreibt den Rueckfall weiterhin, ein Nachhol-Posten uebernaehme sonst den
             # WebDAV-Zeitstempel und loeschte die vorhandene Koordinate.
             if exif_result.exif_read or not item.probe_only:
-                # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0090, Punkt 1; die zweite
-                # ist `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
+                # DIE ERSTE der zwei Schreibstellen der Invariante (die zweite ist
+                # `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
                 # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
                 # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.
                 photo.taken_at_original = exif_result.taken_at
@@ -552,26 +507,21 @@ async def _process_scan_block(
                 # enthaelt. Abgedeckt durch test_worker_scan_project.py.
                 photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
-        # ERSTER der zwei Schreibwege der Spalte (ADR 0110 Punkt 3). Fuer einen Posten, der die
-        # Datei tatsaechlich gelesen hat, wird UNBEDINGT geschrieben - auch zurueck auf `None`:
-        # Aendert eine Datei ihre Form, aendert das Foto sie mit, und ein nicht mehr dekodierbares
-        # Bild verliert seine Angabe, statt eine falsche zu behalten. Zurueck auf `None` heisst
-        # dabei nichts Endgueltiges: `aspect_ratio IS NULL` ist zugleich die Arbeitsmenge der
-        # Nachhol-Runde, die es beim naechsten Lauf erneut versucht.
+        # ERSTER der zwei Schreibwege der Spalte. Fuer einen Posten, der die Datei tatsaechlich
+        # gelesen hat, wird UNBEDINGT geschrieben - auch zurueck auf `None`: ein nicht mehr
+        # dekodierbares Bild verliert seine Angabe, statt eine falsche zu behalten. `None` ist
+        # nichts Endgueltiges, `aspect_ratio IS NULL` ist die Arbeitsmenge der Nachhol-Runde.
         #
-        # Ein `probe_only`-Posten wird dabei UEBERSPRUNGEN statt auf `None` gesetzt: Er hat die
-        # Datei gar nicht geladen (das ist sein ganzer Zweck) und weiss deshalb nichts ueber ihre
-        # Form. Ein unbedingtes Schreiben loeschte hier bei jedem Scan einen bereits bekannten,
-        # unveraendert gueltigen Wert.
+        # Ein `probe_only`-Posten wird UEBERSPRUNGEN statt auf `None` gesetzt: er hat die Datei
+        # nicht geladen und weiss nichts ueber ihre Form; unbedingtes Schreiben loeschte bei jedem
+        # Scan einen unveraendert gueltigen Wert.
         if not item.probe_only:
             photo.aspect_ratio = exif_result.aspect_ratio
 
         # ZWEITER Schreibweg der Aufloesung (neben `generate_variants`): Jeder Posten, der die
-        # Aufloesung prueft, schreibt Wert und Merker - der volle Posten aus der einen Dekodierung,
-        # der Nachhol-Posten aus dem Range-Fenster. Ein Kamera-Nachhol-Posten an einer
-        # Nicht-EXIF-Endung hat kein Fenster gelesen und laesst den bekannten Wert stehen. Der
-        # Merker faellt AUCH OHNE FUND, sonst laese jeder Scan denselben Bestand erneut ueber das
-        # Netz; ein `None` ist dann ehrlich "nicht lesbar" und keine Schaetzung.
+        # Aufloesung prueft, schreibt Wert und Merker. Ein Kamera-Nachhol-Posten an einer
+        # Nicht-EXIF-Endung hat kein Fenster gelesen und laesst den Wert stehen. Der Merker faellt
+        # AUCH OHNE FUND, sonst laese jeder Scan denselben Bestand erneut ueber das Netz.
         if not item.probe_only or item.probe_dimensions:
             photo.pixel_count = exif_result.pixel_count
             photo.pixel_count_probed = True
@@ -581,10 +531,8 @@ async def _process_scan_block(
 async def _maybe_commit_progress_checkpoint(
     session: AsyncSession, run: ScanRun, count: int
 ) -> None:
-    """Gemeinsamer Zwischen-Commit-Checkpoint für Phase 1 (Enumeration) UND Phase 2a
-    (Skip-Fälle) - ein einziger Aufrufpunkt statt zweier `continue`-Zweige:
-    strukturell ausgeschlossen, dass ein Skip-Zweig den Checkpoint verpasst, da jede Iteration in
-    Phase 2a denselben Aufruf durchlaeuft."""
+    """Gemeinsamer Zwischen-Commit-Checkpoint fuer Phase 1 UND Phase 2a: ein einziger Aufrufpunkt
+    statt zweier `continue`-Zweige - so kann kein Skip-Zweig den Checkpoint verpassen."""
     if count % SCAN_COMMIT_BATCH_SIZE == 0:
         run.files_found = count
         run.last_progress_at = runs.now_utc()
@@ -599,10 +547,8 @@ async def _enumerate_scan_entries(
     scan_run: ScanRun,
 ) -> list[tuple[str, DavEntry]]:
     """Phase 1 (Enumeration): materialisiert `client.walk(...)` zu einer In-Memory-Liste - KEIN
-    Photo-DB-Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints (bestehende
-    Checkpoint-Kadenz, Zweitverwendung von _maybe_commit_progress_checkpoint). Erst nach
-    vollstaendigem Abschluss ist die Gesamtzahl bekannt (run_project_scan setzt danach
-    ScanRun.total_files)."""
+    Photo-DB-Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints. Erst nach
+    vollstaendigem Abschluss ist die Gesamtzahl bekannt."""
     entries: list[tuple[str, DavEntry]] = []
     files_found = 0
     entry: DavEntry
@@ -613,18 +559,15 @@ async def _enumerate_scan_entries(
     return entries
 
 
-# Blockgroesse der Nachhol-Runde: je Block ein Commit und ein Fortschrittsstempel (Auflage S1).
-# Modul-Konstante statt Default-Parameterwert, damit Tests sie per
-# monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", ...) verkleinern koennen -
-# dasselbe Muster wie SCAN_COMMIT_BATCH_SIZE.
+# Blockgroesse der Nachhol-Runde: je Block ein Commit und ein Fortschrittsstempel. Modul-Konstante,
+# damit Tests sie per monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", ...)
+# verkleinern koennen.
 ASPECT_RATIO_CATCH_UP_BATCH_SIZE = 200
 
 
-# Das aus der VORSCHAU gelesene Verhaeltnis ist wegen der Ganzzahl-Skalierung beim Erzeugen der
-# Vorschau nicht exakt das des Originals. Diese relative Abweichung ist die zugesicherte Grenze;
-# sie wird nie auf Gleichheit mit dem Scan-Weg geprueft. Bei THUMBNAIL_MAX_SIZE = 400 kann die
-# kurze Kante um hoechstens eine halbe Pixelzeile danebenliegen - eine relative Abweichung von
-# unter einem Prozent, und damit weit unterhalb dessen, was im Raster sichtbar waere.
+# Das aus der VORSCHAU gelesene Verhaeltnis weicht durch die Ganzzahl-Skalierung der Vorschau vom
+# Original ab; diese relative Abweichung ist die zugesicherte Grenze. Auf Gleichheit mit dem
+# Scan-Weg wird nie geprueft.
 ASPECT_RATIO_PREVIEW_TOLERANCE = 0.01
 
 
@@ -632,20 +575,19 @@ def _read_cached_aspect_ratios(
     cache_dir: Path, photos: Sequence[tuple[int, str]]
 ) -> list[tuple[int, float]]:
     """Liest das Seitenverhaeltnis der uebergebenen `(photo_id, etag)`-Paare aus ihrer lokalen
-    Vorschau-Variante. Ein Paar ohne lesbare Datei kommt schlicht nicht zurueck.
+    Vorschau-Variante. Ein Paar ohne lesbare Datei kommt nicht zurueck.
 
-    Rein synchron und ohne DB-Bezug (deshalb Tupel statt ORM-Objekten), genau wie
-    `thumbnails.measure_cache_usage`: Der Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit
-    die Event-Loop bei einem Dateisystemzugriff je Foto nicht blockiert.
+    Rein synchron und ohne DB-Bezug (deshalb Tupel statt ORM-Objekten): Der Aufrufer fuehrt sie
+    ueber `asyncio.to_thread` aus, damit die Event-Loop nicht blockiert.
 
-    SICHERHEIT (Auflage S4): Der Pfad entsteht AUSSCHLIESSLICH ueber `thumbnails.thumbnail_path`.
-    Der `etag` kommt vom WebDAV-Server, ist damit Fremdtext und geht dort nur als SHA-256-Eingabe
-    in `cache_key` ein, nie in einen Dateinamen. Jede zweite Pfadbildung, die `etag` oder
+    SICHERHEIT: Der Pfad entsteht AUSSCHLIESSLICH ueber `thumbnails.thumbnail_path`. Der `etag`
+    kommt vom WebDAV-Server, ist damit Fremdtext und geht dort nur als SHA-256-Eingabe in
+    `cache_key` ein, nie in einen Dateinamen - jede zweite Pfadbildung, die `etag` oder
     `relative_path` als Namensbestandteil verwendet, bleibt untersagt: ein `etag` mit `../` laese
     sonst aus einem beliebigen Pfad ausserhalb des Cache-Verzeichnisses.
 
-    SICHERHEIT (Auflage S2): Je Foto isoliert - die Fehlerbehandlung liegt vollstaendig in
-    `aspect_ratio_of_cached_thumbnail` (bewusst breites `except Exception`). Hier steht deshalb
+    SICHERHEIT: Je Foto isoliert - die Fehlerbehandlung liegt vollstaendig in
+    `aspect_ratio_of_cached_thumbnail` (bewusst breites `except Exception`); hier steht deshalb
     kein zweiter, engerer Block."""
     ratios: list[tuple[int, float]] = []
     for photo_id, etag in photos:
@@ -659,25 +601,22 @@ async def catch_up_aspect_ratios(
     session: AsyncSession, project_id: int, cache_dir: Path, run: ScanRun
 ) -> int:
     """Fuellt `Photo.aspect_ratio` fuer die Bestandsfotos des Projekts aus deren lokal
-    zwischengespeichertem Vorschaubild - ohne Netz, ohne OpenCloud-Abruf, ohne das Original
-    (ADR 0110 Punkt 3). Gibt die Zahl der gefuellten Zeilen zurueck.
+    zwischengespeichertem Vorschaubild - ohne Netz, ohne OpenCloud-Abruf, ohne das Original. Gibt
+    die Zahl der gefuellten Zeilen zurueck.
 
     Die Arbeitsmenge ist `aspect_ratio IS NULL` und damit zugleich die Abbruchbedingung: Es gibt
-    KEINE Merker-Spalte nach dem Muster von `camera_probed`. Der Merker dort verhindert einen
-    wiederholten NETZZUGRIFF je Bestandsfoto; hier kostet ein erneuter Versuch einen lokalen
-    Dateizugriff. Fehlt die Cache-Datei, bleibt der Wert `NULL` und der naechste Scan versucht es
-    erneut.
+    KEINE Merker-Spalte wie `camera_probed`, weil ein erneuter Versuch hier nur einen lokalen
+    Dateizugriff kostet. Fehlt die Cache-Datei, bleibt der Wert `NULL` und der naechste Scan
+    versucht es erneut.
 
-    SICHERHEIT (Auflage S1): Je Block wird committet UND `ScanRun.last_progress_at` gesetzt.
-    Diese Runde laeuft VOR Phase 1 und damit vor dem ersten Stempel, den `run_project_scan` sonst
-    setzt. Ohne eigene Commit-Punkte setzte `reap_stalled_runs` einen Lauf, dessen Runde laenger
-    als `STALL_THRESHOLD` (15 Minuten) ohne Stempel arbeitet, auf FAILED - und braeche die
-    Coroutine dabei bewusst NICHT ab. Der Scan liefe weiter, waehrend die Oberflaeche
-    "fehlgeschlagen" sagt.
+    SICHERHEIT: Je Block wird committet UND `ScanRun.last_progress_at` gesetzt. Diese Runde laeuft
+    VOR Phase 1 und damit vor dem ersten Stempel, den `run_project_scan` sonst setzt; ohne eigene
+    Commit-Punkte setzte `reap_stalled_runs` einen Lauf, dessen Runde laenger als
+    `STALL_THRESHOLD` (15 Minuten) ohne Stempel arbeitet, auf FAILED - und braeche die Coroutine
+    dabei bewusst NICHT ab. Der Scan liefe weiter, waehrend die Oberflaeche "fehlgeschlagen" sagt.
 
-    SICHERHEIT (Auflage S1, zweiter Teil): Geladen werden je Foto nur `id` und `etag`, nie ganze
-    `Photo`-Objekte ueber den gesamten Bestand - ein `select(Photo)` zoege bei zehntausenden
-    Bestandsfotos ebenso viele ORM-Objekte in die Sitzung."""
+    SICHERHEIT: Geladen werden je Foto nur `id` und `etag` - ein `select(Photo)` zoege bei
+    zehntausenden Bestandsfotos ebenso viele ORM-Objekte in die Sitzung."""
     rows = (
         (
             await session.execute(
@@ -718,9 +657,9 @@ async def run_project_scan(
     endet ohne jede Arbeit (None), wenn der in der Warteschlange abgebrochen wurde; ohne `run_id`
     legt er die Zeile selbst an.
 
-    Ein Abbruchwunsch wird vor jedem Block gelesen. Was bis dahin committet ist - Fotos,
-    Vorschaubilder, Zaehler -, bleibt; verschwundene Fotos werden dann NICHT entfernt und der
-    Bild-Cache nicht aufgeraeumt, weil der Lauf den Ordnerbaum nicht vollstaendig gesehen hat."""
+    Ein Abbruchwunsch wird vor jedem Block gelesen. Was bis dahin committet ist, bleibt;
+    verschwundene Fotos werden dann NICHT entfernt und der Bild-Cache nicht aufgeraeumt, weil der
+    Lauf den Ordnerbaum nicht vollstaendig gesehen hat."""
     if run_id is not None:
         scan_run = await runs.take_over_queued_run(session, ScanRun, run_id)
         if scan_run is None:
@@ -732,10 +671,9 @@ async def run_project_scan(
         await session.refresh(scan_run)
 
     try:
-        # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs
-        # (ADR 0110 Punkt 3). Sie steht bewusst vor dem Laden von `existing_photos`: So schreibt
-        # sie ausschliesslich per UPDATE-Anweisung und kann keine ORM-Objekte hinter dem Ruecken
-        # der Sitzung veraltern lassen.
+        # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs. Sie
+        # steht bewusst vor dem Laden von `existing_photos`: so schreibt sie ausschliesslich per
+        # UPDATE-Anweisung und laesst keine ORM-Objekte hinter dem Ruecken der Sitzung veralten.
         await catch_up_aspect_ratios(session, project.id, cache_dir, scan_run)
 
         drive = await client.resolve_drive(drive_name)
@@ -754,9 +692,8 @@ async def run_project_scan(
 
         # Phasenuebergang: total_files wird HIER einmalig gesetzt, files_found auf 0
         # zurueckgesetzt - das Feld wechselt die Bedeutung von "in Phase 1 gelistet" auf "in
-        # Phase 2 verarbeitet". Sofort committet, damit ein zwischen Phase 1 und Phase 2
-        # beobachtender Client (Polling) diesen konsistenten Zwischenzustand sehen kann
-        # (total_files gesetzt, files_found == 0).
+        # Phase 2 verarbeitet". Sofort committet, damit ein pollender Client diesen konsistenten
+        # Zwischenzustand sieht.
         scan_run.total_files = len(entries)
         scan_run.files_found = 0
         scan_run.last_progress_at = runs.now_utc()
@@ -775,15 +712,13 @@ async def run_project_scan(
                     files_skipped += 1
                 await _maybe_commit_progress_checkpoint(session, scan_run, files_found)
 
-        # Phase 2b (begrenzt parallele Verarbeitung in festen Bloecken) - siehe
-        # _process_scan_block. Blockgroesse = settings.scan_download_concurrency
-        # (env-ueberschreibbar); ein Commit PRO BLOCK (nicht an die SCAN_COMMIT_BATCH_SIZE-Kadenz
-        # von Phase 1/2a gekoppelt), das ist zugleich die Crash-Sicherheits-Grenze.
+        # Phase 2b (begrenzt parallele Verarbeitung in festen Bloecken) - Blockgroesse =
+        # settings.scan_download_concurrency; ein Commit PRO BLOCK, das ist zugleich die
+        # Crash-Sicherheits-Grenze.
         photos_added = 0
         photos_updated = 0
-        # settings.scan_download_concurrency ist per Field(ge=1) in config.py bereits gegen
-        # 0/negative Werte validiert und fällt beim Prozessstart auf - kein zusätzlicher
-        # Laufzeit-Clamp hier nötig.
+        # settings.scan_download_concurrency ist per Field(ge=1) in config.py beim Prozessstart
+        # validiert - kein zusaetzlicher Laufzeit-Clamp hier noetig.
         concurrency = settings.scan_download_concurrency
         work_items = classification.work_items
         # EIN Cache ueber alle Bloecke des Laufs: sonst eine Kamera-Abfrage je Foto statt je
@@ -823,40 +758,35 @@ async def run_project_scan(
         return scan_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs: ein arq job_timeout-Ablauf, ein geplanter
-        # Worker-Shutdown und ein künftiger Job.abort() lösen alle denselben
+        # Worker-Shutdown und ein kuenftiger Job.abort() loesen alle denselben
         # asyncio.CancelledError-Pfad aus. Er wird bewusst NICHT unbehandelt durchgelassen: der
-        # Lauf wird sofort auf FAILED gesetzt, danach re-raised - kein Verschlucken einer
-        # BaseException, arqs eigene Task-/Retry-Buchhaltung funktioniert dadurch unverändert
-        # weiter.
+        # Lauf wird sofort auf FAILED gesetzt, danach re-raised - arqs eigene Task-/Retry-
+        # Buchhaltung funktioniert dadurch unveraendert weiter.
         await runs.fail_run(
             session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
     except Exception as exc:
-        # BREIT abfangen, nicht nur OpenCloudError: jede andere Exception (z.B. aus dem
-        # WebDAV-XML-Parsing, siehe opencloud/client.py::list_folder) liefe sonst ungefangen durch
-        # und liesse den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
-        # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
-        # deshalb aus - dasselbe Muster wie in run_project_scoring unten.
+        # BREIT abfangen, nicht nur OpenCloudError: jede andere Exception liefe sonst ungefangen
+        # durch und liesse den ScanRun dauerhaft auf status="running" haengen, ohne
+        # Watchdog/Recovery. OpenCloudError ist eine Teilmenge von Exception.
         await runs.fail_run(session, scan_run, str(exc))
         return scan_run
 
     # Ab hier ist der Lauf SUCCESS: der Erfolgspfad faellt aus dem `try` HERAUS, beide
-    # Fehlerzweige kehren oben zurueck bzw. re-raisen. Damit erreicht die Bereinigung den Abbruch-
-    # und den Fehlerpfad strukturell nicht (bei Abbruch/Fehlschlag wird nicht aufgeraeumt, der
-    # naechste erfolgreiche Scan holt es nach).
+    # Fehlerzweige kehren oben zurueck bzw. re-raisen. Die Bereinigung erreicht den Abbruch- und
+    # den Fehlerpfad damit strukturell nicht.
     #
     # AUSSERHALB des Fehler-Handlers und mit eigenem `except`: ein Fehler beim Aufraeumen darf
-    # einen bereits erfolgreichen Lauf nicht nachtraeglich auf FAILED setzen. Der unmittelbar
-    # vorangehende `commit()` ist zugleich der Commit-Rand, nach dem der Schnappschuss der
-    # Bereinigung gezogen wird.
+    # einen bereits erfolgreichen Lauf nicht nachtraeglich auf FAILED setzen. Der vorangehende
+    # `commit()` ist der Commit-Rand, nach dem der Schnappschuss der Bereinigung gezogen wird.
     try:
         await cleanup_orphaned_cache(session, cache_dir)
     except Exception:
         # Das `rollback()` ist keine Kosmetik: schlaegt die Schnappschuss-Abfrage fehl, bliebe die
-        # Transaktion sonst blockiert. Es expired aber alle ORM-Objekte der Session - ohne das
+        # Transaktion blockiert. Es expired aber alle ORM-Objekte der Session - ohne das
         # anschliessende `refresh()` liefe der Attributzugriff auf `scan_run.id` in `scan_project`
-        # in einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
+        # in einen Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
         # (sqlalchemy.exc.MissingGreenlet), und der Job stuerzte NACH einem erfolgreichen Scan ab.
         await session.rollback()
         await session.refresh(scan_run)
