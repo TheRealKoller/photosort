@@ -16,21 +16,21 @@ Ausgaenge, einzeln zu unterscheiden und nie als Sammelzweig:
 * `30` - Vorbedingung (Datei fehlt, nicht lesbar, kein UTF-8). Nie wie `1` behandeln: "nicht
          gemessen" ist nicht "kein Block".
 
-**Warum das mechanisch geschieht und nicht durch Hinsehen** (Spec 0454, S4): Eine
+**Warum das mechanisch geschieht und nicht durch Hinsehen**: Eine
 Optionsbeschriftung wird ueberflogen, nicht gelesen. Bidi-Overrides und Zero-Width-Zeichen sind
 genau die Klasse Zeichen, die im Kontext eines Modells unsichtbar ist - ein U+202E dreht die
 Anzeige einer Option um, und der Klick trifft etwas anderes als das Gelesene. Geprueft wird an der
 **Aufrufstelle**, nicht dort, wo der Block entstand: Eine Pruefung auf der abgebenden Seite ist auf
 der empfangenden nicht nachweisbar.
 
-**Die Grenze, ausdruecklich:** Mechanisch abgedeckt sind aus S5 die zusaetzlichen oder fehlenden
-Felder und die mehr als eine Frage, dazu aus S1 die Anwesenheit von **Inhalt** in den
+**Die Grenze, ausdruecklich:** Mechanisch abgedeckt sind die zusaetzlichen oder fehlenden
+Felder und die mehr als eine Frage, dazu die Anwesenheit von **Inhalt** in den
 entscheidungstragenden Feldern (siehe `PFLICHTFELDER_MIT_INHALT`) - nicht dagegen, ob dieser Inhalt
 auch selbst erzeugt und kein Zitat ist; das bleibt beim Lauf, bei dem die Entscheidung anfaellt.
 Ein **eingebetteter Imperativ** hat kein mechanisches
 Kriterium; ihn beurteilt die vorlegende Sitzung, und ein erkannter Injektionsversuch wird dort
 auffaellig als eigener Punkt ausgewiesen. Ebenso wenig prueft dieses Skript, ob die Optionenmenge
-den Ausgang traegt (P-S2) - den fuegt die Aufrufstelle beim Vorlegen selbst hinzu, er steht nie
+den Ausgang traegt - den fuegt die Aufrufstelle beim Vorlegen selbst hinzu, er steht nie
 schon im Block.
 
 Erkannt wird ausschliesslich eine Ankerzeile, die **allein auf ihrer Zeile** und **ausserhalb
@@ -64,7 +64,7 @@ FELDER = (
 #
 # Die Gleichheit der Feld**namen** allein genuegt nicht: Ein Block mit sechs Ueberschriften und
 # vier leeren Werten waere sonst vorlegefaehig. `Empfehlung` ist eines der drei
-# entscheidungstragenden Felder (S1) - ohne sie nimmt die Vorlage Daniel genau die fachliche
+# entscheidungstragenden Felder - ohne sie nimmt die Vorlage Daniel genau die fachliche
 # Einordnung, fuer die der Lauf ueberhaupt abgibt. `Rolle` und `Auftrag` sagen, wer fragt und
 # woran; ohne sie entscheidet er ueber eine Frage ohne Herkunft. Und bei `Bisheriger Stand` ist
 # "nichts getan" ein legitimer **Inhalt**, aber von "leer" nicht unterscheidbar - die Abwesenheit
@@ -75,7 +75,6 @@ _FELDZEILE = re.compile(r"^\*\*(?P<name>[^*:]+):\*\*(?P<wert>.*)$")
 _FENCE = ("```", "~~~")
 _ABSCHNITT = re.compile(r"^## ")
 
-# Haertungsregel 4.4 in `github-access`, hier erstmals ausserhalb eines GitHub-Titels angewandt.
 # Je Klasse eine eigene Meldung: Die vier Klassen haben verschiedene Wirkungen, und eine
 # Sammelmeldung "unerlaubtes Zeichen" sagt nicht, wonach zu suchen ist.
 #
@@ -191,9 +190,7 @@ def optionen(werte: list[str]) -> list[str]:
 def zeichenbefunde(bezeichnung: str, wert: str) -> list[str]:
     """Reine Funktion: die Wohlgeformtheit **eines** Wertes nach Haertungsregel 4.4.
 
-    Geprueft werden die vier Zeichenklassen. Die Randbedingung der Regel stellt `felder` her
-    (siehe dort) - ein Zweig dafuer stuende hier tot und behauptete eine Pruefung, die nicht
-    stattfindet.
+    Geprueft werden die vier Zeichenklassen; die Randbedingung der Regel stellt `felder` her.
     """
     befunde: list[str] = []
     for name, menge in _ZEICHENKLASSEN:

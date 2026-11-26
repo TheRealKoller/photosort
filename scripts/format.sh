@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Formatiert das ganze Repository in einem Aufruf: `ruff format` in backend/ und scripts/,
-# `npm run format` in frontend/ und e2e/.
+# Formatiert das ganze Repository in einem Aufruf.
 #
 # Dieses Skript enthaelt bewusst KEINE Stiloptionen und KEINE Dateilisten - es
 # ruft die beiden Werkzeuge mit ihrer jeweiligen Konfigurationsdatei auf. Alles, was den Stil
@@ -18,18 +17,16 @@
 # Aufruf faellt - sonst bliebe nach einem Abbruch ein halb formatierter Baum zurueck:
 #
 #   1. Die aufgerufene `ruff`-Version stimmt mit dem Pin der pyproject.toml des Baums ueberein.
-#      Der Pin wird gelesen, nicht hier wiederholt; es gibt keinen zweiten Ort, an dem die Zahl
-#      steht. Geprueft wird je Baum getrennt, weil backend/ und scripts/ eigene .venv haben -
-#      der Fall lag im Repositorium real vor (0.16.1 bzw. 0.16.2 unter derselben Angabe).
+#      Der Pin wird gelesen, nicht hier wiederholt. Geprueft wird je Baum getrennt, weil
+#      backend/ und scripts/ eigene .venv haben.
 #   2. node_modules liegt in frontend/ und e2e/. Fuer Prettier braucht es keine
 #      Versions-Gegenprobe: `npm ci` installiert genau das, was im Lockfile steht - das ist die
 #      Fixierung selbst.
 #
-# Sicherheitskonzept S4: Der aus der pyproject.toml gelesene Wert wird verankert und
-# zeichenklassenbegrenzt gelesen (Vorbild: der Schritt "Read pinned label-embedder model hash"
-# in .github/workflows/ci.yml), ein leeres oder mehrdeutiges Leseergebnis bricht ab statt
-# weiterzulaufen, und der Wert wird AUSSCHLIESSLICH verglichen - nie in eine Kommandozeile, nie
-# in einen Installationsaufruf, nie als Glob- oder Regex-Muster.
+# Der aus der pyproject.toml gelesene Wert wird verankert und zeichenklassenbegrenzt gelesen, ein
+# leeres oder mehrdeutiges Leseergebnis bricht ab statt weiterzulaufen, und der Wert wird
+# AUSSCHLIESSLICH verglichen - nie in eine Kommandozeile, nie in einen Installationsaufruf, nie
+# als Glob- oder Regex-Muster.
 #
 # Verhalten zugesichert durch scripts/tests/test_format_sh.py.
 #
@@ -86,8 +83,7 @@ for baum in "${PYTHON_BAEUME[@]}"; do
         abbruch "$baum/pyproject.toml nennt mehrere ruff-Versionen ($(printf '%s' "$pin" | tr '\n' ' ')). Welche gilt, ist nicht entscheidbar."
     fi
 
-    # Der Baum bringt seine eigene .venv mit; die ist massgeblich, nicht das, was zufaellig auf
-    # dem PATH liegt. Genau daran haengt der Fall, den diese Pruefung abfangen soll.
+    # Die eigene .venv des Baums ist massgeblich, nicht das, was zufaellig auf dem PATH liegt.
     ruff_binary="$REPO_WURZEL/$baum/.venv/bin/ruff"
     if [ ! -x "$ruff_binary" ]; then
         ruff_binary="$(command -v ruff || true)"
