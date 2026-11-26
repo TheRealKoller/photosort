@@ -50,8 +50,8 @@ export type ClassificationPhase =
 /**
  * Die Wahl des Nutzers beim Auslösen: "wie im Projekt eingestellt" oder "nur lokal".
  * Der Name ist derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare
- * fuehren. Cloud und Eye sind seit 0383 keine Anfragewege mehr, sondern Ergebnisse der im Projekt
- * gespeicherten Wahl (`ClassificationPath`).
+ * fuehren. Cloud und Eye sind keine Anfragewege, sondern Ergebnisse der im Projekt gespeicherten
+ * Wahl (`ClassificationPath`).
  */
 export type ClassificationWay = 'project' | 'local'
 
@@ -189,9 +189,9 @@ export interface ExportRunDetailOut {
 }
 
 /**
- * Die Vorgaenge eines Projekts, die einzeln oder gesammelt abgebrochen werden koennen
- * (Spec 0641). `kind` ist derselbe Wortschatz wie im Abbruch-Pfad - ein zweites Vokabular
- * zwischen Abfrage und Anfrage waere eine stille Fehlerquelle.
+ * Die Vorgaenge eines Projekts, die einzeln oder gesammelt abgebrochen werden koennen.
+ * `kind` ist derselbe Wortschatz wie im Abbruch-Pfad - ein zweites Vokabular zwischen
+ * Abfrage und Anfrage waere eine stille Fehlerquelle.
  */
 export type OperationKind = 'scan' | 'ausschuss' | 'classification' | 'export' | 'review'
 
@@ -245,10 +245,9 @@ export interface ProjectOut {
   // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
-  // Die WIRKSAME Modellwahl je Tätigkeit (Spec 0383, ADR 0143). Sie ersetzt das frühere
-  // `eye_available`: die Verfügbarkeit beider Methoden liefert `GET …/model-choice`, hier steht,
-  // was der nächste Lauf tatsächlich aufruft. `provider: null` heißt "Modell nicht mehr wählbar"
-  // bzw. "Eye" - der Lesepfad rät keinen Empfänger.
+  // Die WIRKSAME Modellwahl je Tätigkeit. Die Verfügbarkeit beider Methoden liefert
+  // `GET …/model-choice`, hier steht, was der nächste Lauf tatsächlich aufruft. `provider: null`
+  // heißt "Modell nicht mehr wählbar" bzw. "Eye" - der Lesepfad rät keinen Empfänger.
   model_choice: ProjectModelChoiceOut
   // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
   // Richtwert" - wirksam ist dann `effective_selection_target`, die feste Vorbelegung von 150
@@ -261,9 +260,8 @@ export interface ProjectOut {
   // Nicht aus `last_criterion_scoring_run` ableitbar: nach "erfolgreich, dann gescheitert" ist der
   // neueste Lauf `failed`, der Vorschlag des erfolgreichen wird trotzdem neu gerechnet.
   has_selection_proposal: boolean
-  // Bestandszahlen des Projekts (ADR 0103). PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc`
-  // die Ergaenzung jeder lokalen `project()`-Testfabrik, und es braucht keinen Test ueber deren
-  // Vollzaehligkeit.
+  // Bestandszahlen des Projekts. PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc` die
+  // Ergaenzung jeder lokalen `project()`-Testfabrik.
   //
   // `photo_count === 0` ist eine Aussage ("keine Fotos"), die beiden `null` sind ihre Abwesenheit
   // ("kein Zeitraum bekannt"). Die Anzeige unterscheidet sichtbar: "0 Fotos" gegen den Strich
@@ -369,8 +367,8 @@ export interface FolderCountOut {
  * Die ALBUMENTSCHEIDUNG eines Nutzers - zwei Werte, kein dritter. Sie sagt, ob das Bild ins
  * Album soll, und ist keine Aussage über seine Güte.
  *
- * `favorite` gehört ausdrücklich nicht mehr dazu (ADR 0098): Die Auszeichnung ist eine eigene,
- * unabhängige Angabe und kann gleichzeitig mit einer Albumentscheidung gesetzt sein.
+ * `favorite` gehört ausdrücklich nicht dazu: Die Auszeichnung ist eine eigene, unabhängige
+ * Angabe und kann gleichzeitig mit einer Albumentscheidung gesetzt sein.
  */
 export type RatingStatus = 'album_worthy' | 'rejected'
 /** Die Einträge des Rasterfilters. `favorite` filtert auf das eigene Kennzeichen, nicht auf
@@ -433,9 +431,8 @@ export interface SuggestionOut {
  * andere Frage — ob die Aufnahme den Ausschuss-Schritt überlebt. Ein geteilter Wertevorrat machte
  * die beiden an jeder Lesestelle verwechselbar.
  *
- * Es gibt keinen dritten Wert: Die Ansicht zeigt seit ADR 0111 die Auswertung des
- * Überlebens-Prädikats, nicht die Entscheidungszeile — „noch nicht entschieden" ist kein
- * darstellbarer Zustand mehr.
+ * Es gibt keinen dritten Wert: Die Ansicht zeigt die Auswertung des Überlebens-Prädikats,
+ * nicht die Entscheidungszeile — „noch nicht entschieden" ist kein darstellbarer Zustand.
  */
 export type DuplicateDecision = 'keep' | 'discard'
 
@@ -447,11 +444,9 @@ export type DuplicateDecision = 'keep' | 'discard'
  * Ob ein Zustand vom System oder vom Nutzer stammt, geht daraus nicht hervor und wird nicht
  * angezeigt.
  *
- * **Dieser Wert wird nie aus `PhotoOut.suggestion` abgeleitet** (ADR 0111 Punkt 1, untersagt):
- * Jenes Feld fällt bei eigener Albumbewertung und bei getroffener Entscheidung auf `null`, und
- * eine TypeScript-Fassung des Prädikats sieht der Wächter über die Verwendungsstellen nicht — er
- * liest nur `backend/src`. Bei Verletzung zeigt die Ansicht einen anderen Zustand, als der
- * Ausschuss-Schritt anwendet, ohne Fehler und ohne Meldung.
+ * **Dieser Wert wird nie aus `PhotoOut.suggestion` abgeleitet**: Jenes Feld fällt bei eigener
+ * Albumbewertung und bei getroffener Entscheidung auf `null`. Bei Verletzung zeigt die Ansicht
+ * einen anderen Zustand, als der Ausschuss-Schritt anwendet, ohne Fehler und ohne Meldung.
  *
  * `keep_possible === false` heißt: Kein Wert der Entscheidungszeile ändert diesen Zustand. Der
  * Grund reist nicht mit — er folgt aus der Bedingung selbst, und die Oberfläche rendert dort einen
@@ -491,8 +486,8 @@ export interface DuplicateGroupOut {
   previous_photo_id: number | null
   next_photo_id: number | null
   span_seconds: number
-  /** Ganz automatisch entschieden oder gar nicht (Spec 0639). `decision` bleibt `null`; die
-   *  Rücknahme läuft über die bestehende Handlung „Behalten" und setzt den Merker zurück. */
+  /** Ganz automatisch entschieden oder gar nicht. `decision` bleibt `null`; die Rücknahme läuft
+   *  über die bestehende Handlung „Behalten" und setzt den Merker zurück. */
   auto_decided: boolean
 }
 
@@ -514,11 +509,11 @@ export interface DuplicateGroupIndexOut {
  * Gruppe liegt im Stapel ihrer Gruppe. Am Detailfilter (`photo_id`) steht er für jede Aufnahme des
  * Bestands, auch für ein Gruppenmitglied; nur dort trägt er einen Gruppenanker.
  *
- * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
- * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, `low_quality`, wenn der
- * Lauf es abgelehnt hat, sonst `earlier_decision` — die Entscheidungszeile hat den Lauf ueberlebt,
- * waehrend `suggested_status` und `duplicate_of` zurueckgesetzt wurden. Der Grund ist damit
- * unterscheidbar, statt ein Sammelzustand zu sein (AK4) — Grund und Entscheidung sind zwei
+ * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer
+ * TypeScript-Ableitung: `duplicate` genau dann, wenn das Foto ein Duplikat ist, `low_quality`,
+ * wenn der Lauf es abgelehnt hat, sonst `earlier_decision` — die Entscheidungszeile hat den Lauf
+ * ueberlebt, waehrend `suggested_status` und `duplicate_of` zurueckgesetzt wurden. Der Grund ist
+ * damit unterscheidbar, statt ein Sammelzustand zu sein — Grund und Entscheidung sind zwei
  * verschiedene Aussagen ueber dieselbe Aufnahme.
  *
  * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
@@ -825,8 +820,8 @@ export interface PhotoLocation {
  * Frontend bildet die Rangfolge (Sehenswürdigkeit -> Koordinate -> mehrere Orte) NICHT nach.
  * `kind: 'multiple'` trägt strukturell keine Koordinate.
  *
- * `kind` benennt die STUFE, nicht den einzigen Text des Events: Seit Spec 0514 steht
- * `landmark_name` NEBEN `place_name`, statt ihn zu verdrängen -
+ * `kind` benennt die STUFE, nicht den einzigen Text des Events: `landmark_name` steht NEBEN
+ * `place_name`, statt ihn zu verdrängen -
  * `utils/timeOfDay.ts::eventPlaceName` setzt beide zur Form "<Name>, <Ort>" zusammen. Verdrängt
  * bleibt allein die KOORDINATENSTUFE: `kind: 'coordinate'` erscheint nie als Name, und ohne
  * Ortsnamen fällt ein Event auf "Position N" zurück. `kind` bleibt `'landmark'` auch dann, wenn
@@ -835,9 +830,9 @@ export interface PhotoLocation {
  * `landmark_name` ist freier, extern erzeugter LLM-Text: ausschließlich als regulärer
  * React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
  * `href`/`src`/`style`, nie als React-`key` (dieselbe Auflage wie bei
- * `FineLabelOut.raw_label`). Seit Spec 0514 trägt ihn ein Event nur, wenn ihn mindestens ein
- * Zehntel seiner Fotos bezeugt (Backend `events.LANDMARK_MIN_SHARE`); ein zu schwach gestützter
- * Name ist von "nie erkannt" nicht zu unterscheiden und hat keinen eigenen Anzeigezustand. */
+ * `FineLabelOut.raw_label`). Ein Event trägt ihn nur, wenn ihn mindestens ein Zehntel seiner
+ * Fotos bezeugt (Backend `events.LANDMARK_MIN_SHARE`); ein zu schwach gestützter Name ist von
+ * "nie erkannt" nicht zu unterscheiden und hat keinen eigenen Anzeigezustand. */
 export interface EventPlace {
   kind: 'landmark' | 'coordinate' | 'multiple'
   landmark_name: string | null
@@ -846,18 +841,16 @@ export interface EventPlace {
 }
 
 /** Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehört.
- *
  * Nummer, Zeitspanne und Name stehen in der Zeile des Events und hängen damit NICHT davon ab,
- * welche Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die
- * aus den sichtbaren Fotos aggregiert wurde.
+ * welche Fotos eine Antwort gerade enthält.
  *
  * `place_name` ist der aufgelöste Ortsname dieses Events, `null` heißt "keiner". Er steht bewusst
  * NEBEN `place` und nicht darin: `place` ist `null`, sobald der Server die Ortsstufe nicht kennt,
  * und der Name fiele dort still mit. Die Form "Ort, Viertel" kommt FERTIG vom Server.
  *
- * Und er steht seit Spec 0514 auch NEBEN dem Sehenswürdigkeitsnamen: Der Server setzt die
- * Überschrift NICHT zusammen - `utils/timeOfDay.ts::eventPlaceName` verbindet beide Teile. Eine
- * zweite Quelle derselben Form liefe mit ihr auseinander.
+ * Er steht auch NEBEN dem Sehenswürdigkeitsnamen: Der Server setzt die Überschrift NICHT
+ * zusammen - `utils/timeOfDay.ts::eventPlaceName` verbindet beide Teile. Eine zweite Quelle
+ * derselben Form liefe mit ihr auseinander.
  *
  * Es ist freier, extern erzeugter Text und trägt dieselbe Auflage wie `landmark_name`:
  * ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als
@@ -903,9 +896,8 @@ export interface CameraTimeOffsetSuggestionOut {
 export interface PhotoOut {
   id: number
   relative_path: string
-  /** Die WIRKSAME (korrigierte) Aufnahmezeit - derselbe Feldname wie zuvor, neue Bedeutung:
-   * seit Spec 0426 trägt er die um den Kamera-Versatz verschobene Zeit. Jede Anzeige einer
-   * Aufnahmezeit liest diesen Wert. */
+  /** Die WIRKSAME (korrigierte) Aufnahmezeit: der um den Kamera-Versatz verschobene Wert. Jede
+   * Anzeige einer Aufnahmezeit liest diesen Wert. */
   taken_at: string
   /** Die AUFGEZEICHNETE Zeit. Nur im Korrekturfall anzuzeigen - bei `time_offset_minutes === 0`
    * ist sie gleich `taken_at` und eine zweite Zeile wäre eine Aussage ohne Inhalt. */
@@ -1030,17 +1022,16 @@ export interface FaceOut {
 
 /*
  * DIE DREI FELDER OBEN SIND PFLICHTIG DEKLARIERT, anders als `ranking`/`location`/`event`
- * daneben - und das ist keine Stiltreue, sondern die Frontend-Hälfte der Auflage S9. Bei
- * `location` bedeuten `undefined` und `null` dasselbe; bei `in_final_selection` und `contested`
- * läse `undefined` sich als `false`, also als „gehört nicht zur Endauswahl" bzw. „ist nicht
- * strittig". Beides ist plausibel, wirft nichts und erscheint an keiner Stelle als Fehler; die
- * Endauswahl ist die Menge, die als Album gilt und die der Export nimmt. Ein optionales Feld
+ * daneben. Bei `location` bedeuten `undefined` und `null` dasselbe; bei `in_final_selection` und
+ * `contested` läse `undefined` sich als `false`, also als „gehört nicht zur Endauswahl" bzw. „ist
+ * nicht strittig". Beides ist plausibel, wirft nichts und erscheint an keiner Stelle als Fehler;
+ * die Endauswahl ist die Menge, die als Album gilt und die der Export nimmt. Ein optionales Feld
  * machte daraus ein leeres Album statt einen Typfehler.
  */
 
 /**
- * EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, mehr liefert der Server nicht
- * (Auflage S8). Die Länge der Liste ist zugleich der Nenner der Einigkeitsregel.
+ * EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, mehr liefert der Server nicht.
+ * Die Länge der Liste ist zugleich der Nenner der Einigkeitsregel.
  *
  * SICHERHEIT: `username` ist fremdbestimmter Text und wird ausschließlich als regulärer
  * React-Textknoten gerendert - nie über `dangerouslySetInnerHTML`, nie in `href`, `src` oder
@@ -1072,8 +1063,8 @@ export interface AlbumSelectionOut {
 
 /**
  * Die Antwort von `PUT /photos/{id}/album-decision` - der PERSISTIERTE Zustand nach dem
- * Schreibvorgang, nie die Rückspiegelung des Bodys (Auflage S5). `utils/albumSelection.ts::
- * applyAlbumDecision` schreibt genau diesen Wert fort, nie den lokal beabsichtigten.
+ * Schreibvorgang, nie die Rückspiegelung des Bodys. `utils/albumSelection.ts::applyAlbumDecision`
+ * schreibt genau diesen Wert fort, nie den lokal beabsichtigten.
  */
 export interface AlbumDecisionOut {
   photo_id: number
@@ -1171,9 +1162,8 @@ export type CloudVisionPurpose = 'landmark' | 'remote_category'
 
 /**
  * Die Kostenzwecke der Statistik (backend api/stats.py): die beiden Cloud-Zwecke plus `review`,
- * den Kostenposten der Klassifizierungspruefung (Spec 0616). Eigener Typ, weil `review` kein
- * Cloud-Aufruf ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Laeufe unangetastet
- * bleiben muss.
+ * den Kostenposten der Klassifizierungspruefung. Eigener Typ, weil `review` kein Cloud-Aufruf
+ * ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Laeufe unangetastet bleiben muss.
  */
 export type StatsCostPurpose = CloudVisionPurpose | 'review'
 
@@ -1204,9 +1194,9 @@ export interface ProjectStatsProgress {
 /**
  * Ausschliesslich die Bewertungen des ANGEMELDETEN Nutzers.
  *
- * DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` steht seit ADR 0098 NEBEN der
- * Albumentscheidung - dasselbe Foto zählt in `favorite` und in `album_worthy`. Erschöpfend und
- * überschneidungsfrei sind allein `album_worthy + rejected + unrated`. Die Anzeige darf keine
+ * DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` steht NEBEN der Albumentscheidung -
+ * dasselbe Foto zählt in `favorite` und in `album_worthy`. Erschöpfend und überschneidungsfrei
+ * sind allein `album_worthy + rejected + unrated`. Die Anzeige darf keine
  * Aufteilung des Bestands über alle vier behaupten.
  */
 export interface ProjectStatsRatings {

@@ -146,9 +146,7 @@ export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Prom
  * Tauscht im eigenen Album-Entwurf ein Bild gegen ein anderes desselben Ereignisses — EIN Aufruf
  * statt zweier `setRating`.
  *
- * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Zwei getrennte
- * Aufrufe waren nicht atomar — der zweite konnte fehlschlagen und einen halb ausgeführten
- * Austausch hinterlassen — und ihre Zusammengehörigkeit kannte allein der Client.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht.
  *
  * Der Body trägt AUSSCHLIESSLICH die beiden Foto-Ids. Kein `event_id`, kein Gewicht, kein
  * Nutzer: Der Server löst alles über die Rangzeile des Laufs auf, und ein vom Client geliefertes
