@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 _DATETIME_ORIGINAL_TAG = 36867
 _DATETIME_FORMAT = "%Y:%m:%d %H:%M:%S"
 
-# Basis-IFD-Tags der Kamera-Angabe (EXIF-Standard) - benannte Konstanten wie bei den
-# GPSInfo-Tags unten, die nackten Zahlen 271/272 sagen an der Lesestelle nichts.
+# Basis-IFD-Tags der Kamera-Angabe (EXIF-Standard) - benannte Konstanten, die nackten Zahlen
+# 271/272 sagen an der Lesestelle nichts.
 _MAKE_TAG = 271
 _MODEL_TAG = 272
 
@@ -42,10 +42,10 @@ _GPS_LONGITUDE_TAG = 4
 # verloere eine voellig gewoehnliche Suedhalbkugel-Aufnahme ihren Ort.
 _REF_STRIP_CHARS = " \t\r\n\x00"
 
-# SICHERHEIT (Sicherheitskonzept, Abschnitt "Standortdaten (GPS aus EXIF)"): FESTE Grund-Tokens
-# statt des Rohwerts. Standortdaten sind ein eigenständiges Asset, und eine Logzeile ist eine
-# schwächer geschützte, länger lebende Oberfläche als die Datenbank. Weder ein akzeptierter noch
-# ein verworfener Rohwert wird geloggt - die FEHLERKLASSE trägt den vollen Diagnosewert, der
+# SICHERHEIT: FESTE Grund-Tokens statt des Rohwerts. Standortdaten sind ein eigenständiges Asset,
+# und eine Logzeile ist eine schwächer geschützte, länger lebende Oberfläche als die Datenbank.
+# Weder ein akzeptierter noch ein verworfener Rohwert wird geloggt - die FEHLERKLASSE trägt den
+# vollen Diagnosewert, der
 # konkrete Wert nichts darüber hinaus. Vier Tokens, weil `extract_gps` vier Verwerfungsklassen
 # hat: `nullinsel` gehört NICHT unter `ausserhalb_intervall`, das Paar liegt im gültigen Intervall
 # und ist ein Geräte-Artefakt bei fehlgeschlagenem Fix. Die Auflage ("nur feste Grund-Tokens plus
@@ -84,8 +84,7 @@ def extract_taken_at(content: bytes) -> datetime | None:
 
 
 def extract_camera(content: bytes, photo_id: int | None = None) -> CameraIdentity | None:
-    """Best-effort EXIF-Kamera-Extraktion als drittes Pendant zu `extract_taken_at`/`extract_gps`
-    - liefert die normalisierte Identitaet oder `None`.
+    """Best-effort EXIF-Kamera-Extraktion - liefert die normalisierte Identitaet oder `None`.
 
     Liest aus demselben bereits per Range-Read geladenen Byte-Fenster wie die beiden Nachbarn
     (`worker/scan.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusaetzlichen Netzwerkzugriff.
@@ -121,7 +120,7 @@ def extract_camera(content: bytes, photo_id: int | None = None) -> CameraIdentit
 
 # EXIF-Orientierung: 5-8 vertauschen die Kantenlaengen der GEZEIGTEN Ansicht. Gelesen wird nur
 # der Tag, nie `exif_transpose` - das dekodierte die volle Pixelflaeche, und das Range-Fenster ist
-# genau dafuer zu kurz (S9).
+# genau dafuer zu kurz.
 _ORIENTATION_TAG = 274
 _ORIENTATIONS_WITH_SWAPPED_AXES = frozenset({5, 6, 7, 8})
 
@@ -134,7 +133,7 @@ def extract_pixel_count(content: bytes) -> int | None:
 
     Liest ausschliesslich die Kopfdaten, nie die Pixelflaeche: `Image.open` parst den Container
     bis zur Groessenangabe, `load()`/`exif_transpose` waeren ein volles Dekodieren und damit auf
-    einem Range-Fenster ohnehin zum Scheitern verurteilt (Security S9). Die Orientierung wird
+    einem Range-Fenster ohnehin zum Scheitern verurteilt. Die Orientierung wird
     deshalb aus dem Tag gespiegelt statt angewandt - dieselbe Zahl, die `aspect_ratio_of` fuer
     das gedrehte Bild liefert.
 
@@ -221,10 +220,9 @@ def extract_gps(content: bytes, photo_id: int | None = None) -> tuple[float, flo
     Der `try` umfasst Arithmetik UND Bereichsprüfung, nicht nur `Image.open`/`get_ifd`.
 
     DREI Verwerfungsregeln, die KEIN Parserfehler sind und die ein `except Exception`
-    deshalb strukturell nicht sehen kann (Sicherheitskonzept, Abschnitt "Standortdaten (GPS
-    aus EXIF)"); alle drei sind in test_exif.py abgedeckt:
+    deshalb strukturell nicht sehen kann; alle drei sind in test_exif.py abgedeckt:
 
-    1. **Bereichsprüfung als VERGLEICH, nie als Klemmen.** Verifiziert gegen Pillow 12.3.0:
+    1. **Bereichsprüfung als VERGLEICH, nie als Klemmen.**
        `IFDRational(x, 0)` ergibt `nan` OHNE jede Exception, und `nan` propagiert durch die
        DMS-Arithmetik. Ein Klemmen ließe es durch, weil JEDER Vergleich mit `nan` `False`
        ergibt. Landete `nan` in `Photo.gps_lat`, nähme PostgreSQL es an und SQLite im
