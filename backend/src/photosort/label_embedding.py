@@ -16,13 +16,6 @@ from photosort.model_assets import ASSETS_DIR, LABEL_EMBEDDER_ONNX
 # Modellwahl: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, int8-quantisierte
 # ONNX-Variante - ueber onnxruntime+tokenizers ausgefuehrt, KEIN PyTorch/TensorFlow-Hub.
 #
-# Konkretes Asset-Paar: die bereits vorquantisierte ONNX-Variante von
-# "Xenova/paraphrase-multilingual-MiniLM-L12-v2"
-# (huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2, MIT-Lizenz,
-# Transformers.js-Community-Export DESSELBEN Basismodells, config.json bestaetigt
-# "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" als _name_or_path,
-# hidden_size=384) - "onnx/model_int8.onnx" + "tokenizer.json".
-#
 # SICHERHEIT: beide Assets sind SHA256-gepinnt, kein unverifizierter Bezug. Eingecheckt ist nur
 # "tokenizer.json" (label_embedder_tokenizer.json, ~16 MiB); "model_int8.onnx"
 # (label_embedder.onnx, ~113 MiB) ueberschreitet GitHubs 100-MiB-Push-Limit und darf NICHT

@@ -52,7 +52,7 @@ ALBUM_SUITABILITY_ANCHORS: dict[int, str] = {
 # Storage- und Degenerationsgrenze der Begruendung. GEKUERZT statt verworfen - bewusst anders als
 # beim Feinlabel: `reason` wird nirgends verglichen, geschluesselt, dedupliziert oder
 # slugifiziert, ein gekuerzter Wert fuehrt also keine zwei verschiedenen Dinge zusammen. Wird der
-# Text spaeter Gegenstand eines Vergleichs, gilt ab dann die Verwerfensregel (S2).
+# Text spaeter Gegenstand eines Vergleichs, gilt ab dann die Verwerfensregel.
 MAX_ALBUM_SUITABILITY_REASON_LENGTH: Final = 160
 
 # Sentinel fuer "das Antwort-Objekt nennt gar kein `album_suitability`" - unterscheidbar von einem
@@ -61,9 +61,9 @@ MAX_ALBUM_SUITABILITY_REASON_LENGTH: Final = 160
 # ihn als Default seines `.get()` einsetzt.
 NO_VALUE: Final = object()
 
-# Sicherheitsauflage S3: FESTE Grund-Tokens statt des Rohwerts. Der Diagnosewert einer verworfenen
-# Stufe liegt vollstaendig in der Fehlerklasse; damit enthaelt die Zeile ueberhaupt keinen
-# Fremdtext und die Log-Injection-Frage stellt sich nicht.
+# SICHERHEIT: FESTE Grund-Tokens statt des Rohwerts. Der Diagnosewert einer verworfenen Stufe
+# liegt vollstaendig in der Fehlerklasse; damit enthaelt die Zeile ueberhaupt keinen Fremdtext und
+# die Log-Injection-Frage stellt sich nicht.
 _REASON_NOT_AN_OBJECT: Final = "kein_objekt"
 _REASON_LEVEL_MISSING: Final = "keine_stufe"
 _REASON_LEVEL_NOT_INT: Final = "kein_ganzzahltyp"
@@ -97,7 +97,7 @@ def _log_discarded(photo_id: int, reason: str) -> None:
 
     Geloggt werden ausschliesslich `photo_id` und eines der festen Grund-Tokens. NIE der Rohwert,
     nie die vollstaendige Antwort, nie Bilddaten - und NIE `reason`, in keiner Laenge und in keiner
-    Form: es ist genau der Fremdtext, der aus dem Log herauszuhalten ist (S3)."""
+    Form: es ist genau der Fremdtext, der aus dem Log herauszuhalten ist."""
     logger.warning(
         "album_suitability: Stufe verworfen photo_id=%s grund=%s",
         photo_id,
@@ -106,7 +106,7 @@ def _log_discarded(photo_id: int, reason: str) -> None:
 
 
 def _level_from_raw(raw: object, photo_id: int) -> int | None:
-    """Die Stufe aus dem Rohwert - `None` heisst "keine brauchbare Stufe" (Sicherheitsauflage S1).
+    """Die Stufe aus dem Rohwert - `None` heisst "keine brauchbare Stufe".
 
     Uebernommen wird ausschliesslich ein echter `int` im Band `1 <= level <= 5`:
 
@@ -133,7 +133,7 @@ def _level_from_raw(raw: object, photo_id: int) -> int | None:
 
 
 def _reason_from_raw(raw: object) -> str | None:
-    """Die Begruendung: sanieren -> messen -> kuerzen, in genau dieser Reihenfolge (S2).
+    """Die Begruendung: sanieren -> messen -> kuerzen, in genau dieser Reihenfolge.
 
     Die Reihenfolge ist die Auflage: vor der Sanitisierung zu kuerzen liesse einen halbierten
     Bidi-/Zero-Width-Kontext stehen, den die Sanitisierung danach nicht mehr sieht. Saniert wird

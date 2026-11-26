@@ -14,22 +14,18 @@ from PIL import Image
 # classification.py::_to_mp_image) - der Rest dieses Moduls (Preprocessing, Normierung) ist reines
 # PIL/NumPy und braucht kein installiertes tensorflow, um importiert/getestet zu werden.
 
-# Gepinnte, im Repository eingecheckte Modell-Datei, kein Laufzeit-Download. Quelle:
-# idealo/image-quality-assessment (Apache-2.0),
-# https://raw.githubusercontent.com/idealo/image-quality-assessment/master/models/MobileNet/
-# weights_mobilenet_aesthetic_0.07.hdf5 - "aesthetic"-Variante (nicht "technical"), weil
-# ausdruecklich "Bildqualitaet/Schoenheit" (aesthetic quality) statt technischer Bildfehler
-# (technical quality, z.B. Kompressionsartefakte) verlangt ist.
+# Gepinnte, im Repository eingecheckte Modell-Datei, kein Laufzeit-Download - "aesthetic"-Variante
+# (nicht "technical"), weil ausdruecklich Bildqualitaet/Schoenheit statt technischer Bildfehler
+# (z.B. Kompressionsartefakte) verlangt ist.
 #
-# WICHTIG (Keras/H5-Modell-Deserialisierung): diese Datei ist eine reine Keras-GEWICHTE-Datei.
-# Geladen wird sie ueber `model.load_weights()` auf eine im Code rekonstruierte Architektur (siehe
-# build_aesthetics_model unten), NIE ueber `tf.keras.models.load_model()`. Sie traegt keinen
-# eingebetteten `model_config`-Header (die Keras-SavedModel-Architektur-Serialisierung, die
-# Lambda-Layer/beliebigen Python-Code enthalten koennte), nur benannte Gewichts-Arrays; da
-# HDF5-Gewichtsgruppen keinen Python-Code enthalten koennen, ist das
-# Lambda-Layer-Deserialisierungsrisiko fuer dieses Asset-Format strukturell nicht anwendbar. Die
-# SHA256-Integritaetspruefung bleibt trotzdem als Schutz gegen nachtraegliche Manipulation; sie
-# bricht in tests/test_aesthetics.py::TestAestheticsModelAsset (ein Fall).
+# SICHERHEIT (Keras/H5-Modell-Deserialisierung): diese Datei ist eine reine Keras-GEWICHTE-Datei.
+# Geladen wird sie ueber `model.load_weights()` auf eine im Code rekonstruierte Architektur, NIE
+# ueber `tf.keras.models.load_model()`. Sie traegt keinen eingebetteten `model_config`-Header (die
+# SavedModel-Architektur-Serialisierung, die Lambda-Layer/beliebigen Python-Code enthalten
+# koennte), nur benannte Gewichts-Arrays; da HDF5-Gewichtsgruppen keinen Python-Code enthalten
+# koennen, ist das Lambda-Layer-Deserialisierungsrisiko fuer dieses Asset-Format strukturell nicht
+# anwendbar. Die SHA256-Integritaetspruefung bleibt als Schutz gegen nachtraegliche Manipulation
+# (tests/test_aesthetics.py::TestAestheticsModelAsset).
 ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.07.hdf5"
 
 AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c681a21a91cb2"

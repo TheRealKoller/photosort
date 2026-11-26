@@ -1,4 +1,4 @@
-"""Die reine A/B-Vergleichslogik der Klassifizierungspruefung (Spec 0616, ADR 0139 Punkt 2/3).
+"""Die reine A/B-Vergleichslogik der Klassifizierungspruefung.
 
 Zwei Verfahren, zwei Aussagen je Foto - daraus werden Zaehlungen, Faelle und eine seeded
 Stichprobe. Hier steht KEINE Datenbank und kein Lauf: der Job liefert die Aussagen je Foto, die
@@ -106,7 +106,7 @@ class Comparison:
 
     `motif_counts` schluesselt den Zweck `motif_feature` nach Merkmal auf - je Motiv ein
     (Foto, Motiv)-Paar-Zaehler in Registry-Ordnung, alle acht auch ohne Vergleich. Die Uebersicht
-    der App bleibt bei einer Zeilengruppe; der Export traegt die Aufschluesselung (AK 10).
+    der App bleibt bei einer Zeilengruppe; der Export traegt die Aufschluesselung.
     """
 
     photos_compared: int

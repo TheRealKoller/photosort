@@ -4,16 +4,16 @@ Reine Funktion: keine Datenbank, keine Uhr, `now` als Parameter. Die Zuordnung "
 gehört zu welchem Teilschritt" steht beim Aufrufer (`api/projects.py`), nicht hier.
 
 Gerechnet wird der Durchsatz **seit Beginn des Teilschritts**, nicht der eines gleitenden
-Fensters (ADR 0116 Punkt 2): Ein Fenster bildete jede kurze Schwankung ab, und genau die soll die
-Anzeige nicht zeigen.
+Fensters: Ein Fenster bildete jede kurze Schwankung ab, und genau die soll die Anzeige nicht
+zeigen.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-# Die beiden Schwellen der Belastbarkeit (ADR 0116 Punkt 3). Unterhalb einer von beiden ist das
-# Ergebnis `None` - "noch nicht abschätzbar", nie "keine Restdauer" und nie "sofort fertig".
+# Die beiden Schwellen der Belastbarkeit. Unterhalb einer von beiden ist das Ergebnis `None` -
+# "noch nicht abschätzbar", nie "keine Restdauer" und nie "sofort fertig".
 #
 # Drei Einheiten, weil die erste Einheit einen Modellaufbau mitträgt und der daraus gerechnete
 # Durchsatz für den gesamten Rest gälte. Fünfzehn Sekunden, weil der erste Poll zwei Sekunden nach

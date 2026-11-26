@@ -1,4 +1,4 @@
-"""Die HTTP-Grenze zum Eye-Sidecar (Spec 0609, ADR 0138).
+"""Die HTTP-Grenze zum Eye-Sidecar.
 
 Ein Modul fuer beide Aufrufer: der Klassifizierungslauf (`analyse`) und der Ausloese-Endpunkt
 (`health`, bevor er einen Job einreiht). Adresse nur aus den Settings, keine Weiterleitungen,
@@ -19,7 +19,7 @@ import httpx
 
 from photosort.config import settings
 
-# 30 s je Foto - feste Zeitgrenze, kein Retry (S3). Ein haengender Aufruf ist ein Fehlschlag der
+# 30 s je Foto - feste Zeitgrenze, kein Retry. Ein haengender Aufruf ist ein Fehlschlag der
 # Phase, kein Grund, es gleich noch einmal zu versuchen: die Gewichte liegen lokal, ein Timeout
 # heisst "Dienst antwortet nicht", und jeder Wiederholungsversuch verlaengerte nur den Lauf.
 EYE_REQUEST_TIMEOUT_SECONDS = 30.0
@@ -27,7 +27,7 @@ EYE_REQUEST_TIMEOUT_SECONDS = 30.0
 # gross, ein groesserer Koerper ist ein Defekt oder ein falscher Dienst hinter der Adresse.
 EYE_MAX_RESPONSE_BYTES = 1024 * 1024
 # Der Dienst nimmt ausschliesslich JPEG-Bytes der `display`-Variante, keinen Multipart-Koerper,
-# keinen Pfad und keinen Feldparameter (S3).
+# keinen Pfad und keinen Feldparameter.
 EYE_CONTENT_TYPE = "image/jpeg"
 
 
@@ -50,7 +50,7 @@ class EyeServiceUnavailableError(RuntimeError):
     Bewusst ein eigener Fehlertyp: die Phase endet damit sofort, der Lauf auf `FAILED` - ein
     einzelnes unlesbares BILD wird dagegen uebersprungen, das ist `EyeImageUnreadableError`.
 
-    Die Meldung ist ein FESTER deutscher Satz ohne Host, Port, Version oder Stacktrace (S5) und
+    Die Meldung ist ein FESTER deutscher Satz ohne Host, Port, Version oder Stacktrace und
     wird so - unveraendert - als `error_message` persistiert."""
 
 

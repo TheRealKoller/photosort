@@ -18,8 +18,8 @@ def build_classification_prompt(*, max_fine_labels: int) -> str:
     `max_fine_labels` kommt als Parameter vom Aufrufer statt aus einem Import: die
     Feinlabel-Grenze gehoert weder zum Motivset noch zum Stufenband.
 
-    SICHERHEIT (S4): der Prompt entsteht nie aus einem Literal daneben, nie aus Datenbankinhalten
-    und nie aus einer frueheren Modellantwort - es gibt keinen Rueckkopplungspfad, ueber den eine
+    SICHERHEIT: der Prompt entsteht nie aus einem Literal daneben, nie aus Datenbankinhalten und
+    nie aus einer frueheren Modellantwort - es gibt keinen Rueckkopplungspfad, ueber den eine
     Antwort den naechsten Prompt beeinflussen koennte. Bricht in
     tests/test_classification_prompt.py, Faelle
     `test_the_prompt_is_generated_from_the_registry_not_a_literal` und
