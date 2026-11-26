@@ -8,11 +8,9 @@ Gemessen wird die Verteilung der gespeicherten Werte der Kriterien ``gebaeude`` 
 und die Zahl der Landmark-Kandidaten, die daraus folgt.
 
 WOFUER: fuer jede kuenftige Aenderung an einer Kriterien-Allow-Liste - ein Lauf davor, ein Lauf
-danach. Die Aenderung, mit der dieses Modul entstand (Spec 0283), belegt es NICHT; deren
-Material-Messung wurde fallengelassen, weil sie auf der Zielinstanz nicht durchfuehrbar ist
-(Spec 0283, Abschnitt 6 und ``## Entscheidungen``). Der Grund, warum ein Vorher-Stand ueberhaupt
-GEZOGEN werden muss, bevor er verschwindet: ``PhotoCriterionScore`` traegt keinen Laufbezug und
-wird bei jedem Lauf ueberschrieben (``UniqueConstraint(photo_id, criterion_key)``).
+danach. Der Grund, warum ein Vorher-Stand ueberhaupt GEZOGEN werden muss, bevor er verschwindet:
+``PhotoCriterionScore`` traegt keinen Laufbezug und wird bei jedem Lauf ueberschrieben
+(``UniqueConstraint(photo_id, criterion_key)``).
 
 Gemessen wird mit den Mitteln des Laufs: ``criteria.py::is_landmark_candidate`` ist dieselbe reine
 Schwellenwert-Pruefung, die auch ``worker/_criterion/landmark.py::select_landmark_candidates`` nimmt, und
@@ -28,7 +26,7 @@ gegen jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Ta
 danach. Kein Teil traegt allein. Der Preis des Formwaechters ist, dass diese Datei auf
 ``set.add``/``dict.update`` als Sammlungs-Methoden verzichtet.
 
-SICHERHEIT (S2 der Spec 0283):
+SICHERHEIT:
 
 * DIE AUSGABE TRAEGT KEINEN ``relative_path`` UND KEINEN DATEINAMEN, KEINEN OPENCLOUD-PFAD,
   KEINEN PROJEKTNAMEN, KEINEN ZEITSTEMPEL, KEINE KOORDINATE UND KEINEN ORTS- ODER
@@ -38,11 +36,10 @@ SICHERHEIT (S2 der Spec 0283):
   ausserdem die Verbindung Klassenname <-> einzelnes Foto in jeder Form - kein Beispielabschnitt,
   kein Auszug, auch nicht gekuerzt und auch nicht mit Foto-Id statt Pfad. Eine solche Zeile ist
   eine Aussage darueber, was auf einem bestimmten Familienfoto zu sehen ist; eine Auszaehlung ist
-  es nicht. Deshalb KEIN ``--namen``-Schalter (anders als ``place_probe.py``).
+  es nicht. Deshalb KEIN ``--namen``-Schalter.
 * AUSFALLRICHTUNG - "NICHT GEMESSEN" IST NICHT "0": Liegt kein erfolgreicher Kriterien-Lauf vor,
   meldet der Bericht ``NICHT GEMESSEN``, nie eine Null. Eine Null truege hier die guenstigste
-  aller Aussagen ("der Zuwachs ist klein") ueber eine Menge, die niemand gemessen hat - dieselbe
-  Regel, die ``api/projects.py`` mit ``landmark_candidate_count: int | None`` bereits durchsetzt.
+  aller Aussagen ("der Zuwachs ist klein") ueber eine Menge, die niemand gemessen hat.
 * AUSGABEKANAL: ausschliesslich stdout. Keine Datei-Ausgabe, nichts ueber den strukturierten
   Anwendungs-Logger und damit nichts in persistente Container-Logs. Dieses Modul schreibt kein
   Log.
@@ -50,8 +47,7 @@ SICHERHEIT (S2 der Spec 0283):
   SQLAlchemy-Konstrukte mit Parameterbindung, nie ueber ``text()`` mit f-String. Ein unbekanntes
   Projekt oder ein Verbindungsfehler ergibt eine kurze eigene Meldung und einen Exit-Code != 0 -
   NIE ein durchgereichter SQLAlchemy-Traceback, der die ``DATABASE_URL`` samt Zugangsdaten in eine
-  Ausgabe schriebe, die anschliessend in einen Pull Request kopiert wird (Muster
-  ``demo_state.py``).
+  Ausgabe schriebe, die anschliessend in einen Pull Request kopiert wird.
 """
 
 from __future__ import annotations
@@ -66,11 +62,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# WOERTLICH DIE FUNKTION HINTER DER ANGEZEIGTEN ZAHL, nicht eine zweite Fassung davon: Der Bericht
+# WOERTLICH DIE FUNKTION HINTER DER ANGEZEIGTEN ZAHL: Der Bericht
 # weist `landmark_candidate_count` genau so aus, wie die Projekt-Antwort es tut. Eine Nachbildung
 # hier liefe beim naechsten Grenzfall auseinander, und der Beleg behauptete dann eine Zahl, die
-# niemand zu sehen bekommt. Denselben Weg nimmt
-# `tests/test_worker_criterion_scoring_landmark_names.py` bereits.
+# niemand zu sehen bekommt.
 from photosort.candidate_counts import count_landmark_candidates
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
@@ -84,7 +79,7 @@ from photosort.models import (
 )
 
 # Eine gelesene Kriterien-Zeile: Foto, Kriterium, Wert. Der Schluessel bleibt im Modul und
-# erreicht den Bericht nie - gezaehlt wird ueber ihn, ausgegeben werden Anzahlen (S2).
+# erreicht den Bericht nie - gezaehlt wird ueber ihn, ausgegeben werden Anzahlen.
 ScoreRow = tuple[int, str, float]
 
 
@@ -99,10 +94,10 @@ class CriterionProbeError(Exception):
 class CriterionCounts:
     """Die Verteilung EINES Kriteriums ueber die gespeicherten Werte - in Anzahlen, nie je Foto.
 
-    `at_zero` und `above_zero` sind die beiden Klassen, nach denen die Spec fragt: Ein Wert `> 0`
-    heisst "das Kriterium hat auf diesem Foto gegriffen". Bei `gebaeude` faellt beides zusammen
-    mit "Landmark-Kandidat" - `compute_gebaeude_score` gibt entweder exakt `0.0` oder einen Wert
-    `>= 0.5` zurueck, und die Praesenzgrenze liegt bei 0.01.
+    `at_zero` und `above_zero` sind die beiden Klassen: Ein Wert `> 0` heisst "das Kriterium hat
+    auf diesem Foto gegriffen". Bei `gebaeude` faellt beides zusammen mit "Landmark-Kandidat" -
+    `compute_gebaeude_score` gibt entweder exakt `0.0` oder einen Wert `>= 0.5` zurueck, und die
+    Praesenzgrenze liegt bei 0.01.
 
     `photos_with_a_value` steht DANEBEN und ist nicht die Fotozahl des Projekts: Ein Foto ohne
     Zeile zu diesem Kriterium ist nicht dasselbe wie ein Foto mit dem Wert null. Ein Lauf, der ein
@@ -121,11 +116,11 @@ class CriterionProbeInput:
 
     `run_id` ist die Kennung des letzten erfolgreichen Kriterien-Laufs; `None` heisst "dieses
     Projekt hat keinen erfolgreichen Lauf" und ist etwas anderes als "ein Lauf ohne Treffer". Der
-    Bericht meldet dann `NICHT GEMESSEN`, nie eine Null (S2).
+    Bericht meldet dann `NICHT GEMESSEN`, nie eine Null.
 
     EIN FELD, NICHT ZWEI: `run_found` ist abgeleitet, nicht daneben gespeichert - ein `True` ohne
     Kennung ergaebe einen Kopf ohne Lauf, ein `False` mit Kennung eine Ausfallmeldung trotz
-    messbarer Werte. Abgeleitet ist der Widerspruch nicht darstellbar (Muster `event_probe.py`).
+    messbarer Werte. Abgeleitet ist der Widerspruch nicht darstellbar.
 
     `landmark_candidates` und `landmark_candidate_count` stehen NEBENEINANDER, weil sie
     verschiedene Mengen sind: die erste ist die reine Schwellenwert-Zaehlung ueber alle
@@ -156,7 +151,7 @@ def criterion_counts(rows: Sequence[ScoreRow]) -> tuple[CriterionCounts, ...]:
 
     Ein Kriterium, das aus dem Bericht faellt, waere eine still unvollstaendige Messung, ohne dass
     eine Summe kleiner wuerde. Die Grenze ist `> 0.0` und ausdruecklich keine Praesenzgrenze: Die
-    Frage der Spec ist "hat das Kriterium ueberhaupt gegriffen", und eine zweite Schwelle hier
+    Frage ist "hat das Kriterium ueberhaupt gegriffen", und eine zweite Schwelle hier
     liefe gegen `is_landmark_candidate` auseinander.
 
     Eine Zeile zu einem anderen Kriterium wird UEBERGANGEN, nicht gezaehlt: Der Lesepfad fragt
@@ -265,8 +260,7 @@ async def read_criterion_probe_input(session: AsyncSession, project_id: int) -> 
         counts=criterion_counts(rows),
         landmark_candidates=landmark_candidates(rows),
         # DIE ZAHL DER PROJEKT-ANTWORT, aus ihrer eigenen Funktion: Sie zaehlt gegen
-        # `survives_ausschuss()` und laesst Fotos mit vorhandener `landmark`-Zeile weg - beides
-        # steht dort und gehoert nicht hierher kopiert.
+        # `survives_ausschuss()` und laesst Fotos mit vorhandener `landmark`-Zeile weg.
         landmark_candidate_count=await count_landmark_candidates(session, project_id),
     )
 
@@ -274,7 +268,7 @@ async def read_criterion_probe_input(session: AsyncSession, project_id: int) -> 
 # --- Die Ausgabe ---------------------------------------------------------------------------------
 
 # Was anstelle einer Zahl steht, wenn nichts gemessen wurde. EINE Zeichenfolge, nicht je
-# Fundstelle eine eigene: Sie ist die Ausfallrichtung aus S2 und wird im Bericht gesucht.
+# Fundstelle eine eigene: Sie ist die Ausfallrichtung und wird im Bericht gesucht.
 NOT_MEASURED = "NICHT GEMESSEN"
 
 
@@ -287,21 +281,19 @@ def _percent(part: int, whole: int) -> str:
 def report_head(probe: CriterionProbeInput) -> str:
     """DIE EINE KOPFZEILE des Berichts: Titel, Projekt-Id, Laufkennung.
 
-    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der verbotenen Klassen aus S2: kein
+    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der verbotenen Klassen: kein
     Pfad, kein Dateiname, kein Projektname, kein Zeitstempel, keine Koordinate. Der Projekt-NAME
     waere eine Angabe ueber den Bestand, die Id ist keine.
 
-    OHNE LAUF STEHT KEINE ERFUNDENE KENNUNG DA: Anders als `event_probe.py` bricht dieses Kommando
-    nicht ab - "es gibt keinen erfolgreichen Lauf" ist hier selbst das Messergebnis und wird als
-    `NICHT GEMESSEN` berichtet. Ein "Lauf 0" oder "Lauf None" waere dagegen eine Kennung, die es
-    nicht gibt."""
+    OHNE LAUF STEHT KEINE ERFUNDENE KENNUNG DA: "es gibt keinen erfolgreichen Lauf" ist hier
+    selbst das Messergebnis und wird als `NICHT GEMESSEN` berichtet."""
     if probe.run_id is None:
         return f"# Kriterien-Messung, Projekt {probe.project_id}, ohne erfolgreichen Lauf"
     return f"# Kriterien-Messung, Projekt {probe.project_id}, Lauf {probe.run_id}"
 
 
 def render_report(probe: CriterionProbeInput) -> str:
-    """Markdown nach stdout - AUSSCHLIESSLICH ANZAHLEN (S2).
+    """Markdown nach stdout - AUSSCHLIESSLICH ANZAHLEN.
 
     Der Bericht traegt keinen `relative_path` und keinen Dateinamen, keinen OpenCloud-Pfad, keinen
     Projektnamen, keinen Zeitstempel, keine Koordinate und keinen Orts- oder
@@ -365,7 +357,7 @@ def render_report(probe: CriterionProbeInput) -> str:
 
 def number(value: int | None) -> str:
     """Eine Anzahl - oder `NICHT GEMESSEN`, wenn keine gemessen wurde. Nie eine ersatzweise
-    Null: Sie laese sich als Messergebnis lesen, und genau diese Verwechslung schliesst S2 aus."""
+    Null: Sie laese sich als Messergebnis lesen, und genau diese Verwechslung ist ausgeschlossen."""
     if value is None:
         return NOT_MEASURED
     return str(value)
@@ -375,7 +367,7 @@ def number(value: int | None) -> str:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Genau EIN Schalter, und ausdruecklich kein `--namen` (S2): Dieses Kommando gibt Anzahlen
+    """Genau EIN Schalter, und ausdruecklich kein `--namen`: Dieses Kommando gibt Anzahlen
     aus; die Verbindung Klassenname <-> einzelnes Foto ist in jeder Form verboten, auch hinter
     einem standardmaessig ausgeschalteten Schalter."""
     parser = argparse.ArgumentParser(
@@ -422,7 +414,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
         return 1
     except SQLAlchemyError as exc:
         # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
-        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster demo_state.py).
+        # DATABASE_URL inklusive Zugangsdaten enthalten.
         print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(report)

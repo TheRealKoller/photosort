@@ -6,31 +6,25 @@ Aufruf über die Container-Konsole, einmal je Volume::
     docker compose exec backend python -m photosort.place_dataset
 
 Es bezieht `allCountries.zip` (rund 400 MB), bildet daraus ZWEI Auszüge, löscht das Archiv wieder
-und legt je Auszug seinen SHA256 daneben. Gemessen (2026-09-14): Der Ortsauszug hat 5.770.883
-Zeilen, 223 MB, gzip-gepackt 69 MB, ein vollständiger Lese-Durchgang dauert 3,3 s. Der zweite
-Auszug für die Sehenswürdigkeitsnamen (Klassen `S`/`T`/`L`/`H`/`V` PLUS `alternatenames`) hat
-7,62 Mio. Zeilen, rund 659 MB roh, rund 204 MB gepackt; das Volume trägt danach rund 273 MB
-(ADR 0123 Punkt 1).
+und legt je Auszug seinen SHA256 daneben. Der zweite Auszug traegt die Sehenswuerdigkeitsnamen
+(Klassen `S`/`T`/`L`/`H`/`V` PLUS `alternatenames`).
 
 BEIDE AUSZÜGE ENTSTEHEN AUS EINEM BEZUG UND EINEM DURCHGANG: Archiv einmal laden, einmal
-entpacken, in einem Durchgang beide Zieldateien schreiben. Zwei Durchgänge über dieselbe 400-MB-
-Datei wären eine Verdopplung ohne Gegenwert; getrennt bleiben die Dateien trotzdem, damit ein
-fehlender Sehenswürdigkeits-Auszug für sich feststellbar ist.
+entpacken, in einem Durchgang beide Zieldateien schreiben. Getrennt bleiben die Dateien trotzdem,
+damit ein fehlender Sehenswürdigkeits-Auszug für sich feststellbar ist.
 
 EIN AUSZUG IST EINE GEONAMES-DATEI MIT GELEERTEN SPALTEN, kein eigenes Format: Er behält die
 Spaltenpositionen des Originals und lässt die ungebrauchten Felder leer. Damit liest ihn
-`geonames.parse_geonames_line` bzw. `geonames.parse_landmark_line` unverändert, und die Gleichheit
-zum gemessenen Verhalten ist strukturell statt argumentiert - dieselben Zeilen, dieselben Felder,
-derselbe Parser (`tests/test_place_dataset.py::TestTheExtractBehavesLikeTheRawFile`,
+`geonames.parse_geonames_line` bzw. `geonames.parse_landmark_line` unverändert, dieselben Zeilen,
+dieselben Felder, derselbe Parser (`tests/test_place_dataset.py::TestTheExtractBehavesLikeTheRawFile`,
 `::TestTheSecondExtractBehavesLikeTheRawFile`).
 
 DIESES KOMMANDO BLEIBT VON JEDEM AUTOMATISCHEN PFAD FERN - kein Aufrufpfad aus `main.py`/
-`photosort.worker`, kein Endpunkt, kein Compose-`command`, dieselbe Auflage und derselbe Nachweis wie bei
-`place_probe.py`. Ein 400-MB-Abruf tritt nur ein, wenn er getippt wird.
+`photosort.worker`, kein Endpunkt, kein Compose-`command`. Ein 400-MB-Abruf tritt nur ein, wenn er
+getippt wird.
 
 KEIN SHELLSKRIPT AUF DEM HOST: Auf dem Server gibt es keine Shell, nur eine Oberfläche für Docker
-Compose und eine Container-Konsole. Eine zweite Fassung desselben Ablaufs driftet, und die auf dem
-Server unbrauchbare wäre die schlechtere (ADR 0105 Punkt 3).
+Compose und eine Container-Konsole; eine zweite Fassung desselben Ablaufs driftet.
 
 SICHERHEIT:
 
@@ -42,8 +36,8 @@ SICHERHEIT:
   keine Prüfsummen; es gibt keinen vertrauenswürdigen Sollwert, gegen den sich pinnen ließe. Der
   Hash entsteht deshalb hier, aus dem erzeugten Auszug, und trägt ab da jede spätere Prüfung. Eine
   an der Quelle oder auf dem Weg veränderte Datei würde als Sollwert übernommen - bewusst
-  akzeptiertes Restrisiko (Daniel, 2026-09-14), getragen davon, dass der Schaden auf falsche
-  Ortsnamen in Überschriften begrenzt bleibt. Mit dem zweiten Auszug bestimmt derselbe Abruf ab
+  akzeptiertes Restrisiko, getragen davon, dass der Schaden auf falsche Ortsnamen in Überschriften
+  begrenzt bleibt. Mit dem zweiten Auszug bestimmt derselbe Abruf ab
   hier mit, OB eine Überschrift entsteht; die Klasse des Restrisikos ändert das nicht.
 * Die Spaltenreduktion ist DATENSPARSAMKEIT, keine Injektionsabwehr: gegen Injektion tragen die
   Sanitisierung und die Längengrenze in `places.py` bzw. `landmark.py`.
@@ -81,7 +75,7 @@ from photosort.geonames import (
 # Zielzuordnung liegt bei `write_extracts`.
 LineExtractor = Callable[[str], str | None]
 
-# Die Quell-Adresse als KONSTANTE (S9) - nie ein Wert aus Datenbank, Request oder Parameter.
+# Die Quell-Adresse als KONSTANTE - nie ein Wert aus Datenbank, Request oder Parameter.
 GEONAMES_ARCHIVE_URL = "https://download.geonames.org/export/dump/allCountries.zip"
 
 # Der eine benannte Eintrag, der aus dem Archiv gelesen wird. Ausdruecklich kein Durchlauf ueber
@@ -116,9 +110,7 @@ def extract_landmark_line(line: str) -> str | None:
     """Eine Rohzeile als SEHENSWUERDIGKEITSAUSZUGS-Zeile, oder `None`.
 
     Dieselbe Formatregel wie `extract_line`, mit den Klassen `S`/`T`/`L`/`H`/`V` und
-    `alternatenames` zusaetzlich in den gelesenen Feldern: Ohne dieses Feld fielen 33 von 50
-    gemessenen Namen durch (ADR 0123 Punkt 1). `asciiname` bleibt ungenutzt - in der Messung war
-    kein Name allein ueber dieses Feld auffindbar, den `alternatenames` nicht auch liefert."""
+    `alternatenames` zusaetzlich in den gelesenen Feldern: Ohne dieses Feld fallen Namen durch."""
     fields = line.rstrip("\n").split("\t")
     if len(fields) < GEONAMES_FIELD_COUNT:
         return None
@@ -239,7 +231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         kept = build_dataset(target, landmark_target)
     except (OSError, httpx.HTTPError, zipfile.BadZipFile) as exc:
         # Nur der Fehlertyp, nie die Meldung: sie kann einen Pfad oder eine Adresse tragen, und
-        # der Abbruch ist ohnehin nur ueber die Bedingung zu beheben (Muster place_probe.py).
+        # der Abbruch ist ohnehin nur ueber die Bedingung zu beheben.
         print(f"Fehler: Bezug fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(f"Fertig. {kept[target]} Zeilen im Ortsauszug: {target}")

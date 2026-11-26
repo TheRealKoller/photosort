@@ -4,7 +4,7 @@ Aufruf::
 
     docker compose exec -T backend python -m photosort.place_probe --project-id 3
 
-Gemessen wird der Weg, der auch im Betrieb laeuft: der lokale Ortsdatensatz (ADR 0105). Dasselbe
+Gemessen wird der Weg, der auch im Betrieb laeuft: der lokale Ortsdatensatz. Dasselbe
 Modul, derselbe Auflöser, dieselbe Vergabelogik wie im Kriterien-Lauf - eine zweite, nachbildende
 Fassung driftete, und dann maesse dieses Kommando etwas anderes, als der Lauf tatsaechlich tut,
 waehrend beide fuer sich gruen blieben.
@@ -16,14 +16,14 @@ Compose-``command``. Kein Lauf hinterlaesst eine geaenderte, geloeschte oder neu
 jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Tabelle davor und danach.
 Kein Teil traegt allein.
 
-WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT: Es braucht die echten SQLAlchemy-Modelle und dieselbe
-Zellbildung wie die Anwendung (``places.place_cell``) - ein zweites Abbild davon verfehlte genau
-die Frage, die gemessen werden soll.
+IM PRODUKTIV-PAKET, weil es die echten SQLAlchemy-Modelle und dieselbe Zellbildung wie die
+Anwendung (``places.place_cell``) braucht - ein zweites Abbild davon verfehlte genau die Frage,
+die gemessen werden soll.
 
 SICHERHEIT:
 
-* MIT DEM EXTERNEN KANDIDATEN IST DER ABFLUSSPFAD DIESES KOMMANDOS VOLLSTAENDIG ENTFALLEN (ADR
-  0105 Punkt 2): Es liest nur noch eine lokale Datei; keine Ortsangabe verlaesst das System.
+* MIT DEM EXTERNEN KANDIDATEN IST DER ABFLUSSPFAD DIESES KOMMANDOS VOLLSTAENDIG ENTFALLEN: Es
+  liest ausschliesslich eine lokale Datei; keine Ortsangabe verlaesst das System.
 * Gefragt wird ueber die MENGE der verschiedenen Zellen, nie je Event - sonst ginge die
   Verweildauer je Ort mit ein - und ausschliesslich ueber die TATSAECHLICH BESUCHTEN Zellen aus
   dem Projektbestand. Dieses Kommando erzeugt keine Zelle und rastert kein Rechteck ab.
@@ -132,14 +132,13 @@ class CellCounts:
 
 @dataclass(frozen=True)
 class LevelCounts:
-    """Block C - AGGREGIERT. Eine Zeile je Zelle traegt die Zelle nie als Kennung (S5).
+    """Block C - AGGREGIERT. Eine Zeile je Zelle traegt die Zelle nie als Kennung.
 
     `cells_without_answer` und `cells_with_a_failed_request` sind ZWEI VERSCHIEDENE DINGE und
     duerfen nie zu einem werden: das eine heisst "der Dienst hat geantwortet und nichts
     gefunden" - ein Messergebnis -, das andere "es kam gar keine verwertbare Antwort" - ein
     Ausfall. Beides als "ohne Treffer" auszuweisen machte aus einer Drosselung ein schlechtes
-    Messergebnis, und darauf faellt eine NICHT RUECKNEHMBARE Wegwahl. Dieselbe Unterscheidung
-    trifft ADR 0102 Punkt 5 fuer den spaeteren Betrieb."""
+    Messergebnis - und darauf faellt eine NICHT RUECKNEHMBARE Wegwahl."""
 
     cells_total: int
     cells_without_answer: int
@@ -162,7 +161,7 @@ class HeadingCounts:
 
 @dataclass(frozen=True)
 class PhotoCounts:
-    """Block E - Verwendung #469. ZAEHLT FOTOS, nicht Events: #469 fragt VOR der Event-Bildung."""
+    """Block E - ZAEHLT FOTOS, nicht Events: gefragt ist die Lage VOR der Event-Bildung."""
 
     photos_with_coordinate: int
     photos_with_a_resolved_locality: int
@@ -249,7 +248,7 @@ def heading_counts(probe: ProbeInput, info_by_cell: Mapping[Cell, PlaceInfo]) ->
     DIE PARTITION WIRD AUS DER VEREINIGUNG GEZAEHLT, nie durch Subtraktion: `events_named` zaehlt
     ALLE Events mit einem Ortsnamen, und `events_keeping_position` ist die Restmenge darueber.
     `events_with_landmark` ist eine TEILMENGE von `events_named` - ein benanntes Event traegt
-    seinen Ortsnamen seit ADR 0120 ebenfalls und wuerde beim Abziehen doppelt fehlen."""
+    seinen Ortsnamen ebenfalls und wuerde beim Abziehen doppelt fehlen."""
     localities = [locality_of_event(event, info_by_cell) for event in probe.events]
     names = assign_place_names(probe.events, info_by_cell)
 
@@ -403,7 +402,7 @@ async def resolve_all(
 class CandidateResult:
     """Das Messergebnis EINES Kandidaten, oder der Grund seines Ausbleibens.
 
-    Ein ausgebliebener Kandidat MELDET SICH (S4): eine leere Spalte wuerde als schlechtes
+    Ein ausgebliebener Kandidat MELDET SICH: eine leere Spalte wuerde als schlechtes
     Messergebnis gelesen, und darauf faellt dann eine nicht ruecknehmbare Wegwahl."""
 
     name: str
@@ -513,7 +512,7 @@ def render_report(
             f"- davon zusaetzlich mit Viertel: {levels.cells_with_neighbourhood}",
             f"- nur Region/Land (gilt als kein Name): {levels.cells_region_or_country_only}",
         ]
-        # AUSFALL und NICHTTREFFER bleiben getrennt (ADR 0102 Punkt 5). Die Zeile erscheint nur,
+        # AUSFALL und NICHTTREFFER bleiben getrennt. Die Zeile erscheint nur,
         # wenn es tatsaechlich einen Ausfall gab: Der lokale Datensatz kennt keinen - er liegt
         # vor und antwortet, oder es entsteht gar kein Auflöser. Eine dauerhaft auf null stehende
         # Zeile behauptete eine Messung, die niemand vornimmt.

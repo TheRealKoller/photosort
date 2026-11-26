@@ -7,7 +7,7 @@ Restdauer des laufenden Teilschritts).
 
 Genau eine Definition, weil zwei Uhren mit verschiedener Zeitzonenbehandlung eine Restdauer
 ergaeben, die um den Zonenversatz danebenliegt - ohne Ausnahme, ohne Fehlermeldung und ohne roten
-Test (ADR 0116, Konsequenzen).
+Test.
 """
 
 from __future__ import annotations

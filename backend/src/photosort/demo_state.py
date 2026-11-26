@@ -20,20 +20,20 @@ SQLAlchemy-Modelle und die echte Cache-Schluessel-Bildung, liegt damit im Produk
 bewusst destruktiv (es loescht seine eigenen Demo-Projekte, bevor es sie neu anlegt). Drei
 Eigenschaften halten das zusammen:
 
-* **Dreiteilige, fail-closed Sperre (M1)**, vollstaendig ausgewertet VOR dem ersten Schreibzugriff:
+* **Dreiteilige, fail-closed Sperre**, vollstaendig ausgewertet VOR dem ersten Schreibzugriff:
   eine Umgebungsvariable mit exaktem Literalwert, kein Projekt ohne Demo-Praefix in der Datenbank,
   und eine OpenCloud-Basis-URL, die leer ist oder auf einen bekannten Demo-Host zeigt. Die dritte
   Bedingung ist die einzige, die auf einer frisch aufgesetzten Produktivinstanz mit LEERER
   Datenbank noch greift - dort ist die zweite leer erfuellt.
-* **Geloescht wird nur, was dieses Modul selbst angelegt hat (M2):** zeilenweise entlang der
+* **Geloescht wird nur, was dieses Modul selbst angelegt hat:** zeilenweise entlang der
   eigenen Demo-Projekte, im Thumbnail-Cache ausschliesslich ueber die aus den eigenen
   ``(photo_id, etag)``-Paaren BERECHNETEN Pfade. Kein ``glob``, kein ``rmtree`` - die
   Cache-Dateinamen sind flache Hash-Schluessel ohne Projektzuordnung, bei einem geteilten Volume
   traefe ein Glob echte Familien-Thumbnails.
-* **Kein Aufrufpfad aus der laufenden Anwendung (M3):** kein Import aus ``main.py``/``photosort.worker``,
+* **Kein Aufrufpfad aus der laufenden Anwendung:** kein Import aus ``main.py``/``photosort.worker``,
   kein Endpunkt, kein Compose-``command``. Ein Test haelt das ueber den Import-Graphen fest.
 
-Fehlermeldungen nennen nur Bedingung und Status, nie Konfigurationswerte (M2).
+Fehlermeldungen nennen nur Bedingung und Status, nie Konfigurationswerte.
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ from photosort.worker import rebuild_run_selection
 
 # Der Praefix ist der Anker der gesamten Sperre: exakt so, mit Geviertstrich und beidseitigem
 # Leerzeichen. Eine lockere Pruefung ("startswith('Demo')") wuerde ein reales Projekt
-# "Demolition Sommer 2019" freigeben und loeschen (Edge Case E9 der Spec).
+# "Demolition Sommer 2019" freigeben und loeschen.
 DEMO_PROJECT_PREFIX = "Demo — "
 
 EMPTY_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Leeres Projekt"
@@ -160,14 +160,14 @@ DUPLICATE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Duplikate"
 LONG_AUSSCHUSS_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Langer Ausschuss"
 OPERATIONS_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Vorgänge"
 
-# Umgebungsvariable + exakter Satz-Literal (M1a). Bewusst KEIN "gesetzt"/truthy-Test: `1`/`true`
+# Umgebungsvariable + exakter Satz-Literal. Bewusst KEIN "gesetzt"/truthy-Test: `1`/`true`
 # setzt man versehentlich, einen Satz wie diesen nicht.
 CONFIRM_ENV_VAR = "PHOTOSORT_DEMO_STATE_CONFIRM"
 CONFIRM_LITERAL = "yes-wipe-and-seed-demo-data"
 
-# Fotoanzahl der grossen Sammlung. Vorgabe der Spec: Band 60-80 - genug fuer Scrollen und
-# Listendichte, bewusst keine Performance-Groessenordnung. Die Tests fahren diese Groesse genau
-# EINMAL; alle uebrigen Testfaelle uebergeben eine kleine Anzahl (Edge Case E6).
+# Fotoanzahl der grossen Sammlung: genug fuer Scrollen und Listendichte, bewusst keine
+# Performance-Groessenordnung. Die Tests fahren diese Groesse genau EINMAL; alle uebrigen
+# Testfaelle uebergeben eine kleine Anzahl.
 LARGE_COLLECTION_PHOTO_COUNT = 72
 
 # Fotoanzahl des Fehlerzustands-Projekts - klein, aber gross genug, dass ein Foto ohne
@@ -180,12 +180,10 @@ ERROR_STATE_PHOTO_COUNT = 6
 # ZWEI Gruppen VERSCHIEDENER Groesse, und das ist keine Zugabe: Die Ansicht sagt zu, bei mehr
 # Mitgliedern UMZUBRECHEN statt die Bilder zu verkleinern. Pruefbar ist das nur, wenn eine zweite
 # Gruppe anderer Groesse dieselbe Kachelbreite zeigt - mit einer einzigen Gruppe bliebe die Zusage
-# unbelegt, und genau dieser Fehler faellt in keinem Rendering-Test auf. Die sieben bringen dabei
-# auf der breiten Pruefbreite (drei Spalten) eine angebrochene dritte Zeile, also den Umbruch
-# selbst und nicht bloss eine volle Zeile.
+# unbelegt, und genau dieser Fehler faellt in keinem Rendering-Test auf.
 DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
 
-# Die dritte Gruppe desselben Projekts (Spec 0639): ZWEI praktisch identische Aufnahmen, vom Lauf
+# Die dritte Gruppe desselben Projekts: ZWEI praktisch identische Aufnahmen, vom Lauf
 # automatisch entschieden. Eigene Konstante, weil `DEMO_DUPLICATE_GROUP_SIZES` die beiden OFFENEN
 # Gruppen bleibt - ein Eintrag dort naehme der Sichtpruefung den Anfangszustand und machte den
 # Gruppenzaehler falsch. Der Gewinner traegt die hoehere Aufloesung und liegt ueber der
@@ -204,16 +202,15 @@ DEMO_AUTO_DECIDED_GROUP_SIZE = 2
 AUSSCHUSS_PAGE_SIZE = 60
 LONG_AUSSCHUSS_PHOTO_COUNT = AUSSCHUSS_PAGE_SIZE + 4
 
-# Spec 0641: das Projekt mit dem wartenden und dem abgebrochenen Lauf. Vier Fotos genuegen, damit
-# der eingefrorene Teilstand „2 von 4" weder 0 noch vollstaendig ist.
+# Das Projekt mit dem wartenden und dem abgebrochenen Lauf. Vier Fotos genuegen, damit der
+# eingefrorene Teilstand „2 von 4" weder 0 noch vollstaendig ist.
 OPERATIONS_PHOTO_COUNT = 4
 _OPERATIONS_PROCESSED_COUNT = 2
 
-# Hostnamen, die als "eindeutig lokal/Demo" gelten (M1c). Muster inklusive Port-Pflicht aus
-# scripts/seed-opencloud-demo.py::validate_demo_base_url - dort als Copilot-Review-Fund ergaenzt,
-# weil "http://localhost" (impliziter Port 80) sonst einen ganz anderen lokalen Dienst treffen
-# koennte. Bewusst nachgebaut statt importiert: scripts/ ist ein eigenstaendiges Python-Paket und
-# im Backend-Image nicht installiert.
+# Hostnamen, die als "eindeutig lokal/Demo" gelten. Muster inklusive Port-Pflicht wie
+# scripts/seed-opencloud-demo.py::validate_demo_base_url - sonst koennte "http://localhost"
+# (impliziter Port 80) einen ganz anderen lokalen Dienst treffen. Bewusst nachgebaut statt
+# importiert: scripts/ ist ein eigenstaendiges Python-Paket und im Backend-Image nicht installiert.
 _DEMO_HOSTS = frozenset({"opencloud-demo", "localhost", "127.0.0.1", "::1"})
 
 # Bilderzeugung: fester Zufallskeim, fester Formatsatz, feste JPEG-Qualitaet - zwei Laeufe
@@ -221,7 +218,7 @@ _DEMO_HOSTS = frozenset({"opencloud-demo", "localhost", "127.0.0.1", "::1"})
 _IMAGE_SEED = "photosort-demo-state-v1"
 _IMAGE_JPEG_QUALITY = 90
 
-# Vier Formate statt eines einzigen (ADR 0110, Konsequenzen): An lauter gleichen Verhaeltnissen
+# Vier Formate statt eines einzigen: An lauter gleichen Verhaeltnissen
 # ist ein justiertes Zeilenraster von einem Spaltenraster nicht zu unterscheiden - der
 # E2E-Pruefstack pruefte die Zusage "kein Beschnitt, gemeinsame Zeilenhoehe" dann gar nicht.
 # Hoch, quer, breit und quadratisch, alle innerhalb des Gueltigkeitsbands aus thumbnails.py.
@@ -244,7 +241,7 @@ _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
 # waere bereits entschieden und zeigte den Zustand nicht mehr).
 _OPEN_SUGGESTION_INDEX = 3
 
-# Die vier Motiv-Fotozustaende (specs/features/0427-motive-mit-staerke.md). Bewusst VIER
+# Die vier Motiv-Fotozustaende. Bewusst VIER
 # verschiedene Indizes, keiner davon derselbe: fielen zwei Sonderzustaende auf dasselbe Foto,
 # zeigte die Sichtpruefung im Browser einen von beiden nie.
 #
@@ -257,7 +254,7 @@ DEMO_UNASSESSED_INDEX = 5
 DEMO_LOCAL_BASIS_INDEX = 6
 DEMO_EXCLUDED_INDEX = 7
 
-# Spec 0609: GENAU EIN Foto der Demo traegt eine Eye-Kopfzeile, damit die dritte Grundlage samt
+# GENAU EIN Foto der Demo traegt eine Eye-Kopfzeile, damit die dritte Grundlage samt
 # Namensnennung, Bilanzzeile und Eye-Band ueberhaupt sichtbar ist. Es ist DASSELBE Foto wie die
 # lokale Grundlage: der Seeder schreibt zuerst lokal und laesst dann Eye darueberlaufen - also den
 # Produktionspfad, in dem die verdraengte lokale Kopfzeile als Schnappschuss in die Rueckbaudaten
@@ -319,7 +316,7 @@ _RATED_STATUS_ORDER = tuple(RatingStatus)
 # Die Bewertungszeilen der Demo-Instanz, je Eintrag ein Foto: (Albumentscheidung, Favorit).
 #
 # DREI Zustaende, und alle drei werden gebraucht: der erste traegt BEIDES - genau die Lage, die
-# ADR 0098 neu ermoeglicht und die die Sichtpruefung sonst nirgends zu sehen bekaeme; der letzte
+# die Sichtpruefung sonst nirgends zu sehen bekaeme; der letzte
 # traegt AUSSCHLIESSLICH das Kennzeichen und ist damit zugleich der Zustand "keine
 # Albumentscheidung trotz vorhandener Zeile".
 #
@@ -355,7 +352,7 @@ _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
 
-# Die abgeschlossene Klassifizierungspruefung des "bewertet"-Zustands (Spec 0616). Bilanz und
+# Die abgeschlossene Klassifizierungspruefung des "bewertet"-Zustands. Bilanz und
 # Zeitpunkte sind FREI ERFUNDEN - aus demselben Grund wie die Cloud-Bilanz darueber: Screenshots
 # landen oeffentlich. Die Staerken liegen deutlich beidseits der Praesenzgrenze, damit eine
 # Abweichung nie an der Grenze haengt.
@@ -441,14 +438,14 @@ _DEMO_LANDMARK_CONFIDENCE = 0.91
 _DEMO_SINGLE_CELL_OFFSET = 0.05
 
 # DIE AUFGELÖSTEN ORTSNAMEN der Demo-Events, als LITERALE: `demo_state` ruft nie einen Auflöser
-# und bezieht keinen Ortsdatensatz (S10).
+# und bezieht keinen Ortsdatensatz.
 #
 # Die Kardinalität ist der Zweck: ZWEI Events teilen sich denselben Ortsnamen und tragen deshalb
 # ihr Viertel. Ohne diesen Fall ist die Viertel-Regel im Browser unsichtbar, und `browse-app` kann
 # sie nicht zeigen.
 #
 # DREI der vier Events tragen einen Namen, das vierte hat gar keine Ortsangabe (dort gibt es nichts
-# aufzuloesen). Seit Spec 0514 (ADR 0120) ist auch das LANDMARK-Event darunter: der Ortsname tritt
+# aufzuloesen). Auch das LANDMARK-Event ist darunter: der Ortsname tritt
 # neben die Sehenswuerdigkeit, statt von ihr verdraengt zu werden, und `browse-app` sieht die
 # kombinierte Ueberschrift "Name, Ort" sonst nie.
 #
@@ -462,10 +459,10 @@ _DEMO_PLACE_NAMES = {
     _DEMO_MULTIPLE_PLACES_EVENT: "Paris, Gros-Caillou",
 }
 
-# specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 8: der "bewertet"-Zustand muss
-# ALLE Zustaende hergeben, die die Kameraliste und die Fotoansicht zeigen koennen - eine Kamera
-# OHNE Versatz, eine MIT gesetztem Versatz und Fotos ohne bestimmbare Kamera. Sonst ist die
-# Sichtpruefung ueber den `browse-app`-Skill fuer die Kennzeichnung "korrigiert" blind.
+# Der "bewertet"-Zustand muss ALLE Zustaende hergeben, die die Kameraliste und die Fotoansicht
+# zeigen koennen - eine Kamera OHNE Versatz, eine MIT gesetztem Versatz und Fotos ohne bestimmbare
+# Kamera. Sonst ist die Sichtpruefung ueber den `browse-app`-Skill fuer die Kennzeichnung
+# "korrigiert" blind.
 _DEMO_CAMERA_SLOT_COUNT = 3
 _DEMO_CAMERA_WITHOUT_OFFSET = ("Apple", "iPhone 15")
 _DEMO_CAMERA_WITH_OFFSET = ("Canon", "Canon EOS 5D")
@@ -477,8 +474,8 @@ _DEMO_CAMERA_WITH_OFFSET = ("Canon", "Canon EOS 5D")
 # Kommentar zu `_demo_event_index` oben als "von der Anwendung selbst nie geschrieben" ablehnt.
 _DEMO_CAMERA_OFFSET_MINUTES = -13
 
-# Zwei FREI ERFUNDENE Personen (S14 - kein echter Name,
-# kein echtes Gesicht). Der zweite Name hat genau die Hoechstlaenge `MAX_NAME_CODE_POINTS`: An ihm
+# Zwei FREI ERFUNDENE Personen (kein echter Name, kein echtes Gesicht). Der zweite Name hat genau
+# die Hoechstlaenge `MAX_NAME_CODE_POINTS`: An ihm
 # zeigt der Pruefstack, dass die Personen-Filtergruppe bei schmaler Breite in sich scrollt und die
 # Seite nicht.
 DEMO_PERSON_NAMES = ("Mara Lindqvist", "Henrike Adelheid Sommerfeld-Wintergarten")
@@ -503,7 +500,7 @@ _DEMO_PERSON_FIRST_REFERENCES = (
 # Ein weiteres gezeigtes Gesicht der ersten Person ueber `persons.assign_face`:
 # (Person, Foto-Index, Merkmal) - nahe an ihrer ersten Referenz, weit weg von der zweiten Person.
 _DEMO_PERSON_MORE_REFERENCES = ((0, 1, _demo_unit_embedding((0, 0.8), (2, 0.6))),)
-# Die ERFUNDENE Box jedes gezeigten Gesichts (Spec 0551): Sie stammt aus keinem Detektor, die
+# Die ERFUNDENE Box jedes gezeigten Gesichts: Sie stammt aus keinem Detektor, die
 # Demo-Bilder enthalten keine Gesichter. Mit Box und Referenz stehen die Karten auf "Gesicht
 # gezeigt".
 _DEMO_FACE_BOX = FaceBox(x=0.375, y=0.25, width=0.25, height=0.375)
@@ -583,12 +580,12 @@ class DemoStateError(Exception):
     """Erwarteter, benutzerseitig behebbarer Abbruch (Sperre nicht erfuellt, DB nicht erreichbar).
 
     Wird in main() zu einer kurzen Meldung auf stderr und einem Exit-Code != 0. Der Text nennt nur
-    Bedingung und Status, nie einen Konfigurationswert (M2) - ein durchgereichter Wert waere genau
+    Bedingung und Status, nie einen Konfigurationswert - ein durchgereichter Wert waere genau
     der Pfad, ueber den eine echte OPENCLOUD_BASE_URL oder ein Token in ein CI-Log geriete.
     """
 
 
-# --- Reine Praedikate der dreiteiligen Sperre (M1) --------------------------------------------
+# --- Reine Praedikate der dreiteiligen Sperre ----------------------------------------------------
 
 
 def is_demo_project_name(name: str) -> bool:
@@ -648,8 +645,8 @@ def demo_project_specs(
 ) -> tuple[DemoProjectSpec, ...]:
     """Die sieben Zustaende in fester Reihenfolge.
 
-    Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default
-    (Edge Case E6): die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
+    Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default:
+    die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
     Die Anzahl des bewerteten Projekts leitet sich dagegen aus dem festen MOTIVSET ab: acht
     Fotos, eines je Motiv, jedes mit einer Spitzenstaerke in genau einem Motiv - so ist jedes
     Motiv im Demo-Bestand mindestens einmal stark, ohne dass irgendwo eine abgeschriebene Liste
@@ -685,7 +682,7 @@ def demo_project_specs(
             slug="langer-ausschuss",
             photo_count=LONG_AUSSCHUSS_PHOTO_COUNT,
         ),
-        # EIGENES Projekt fuer den wartenden und den abgebrochenen Lauf (Spec 0641): Ein wartender
+        # EIGENES Projekt fuer den wartenden und den abgebrochenen Lauf: Ein wartender
         # Lauf sperrt die Ausloeser seines Schritts und blendet die Vorgangsleiste ein. In einem
         # der uebrigen Projekte nahme er deren Browserfaellen genau die Bedienelemente weg, die
         # sie pruefen.
@@ -783,7 +780,7 @@ async def load_demo_projects(session: AsyncSession) -> list[Project]:
 async def check_only_demo_projects(session: AsyncSession) -> None:
     """Teil (b) der Sperre: kein einziges Projekt ohne Demo-Praefix in der Datenbank.
 
-    Eine LEERE Datenbank erfuellt die Bedingung (Edge Case E8) - der Erstlauf darf nicht daran
+    Eine LEERE Datenbank erfuellt die Bedingung - der Erstlauf darf nicht daran
     scheitern, dass noch keine Demo-Projekte existieren. Gemeldet wird nur die Anzahl, nie ein
     Projektname: Projektnamen sind Familiendaten."""
     projects = (await session.execute(select(Project.name))).scalars().all()
@@ -799,7 +796,7 @@ async def check_only_demo_projects(session: AsyncSession) -> None:
 async def assert_safe_to_seed(
     session: AsyncSession, *, confirmation: str | None, opencloud_base_url: str
 ) -> None:
-    """Die dreiteilige, fail-closed Sperre (M1), vollstaendig ausgewertet VOR dem ersten
+    """Die dreiteilige, fail-closed Sperre, vollstaendig ausgewertet VOR dem ersten
     Schreibzugriff. Reihenfolge: die beiden reinen Bedingungen zuerst, danach die Datenbankfrage -
     ein fehlgeleiteter Aufruf soll gar nicht erst lesend auf eine fremde Datenbank gehen."""
     check_confirmation(confirmation)
@@ -818,17 +815,15 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     Die Aufzaehlung der abhaengigen Tabellen und die Cache-Loeschung stehen NICHT hier, sondern in
     `project_deletion.py`/`thumbnails.py` - dieselbe Loeschung existierte sonst ein zweites Mal
     neben `DELETE /projects/{id}`, und zwei Aufzaehlungen driften. Die Import-Richtung ist dabei
-    verbindlich: dieses Modul importiert `project_deletion`, nie umgekehrt (M3, siehe
-    Modul-Docstring dort).
+    verbindlich: dieses Modul importiert `project_deletion`, nie umgekehrt.
 
-    EINE bewusste Verhaltensaenderung gegenueber der frueheren Fassung: der Cache wird jetzt NACH
-    der Zeilenloeschung geraeumt statt davor (die Reihenfolge des gemeinsamen Moduls). Die
+    Der Cache wird NACH der Zeilenloeschung geraeumt statt davor. Die
     `(photo_id, etag)`-Paare werden weiterhin VORHER gelesen - danach gaebe es die Zeilen nicht
     mehr, aus denen sich die Pfade berechnen liessen.
 
     Rueckgabe: Anzahl entfernter Projekte."""
     # Die Demo-Personen ZUERST und unabhaengig von den Projekten: Sie sind global und haengen an
-    # keinem Projekt. Entfernt werden ausschliesslich die mit einem Demo-Namen (M2).
+    # keinem Projekt. Entfernt werden ausschliesslich die mit einem Demo-Namen.
     await _delete_demo_persons(session)
     projects = await load_demo_projects(session)
     project_ids = [project.id for project in projects]
@@ -887,7 +882,7 @@ async def _create_photos(
         # Ueber `shifted`, nicht ueber eine eigene Addition: der Demo-Zustand muss dieselbe
         # Invariante erfuellen wie produktive Daten.
         corrected = shifted(recorded, 0 if camera is None else camera.offset_minutes)
-        if corrected is None:  # pragma: no cover - die Demo-Werte liegen weit im Bereich
+        if corrected is None:  # pragma: no cover
             raise DemoStateError(
                 "Der Demo-Versatz ergibt eine Aufnahmezeit ausserhalb des darstellbaren "
                 "Bereichs. Abbruch."
@@ -927,7 +922,7 @@ async def _create_photos(
                     "nicht beschreibbar?). Abbruch."
                 )
             photo.aspect_ratio = variants.aspect_ratio
-            # Dieselbe Dekodierung traegt die Aufloesung (ADR 0146 Punkt 2); der Demo-Bestand
+            # Dieselbe Dekodierung traegt die Aufloesung; der Demo-Bestand
             # bildet den Zustand NACH dem Scan ab, also steht auch der Merker.
             photo.pixel_count = variants.pixel_count
             photo.pixel_count_probed = True
@@ -985,7 +980,7 @@ async def _seed_motif_assessments(
     session: AsyncSession, slug: str, photos: list[Photo], user_ids: Sequence[int]
 ) -> None:
     """Kopfzeilen, Staerkevektoren und GENAU EINE Korrektur - je Foto so, dass alle vier
-    Fotozustaende im Demo-Bestand vorkommen (specs/features/0427-motive-mit-staerke.md).
+    Fotozustaende im Demo-Bestand vorkommen.
 
     Ohne diese vier Zustaende sieht eine Sichtpruefung im Browser nur den Regelfall, und die drei
     Sonderdarstellungen (Satz statt Liste, lokale Grundlage mit nicht beurteilbaren Zeilen,
@@ -995,7 +990,7 @@ async def _seed_motif_assessments(
     * `DEMO_LOCAL_BASIS_INDEX` beginnt mit einer lokalen Grundlage ohne Anbieter (die beiden
       lokal nicht beurteilbaren Motive stehen dort auf 0) und wird anschliessend von Eye
       verdraengt - das Foto zeigt damit die dritte Grundlage, und sein lokaler Vektor liegt als
-      Schnappschuss daneben (Spec 0609, Produktionspfad statt Nachbau). Die Sichtpruefung sieht
+      Schnappschuss daneben - Produktionspfad statt Nachbau. Die Sichtpruefung sieht
       die lokale Darstellung damit nur noch als Zwischenzustand, nicht als stehende Kopfzeile.
     * `DEMO_EXCLUDED_INDEX` ist als Dokument ausgeschlossen - mit erhaltenen Staerken daneben,
       denn der Ausschluss setzt sie nicht auf 0.
@@ -1011,7 +1006,7 @@ async def _seed_motif_assessments(
     Nullen enthaelt, und die Bandgrenzen blieben in der Sichtpruefung unsichtbar. Der Ueberhang
     bei mehr Fotos als Motiven laeuft ueber den Modulo zurueck auf den Anfang.
 
-    Seit Spec 0609 traegt DASSELBE Foto zusaetzlich eine Eye-Kopfzeile: die lokale Grundlage
+    DASSELBE Foto traegt zusaetzlich eine Eye-Kopfzeile: die lokale Grundlage
     (und ihr Vektor im Schnappschuss) entsteht zuerst, danach laeuft Eye darueber. Damit zeigt
     die Demo den dritten Herkunftszweig, die Namensnennung und das Eye-Band, ohne einen Zustand
     zu erfinden, den die Anwendung nie schriebe.
@@ -1386,10 +1381,8 @@ async def _seed_rated_project(
         photos_total=len(photos),
         photos_processed=len(photos),
         # KEIN `phase`: Der Lauf ist abgeschlossen (`status=SUCCESS`), und ein abgeschlossener
-        # Lauf traegt keinen laufenden Teilschritt (ADR 0116 Punkt 1). Der frueher hier gesetzte
-        # Wert widersprach der Invariante, auf die AK8 der Spec 0481 sich stuetzt - der eigene
-        # Demo-Bestand war der einzige Ort, an dem sie falsch war.
-        # Der Beginn `phase_started_at` faellt damit mit weg; beide Spalten gehoeren zusammen.
+        # Lauf traegt keinen laufenden Teilschritt. Der Beginn `phase_started_at` faellt damit
+        # mit weg; beide Spalten gehoeren zusammen.
         # Der "bewertet"-Zustand traegt die vollstaendige Lauf-Bilanz: beide Cloud-Teilschritte,
         # verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst waere der Block im
         # Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne Cloud" bleibt im
@@ -1446,8 +1439,8 @@ async def _seed_rated_project(
         )
         # GENAU EIN erkannter Name im Landmark-Event. Genau einer, nicht mehrere: Ein zweiter Name
         # im selben Event bliebe zwar drin, waere aber ohne Wirkung auf die Anzeige - das Event
-        # traegt den Namen mit den meisten Traegern, bei Gleichstand den frueheren (Spec 0514,
-        # ADR 0120). Der Demo-Zustand soll das Event mit `kind="landmark"` zeigen, nicht einen
+        # traegt den Namen mit den meisten Traegern, bei Gleichstand den frueheren. Der
+        # Demo-Zustand soll das Event mit `kind="landmark"` zeigen, nicht einen
         # unsichtbaren zweiten Namen. Die uebrigen Fotos
         # des Events tragen den Namen ueber `PhotoOut.event.place` mit - genau das ist der Zustand,
         # den die Sichtpruefung sehen soll.
@@ -1751,7 +1744,7 @@ async def _seed_classification_review(
 async def _seed_final_selection_dissent(
     session: AsyncSession, criterion_scoring_run_id: int, users: Sequence[User]
 ) -> None:
-    """Die vier Zustaende der gemeinsamen Endauswahl auf der Demo-Instanz (Spec 0431).
+    """Die vier Zustaende der gemeinsamen Endauswahl auf der Demo-Instanz.
 
     Ohne diesen Block bekommen ALLE Nutzer dieselben Bewertungen - die Nutzer sind dann per
     Definition einig, die Arbeitssicht zeigt dauerhaft "keine Unterschiede", und KEIN Test wuerde
@@ -1846,7 +1839,7 @@ async def _seed_feedback_events(
     photos: Sequence[Photo],
     user_ids: Sequence[int],
 ) -> None:
-    """Das Ereignis-Log der Nacharbeit auf der Demo-Instanz (Spec 0432).
+    """Das Ereignis-Log der Nacharbeit auf der Demo-Instanz.
 
     OHNE DIESEN BLOCK zeigt der Diagnoseabschnitt dort dauerhaft seinen Nullzustand, und KEIN Test
     wuerde rot: Die Pruefstack-Spezifikation misst die Statistik-Route bereits und maesse dann
@@ -1856,7 +1849,7 @@ async def _seed_feedback_events(
     summiert - und die unbestimmte ist ohne eigenen Eintrag nicht darstellbar. Die eingefrorenen
     Stufen stehen dafuer in `_DEMO_EXCHANGES` und werden NICHT aus der heutigen Modellbewertung
     gelesen: Ein Ereignis haelt die Lage zum Zeitpunkt der Korrektur fest, und ein spaeterer Lauf
-    ueberschreibt sie - genau das ist der Gegenstand des Einfrierens (ADR 0100 Punkt 2). Die
+    ueberschreibt sie - genau das ist der Gegenstand des Einfrierens. Die
     unbestimmte Tauschart entsteht so aus dem gewoehnlichsten Hergang ueberhaupt: Das Bild wurde
     ausgetauscht, BEVOR es eine Modellbewertung trug.
 
@@ -1868,7 +1861,7 @@ async def _seed_feedback_events(
     roetete keinen Test.
 
     OHNE NUTZER ENTSTEHT NICHTS ausser den gemeinsamen Entscheidungen: Die tragen bewusst keinen
-    Nutzerbezug (S9), alles andere haengt an einem vorhandenen Konto."""
+    Nutzerbezug, alles andere haengt an einem vorhandenen Konto."""
     rankings = {
         photo_id: (event_id, rank_score)
         for photo_id, event_id, rank_score in (
@@ -2058,10 +2051,10 @@ async def _seed_duplicate_project(
     session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
 ) -> list[Photo]:
     """Zustand 5: drei Duplikat-Gruppen - zwei offene verschiedener Groesse und eine automatisch
-    entschiedene aus zwei praktisch identischen Aufnahmen (Spec 0639).
+    entschiedene aus zwei praktisch identischen Aufnahmen.
 
     Ohne diesen Bestand ist die Vergleichsansicht weder vorfuehrbar noch im Browser pruefbar, und
-    kein Test wuerde rot (ADR 0104).
+    kein Test wuerde rot.
 
     Der Bestand entsteht GENAU SO, wie ihn ein echter Ausschuss-Lauf hinterliesse: Je Gruppe
     traegt das erste Foto kein `duplicate_of` (der Gewinner), alle uebrigen
@@ -2072,7 +2065,7 @@ async def _seed_duplicate_project(
     Schaerfeschwelle, deren Gewinner trotzdem herausfaellt. Sein Ausschuss folgt nicht aus dem
     Duplikat (`duplicate_of` bleibt `None`), und kein Wert der Entscheidungszeile aendert ihn: Er
     ist das UNVERAENDERLICHE Mitglied, an dem die Kachel ohne Wahlschaltflaechen vorfuehrbar wird.
-    Ohne ihn ist AK3 der Spec 0486 im Browser nicht pruefbar.
+    Ohne ihn ist dieser Zustand im Browser nicht pruefbar.
 
     Die DRITTE Gruppe steht hinter den beiden offenen: Der Lauf hat sie als praktisch identisch
     erkannt, deshalb traegt der Verlierer den Merker `auto_decided` und es gibt KEINE
@@ -2129,7 +2122,7 @@ async def _seed_duplicate_project(
         erste += size
 
     # Die automatisch entschiedene Gruppe. Der Gewinner ist die Aufnahme mit der hoeheren
-    # Aufloesung - die Regel des Laufs (ADR 0146 Punkt 4), nicht eine abgeschriebene Id.
+    # Aufloesung - die Regel des Laufs, nicht eine abgeschriebene Id.
     automatisch = photos[erste : erste + DEMO_AUTO_DECIDED_GROUP_SIZE]
     assert len(automatisch) == DEMO_AUTO_DECIDED_GROUP_SIZE
     gewinner = max(automatisch, key=lambda photo: (photo.pixel_count or 0, -photo.id))
@@ -2167,9 +2160,9 @@ async def _seed_duplicate_project(
             photos_processed=len(photos),
             suggestions_found=mit_vorschlag,
             # Das Gate bleibt UNBESTAETIGT: Der Ausschuss-Schritt zeigt seine Uebersicht samt
-            # Abschluss-Aktion nur, solange nicht bestaetigt wurde (Spec 0525) - und genau diese
-            # Ansicht soll der Demo-Bestand vorfuehrbar machen. Der listenweite Einstieg in die
-            # Vergleichsansicht haengt seit Spec 0525 nicht mehr am Gate.
+            # Abschluss-Aktion nur, solange nicht bestaetigt wurde - und genau diese Ansicht soll
+            # der Demo-Bestand vorfuehrbar machen. Der listenweite Einstieg in die
+            # Vergleichsansicht haengt nicht am Gate.
             gate_confirmed_at=None,
         )
     )
@@ -2227,7 +2220,7 @@ async def _seed_long_ausschuss_project(
 async def _seed_operations_project(
     session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
 ) -> list[Photo]:
-    """Zustand 7 (Spec 0641): ein WARTENDER Scan und eine ABGEBROCHENE Klassifizierung.
+    """Zustand 7: ein WARTENDER Scan und eine ABGEBROCHENE Klassifizierung.
 
     Der wartende Scan ist der juengste Scan-Lauf hinter einem erfolgreichen: „Scan wartet", sein
     Abbrechen-Knopf und „Alle abbrechen" werden damit erreichbar. Er traegt KEINEN Abbruchwunsch,
@@ -2236,7 +2229,7 @@ async def _seed_operations_project(
 
     Die abgebrochene Klassifizierung steht hinter einem erfolgreichen, bestaetigten Ausschuss -
     nur dann ist ihr Schritt erreichbar. Sie traegt, was `worker/_runs.py::finish_cancelled`
-    hinterliesse: Merker, Endzeit, die letzte `phase` samt ihrem Beginn (ADR 0116 Punkt 1), einen
+    hinterliesse: Merker, Endzeit, die letzte `phase` samt ihrem Beginn, einen
     eingefrorenen Teilstand und KEINE Fehlermeldung."""
     project = await _create_project(session, spec)
     photos = await _create_photos(session, project, spec, cache_dir)
@@ -2359,7 +2352,7 @@ async def _rebuild_with_own_session(
     try:
         session_factory = make_session_factory(engine)
         async with session_factory() as session:
-            # Die vollstaendige Sperre laeuft VOR dem ersten Schreibzugriff (M1).
+            # Die vollstaendige Sperre laeuft VOR dem ersten Schreibzugriff.
             await assert_safe_to_seed(
                 session, confirmation=confirmation, opencloud_base_url=opencloud_base_url
             )
@@ -2372,7 +2365,7 @@ async def _rebuild_with_own_session(
 
 def render_summary(summary: DemoStateSummary) -> str:
     """Reine Formatierung der Ausgabe - Zaehlwerte und die eigenen Projektnamen, sonst nichts.
-    Kein Konfigurationswert, kein Pfad, kein Nutzername (M2)."""
+    Kein Konfigurationswert, kein Pfad, kein Nutzername."""
     lines = [
         "Demo-Datenbestand neu aufgebaut.",
         f"Projekte: {len(summary.project_names)}",
@@ -2426,7 +2419,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
         return 1
     except SQLAlchemyError as exc:
         # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
-        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster analog OpenCloudError).
+        # DATABASE_URL inklusive Zugangsdaten enthalten.
         print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(render_summary(summary))

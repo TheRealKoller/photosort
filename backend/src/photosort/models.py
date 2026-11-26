@@ -34,10 +34,9 @@ class ScanStatus(enum.StrEnum):
 
 
 class ExportRunStatus(enum.StrEnum):
-    """Der Endzustand eines Export-Laufs. Eigener Wertevorrat statt Wiederverwendung von
-    `ScanStatus` - der Export ist der erste SCHREIBPFAD auf OpenCloud und traegt eine eigene
-    Semantik (Teilfehler enden `success`), ein geteilter Vorrat machte die beiden an jeder
-    Lesestelle verwechselbar."""
+    """Der Endzustand eines Export-Laufs. Der Export ist ein SCHREIBPFAD auf OpenCloud und traegt
+    eine eigene Semantik (Teilfehler enden `success`); ein geteilter Vorrat mit `ScanStatus`
+    machte die beiden an jeder Lesestelle verwechselbar."""
 
     QUEUED = "queued"
     RUNNING = "running"
@@ -86,7 +85,7 @@ class Project(Base):
     # Ober- und Untergrenze werden am Endpunkt durchgesetzt (`api/projects.py`), nicht hier.
     # Projektweit, ohne user_id-Bezug.
     selection_target: Mapped[int | None] = mapped_column(default=None)
-    # Die Modellwahl je Taetigkeit (ADR 0143). `category_method` ist NOT NULL mit
+    # Die Modellwahl je Taetigkeit. `category_method` ist NOT NULL mit
     # `server_default 'cloud'`; `category_model`/`landmark_model` nullbar, wobei `NULL` die
     # Installationsvorgabe bedeutet - ein ausdruecklich gespeicherter Vorgabewert bleibt ein
     # gespeicherter Wert, damit "zur vorherigen Wahl zurueckkehren" eindeutig ist.
@@ -140,9 +139,8 @@ class Project(Base):
 class RatingStatus(enum.StrEnum):
     """Die ALBUMENTSCHEIDUNG eines Nutzers zu einem Foto - zwei Werte, kein dritter.
 
-    `favorite` gehoert ausdruecklich NICHT mehr hierher: die Auszeichnung ist eine eigene,
-    unabhaengige Angabe (`Rating.favorite`) und wirkt nicht auf den Album-Entwurf (ADR 0098
-    Punkt 2)."""
+    `favorite` gehoert ausdruecklich NICHT hierher: die Auszeichnung ist eine eigene,
+    unabhaengige Angabe (`Rating.favorite`) und wirkt nicht auf den Album-Entwurf."""
 
     ALBUM_WORTHY = "album_worthy"
     REJECTED = "rejected"
@@ -159,7 +157,7 @@ class CriterionSource(enum.StrEnum):
 class ProjectCamera(Base):
     """Eine Kamera, wie sie in GENAU DIESEM Projekt vorkommt, samt ihrem Zeitversatz.
 
-    PROJEKTEIGEN, nicht projektuebergreifend (ADR 0090, Punkt 2): "der Versatz gilt nur in diesem
+    PROJEKTEIGEN, nicht projektuebergreifend: "der Versatz gilt nur in diesem
     Projekt" ist damit STRUKTURELL wahr - es gibt keine Zeile, die zwei Projekte sehen koennten,
     und kein Prädikat, das in jeder Abfrage ausgeschrieben stehen muesste. Dieselbe Kamera in zwei
     Projekten sind zwei Zeilen mit getrennten Versaetzen.
@@ -205,9 +203,8 @@ class Photo(Base):
     relative_path: Mapped[str]
     etag: Mapped[str]
     content_length: Mapped[int]
-    # DIE KORRIGIERTE ZEIT - "die Zeit, mit der die Anwendung arbeitet" (ADR 0090, Punkt 1). Der
-    # Name und die Rolle sind unveraendert, der INHALT hat sich mit Spec 0426 gedreht: hier steht
-    # seither die um den Kamera-Versatz verschobene Zeit, nicht mehr die aufgezeichnete.
+    # DIE KORRIGIERTE ZEIT - "die Zeit, mit der die Anwendung arbeitet". Hier steht die um den
+    # Kamera-Versatz verschobene Zeit, nicht die aufgezeichnete.
     #
     # INVARIANTE, im Schreibpfad gehalten: `taken_at == taken_at_original + offset_minutes` der
     # Kamera dieses Fotos in genau diesem Projekt; ohne Kamera oder bei `offset_minutes = 0` sind
@@ -219,8 +216,8 @@ class Photo(Base):
     #
     # Deshalb aendert sich an KEINER Lesestelle etwas: `assign_clusters`, `build_events`,
     # `infer_locations`, die SQL-Sortierung der Fotoliste und `min`/`max` der Statistik rechnen
-    # ohne eine Zeile Aenderung mit dem korrigierten Wert. Gruppierung, Reihenfolge und
-    # Ortsuebernahme haben KEINE eigene Korrekturlogik.
+    # mit dem korrigierten Wert. Gruppierung, Reihenfolge und Ortsuebernahme haben KEINE eigene
+    # Korrekturlogik.
     taken_at: Mapped[datetime]
     # Die AUFGEZEICHNETE Zeit: EXIF `DateTimeOriginal`, sonst der Rueckfall auf `last_modified`.
     #
@@ -265,7 +262,7 @@ class Photo(Base):
     # OpenCloud ändert.
     gps_lat: Mapped[float | None] = mapped_column(default=None)
     gps_lon: Mapped[float | None] = mapped_column(default=None)
-    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes, also nach EXIF-Orientierung (ADR 0110).
+    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes, also nach EXIF-Orientierung.
     # `None` heisst "nicht bekannt" und ist ein REGULAERER Zustand, kein Fehler: Jeder Lesepfad
     # antwortet dafuer fehlerfrei, und die Oberflaeche plant ein solches Foto mit 3:2 ein.
     #
@@ -278,7 +275,7 @@ class Photo(Base):
     # Vorschaubild und kennt die Masse des Originals nicht, nur sein Verhaeltnis.
     aspect_ratio: Mapped[float | None] = mapped_column(default=None)
     # Aufloesung des ORIGINALS: Breite x Hoehe nach EXIF-Orientierung, geschrieben vom Scan aus
-    # derselben Dekodierung wie das Seitenverhaeltnis (ADR 0146 Punkt 2). `None` heisst
+    # derselben Dekodierung wie das Seitenverhaeltnis. `None` heisst
     # "unbekannt" und ist ein REGULAERER Zustand: Eine unbekannte Aufloesung sortiert in
     # Durchgang 1 zuletzt und schliesst die automatische Entscheidung aus - eine geschaetzte Zahl
     # verschoebe die Gewinnerregel stillschweigend.
@@ -352,19 +349,18 @@ class Photo(Base):
     )
     # 1:1 und optional wie die Motiv-Kopfzeile, aber an einer EIGENEN Tabelle: die
     # Albumtauglichkeit ist eine Aussage über die Bildgüte und gibt es nur mit Cloud-Grundlage,
-    # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal (ADR 0095).
+    # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal.
     album_suitability: Mapped[PhotoAlbumSuitability | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
-    # 1:1 und optional: die Eye-Auswertung als SCHATTEN neben der Motiv-Kopfzeile (Spec 0609).
+    # 1:1 und optional: die Eye-Auswertung als SCHATTEN neben der Motiv-Kopfzeile.
     # Sie existiert auch dann, wenn eine Cloud-Kopfzeile gilt - deshalb ist sie keine zweite
     # Kopfzeile, sondern ein eigener Satz, der den Vergleich mit der Cloud traegt.
     eye_result: Mapped[PhotoEyeResult | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
-    # 1:1 und optional: der lokale Vektor, den Eye verdraengt hat (Rueckbaudaten, ADR 0138
-    # Punkt 5). Ohne Rueckrichtung - der Lesepfad braucht sie nicht, und der Rueckbau ist eine
-    # eigene Story.
+    # 1:1 und optional: der lokale Vektor, den Eye verdraengt hat (Rueckbaudaten). Ohne
+    # Rueckrichtung - der Lesepfad braucht sie nicht.
     local_motif_snapshot: Mapped[PhotoLocalMotifSnapshot | None] = relationship(
         uselist=False, cascade="all, delete-orphan"
     )
@@ -373,7 +369,7 @@ class Photo(Base):
     # worker/scan.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
     # photo_rankings-Eintrag steht.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
-    # 1:1 und optional; ihre ABWESENHEIT ist der Zustand "noch nicht entschieden" (ADR 0104).
+    # 1:1 und optional; ihre ABWESENHEIT ist der Zustand "noch nicht entschieden".
     # Grundlage der Objektfassung des Überlebenden-Prädikats
     # (`duplicates.py::survives_ausschuss_for`) - ohne diese Relationship müsste jeder Lesepfad
     # die Entscheidungszeile selbst nachladen, und genau das soll die eine Stelle ersparen.
@@ -523,7 +519,7 @@ class PhotoScore(Base):
     # erneute Migration möglich.
     #
     # GETEILTER WERTEVORRAT mit `Rating.status` - eine Kopplung ohne Fremdschlüsselbeziehung
-    # (Auflage S11). Bewusst KEIN eigenes Enum für diese Spalte: Der Vorschlag ist derselbe
+    # Bewusst KEIN eigenes Enum für diese Spalte: Der Vorschlag ist derselbe
     # Sprachraum wie die Albumentscheidung, und zwei Vorräte liefen auseinander. Der Preis ist
     # eine Mitführung je Enum-Änderung: Der Wegfall von `favorite` konvertiert deshalb in
     # derselben Migration (f6a7b8c9d0e1) auch diese Spalte auf `NULL`, sonst wirft eine
@@ -533,7 +529,7 @@ class PhotoScore(Base):
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
-    # Der Lauf-Merker der automatisch entschiedenen Duplikatgruppen (ADR 0146 Punkt 3): steht nur
+    # Der Lauf-Merker der automatisch entschiedenen Duplikatgruppen: steht nur
     # an Verlierern eines identischen Sterns, den der SUCCESS-Commit desselben Laufs entschieden
     # hat. `photo_duplicate_decisions` bleibt allein Nutzerentscheidung - dieser Merker traegt
     # nicht die Autoritaet eines Klicks und ist jederzeit ueber `keep` zuruecknehmbar.
@@ -580,8 +576,8 @@ class ClassificationPhase(enum.StrEnum):
     RANKING laufen immer. PERSONS laeuft immer lokal, aber nur, wenn mindestens eine Person eine
     Referenz des geladenen Modells hat und der Adapter baubar ist. EYE laeuft nur bei `mode='eye'`
     und steht deshalb VOR CRITERIA: Rangfolge, Events und Auswahlvorschlag desselben Laufs lesen
-    schon den wirksamen Vektor (Spec 0609 / ADR 0138 Punkt 6). Getragen von
-    CriterionScoringRun.phase, dort NULL sobald der Lauf beendet ist.
+    schon den wirksamen Vektor. Getragen von CriterionScoringRun.phase, dort NULL, sobald der
+    Lauf beendet ist.
 
     RANKING (Kategorieableitung, rank_photos je Partition, Schreiben der PhotoRanking-Zeilen)
     gehört fachlich zur Kriterien-Phase, läuft aber NACH der Landmark-Phase und trägt deshalb
@@ -601,12 +597,11 @@ class ClassificationPhase(enum.StrEnum):
 
 
 class ClassificationMode(enum.StrEnum):
-    """Der Weg, den der Nutzer fuer EINEN Klassifizierungslauf waehlt (Spec 0609 / ADR 0138
-    Punkt 6) - er ersetzt die frueher boolesche Checkbox `use_cloud`.
+    """Der Weg, den der Nutzer fuer EINEN Klassifizierungslauf waehlt.
 
     Die drei Werte sind fachlich gleichrangig und werden nie stillschweigend auf einen anderen
     abgebildet: ein fehlender oder unbekannter Wert ist ein `422`, kein Rueckfall. Getragen von
-    CriterionScoringRun.mode, dort NULL fuer Altzeilen (vor dieser Story), die keinem Weg
+    CriterionScoringRun.mode, dort NULL fuer Altzeilen, die keinem Weg
     nachtraeglich zugeschlagen werden."""
 
     CLOUD = "cloud"
@@ -652,7 +647,7 @@ class CriterionScoringRun(Base):
         SQLEnum(ClassificationPhase, native_enum=False, length=20), default=None
     )
     # Der Beginn GENAU DES Teilschritts, den `phase` daneben nennt - die Messgrundlage der
-    # Restdauer (ADR 0116 Punkt 1). NICHT aus `started_at`/`last_progress_at` ableitbar:
+    # Restdauer. NICHT aus `started_at`/`last_progress_at` ableitbar:
     # `started_at` ist der Beginn des GESAMTEN Laufs, und `last_progress_at` wird in der
     # Folgephase weitergeschrieben.
     #
@@ -664,14 +659,14 @@ class CriterionScoringRun(Base):
     # von einem Quelltext-Wächter (tests/test_models.py) und dem Nachsatz
     # `assert_phase_binding` (tests/phase_binding.py).
     phase_started_at: Mapped[datetime | None] = mapped_column(default=None)
-    # Der Weg, den der Nutzer fuer DIESEN Lauf gewaehlt hat (Spec 0609 / ADR 0138 Punkt 6).
+    # Der Weg, den der Nutzer fuer DIESEN Lauf gewaehlt hat.
     # Eingefroren beim Einreihen, damit ein spaeterer Blick auf den Lauf nicht die heute
     # eingestellte Wahl liest. `NULL` heisst "Altzeile aus der Zeit vor der Laufwahl" - ein
     # solcher Lauf wird NIE nachtraeglich einem Weg zugeschlagen.
     mode: Mapped[ClassificationMode | None] = mapped_column(
         SQLEnum(ClassificationMode, native_enum=False, length=20), default=None
     )
-    # Die Quelle der ZAEHLENDEN Albumstufe dieses Laufs (ADR 0144): `cloud` liest
+    # Die Quelle der ZAEHLENDEN Albumstufe dieses Laufs: `cloud` liest
     # `photo_album_suitability.level`, `eye` liest `photo_eye_results.album_level`. Eingefroren
     # beim Laufstart aus `Project.category_method`; Rangwerte, Neuberechnung, Entwurfsanzeige und
     # Feedback-Ereignisse lesen sie von HIER, nie von der heutigen Projekteinstellung - sonst
@@ -763,7 +758,7 @@ class CriterionScoringRun(Base):
     # `NULL` aus.
     persons_photos_total: Mapped[int | None] = mapped_column(default=None)
     persons_photos_processed: Mapped[int | None] = mapped_column(default=None)
-    # Die LIVE-Zaehler der Phase `eye` (Spec 0609), dasselbe Idiom wie `persons_*`: `NULL` heisst
+    # Die LIVE-Zaehler der Phase `eye`, dasselbe Idiom wie `persons_*`: `NULL` heisst
     # "die Phase lief nicht" - gesetzt beim BETRETEN. `processed` zaehlt Fotos mit geschriebener
     # Schattenzeile; ein unlesbares Bild bleibt darunter, ein Transportfehler bricht die Phase ab.
     eye_photos_total: Mapped[int | None] = mapped_column(default=None)
@@ -794,7 +789,7 @@ class CriterionScoringRun(Base):
         ForeignKey("remote_category_classification_runs.id"), default=None
     )
 
-    # Mit WELCHER Fassung der Qualitätsgewichte dieser Lauf gerechnet hat (Spec 0432). `NULL`
+    # Mit WELCHER Fassung der Qualitätsgewichte dieser Lauf gerechnet hat. `NULL`
     # heißt "Startwerte oder Altzeile" - es gibt keine Fassung, die die Startwerte enthielte, und
     # deshalb keinen Wert, auf den eine Altzeile zeigen könnte.
     #
@@ -870,7 +865,7 @@ class Event(Base):
     # LAUF-ARTEFAKT, kein Ortswissen: Ob ein Event "Berlin" oder "Berlin, Kreuzberg" heißt, hängt
     # davon ab, was sonst im selben Lauf liegt - das ist keine Eigenschaft des Ortes. Die Auskunft
     # darüber, was an einer Zelle liegt, steht in `place_lookups` und ist lauf-unabhängig; beide
-    # dürfen nicht zu einem werden (ADR 0102 Punkt 1). Ein neuer Lauf schreibt seine Events ohnehin
+    # dürfen nicht zu einem werden. Ein neuer Lauf schreibt seine Events ohnehin
     # neu, damit entstehen die Namen neu.
     #
     # Freier, extern erzeugter Text wie `landmark_name` und mit derselben Auflage: er kommt
@@ -893,8 +888,8 @@ class PhotoRanking(Base):
     innerhalb der Partition.
 
     EIN FOTO STEHT PRO LAUF IN GENAU EINER ZEILE. Daher der Unique-Constraint über
-    `(run, photo)`. Die Partition ist allein das Event; eine Kategorie-Ebene gibt es seit Spec
-    0427 nicht mehr, und ein Motiv bildet ausdrücklich keine: die Motivstärken eines Fotos sind
+    `(run, photo)`. Die Partition ist allein das Event; eine Kategorie-Ebene gibt es nicht, und
+    ein Motiv bildet ausdrücklich keine: die Motivstärken eines Fotos sind
     acht Zahlen, keine Zugehörigkeit, und keine Schwelle macht daraus eine.
 
     `rank_position` ist innerhalb einer Partition monoton in `rank_score` (Tie-Break: niedrigere
@@ -922,7 +917,7 @@ class PhotoRanking(Base):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     # NULLABLE und `NULL` heisst GENAU EINES: "kein Qualitätswert, weil keine Modellbewertung" -
     # projektweit ohne Cloud-Freigabe, je Foto bei einem fehlgeschlagenen Aufruf. Es gibt keinen
-    # Rückfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1); ein solches Foto behält
+    # Rückfall auf einen lokal gebildeten Wert; ein solches Foto behält
     # seine `event_id`, bleibt im einsehbaren Vorrat und erscheint nicht im Entwurf.
     rank_score: Mapped[float | None] = mapped_column(default=None)
     rank_position: Mapped[int | None] = mapped_column(default=None)
@@ -963,7 +958,7 @@ class PhotoLandmarkDetection(Base):
     confidence: Mapped[float]
     computed_at: Mapped[datetime]
     provider: Mapped[str] = mapped_column(default="anthropic")
-    # Der auf das projektweite Register aufgeloeste Name (ADR 0107 Punkt 5), gefuellt in der
+    # Der auf das projektweite Register aufgeloeste Name, gefuellt in der
     # Cloud-Phase und nur oberhalb von `landmark.LANDMARK_CONFIDENCE_THRESHOLD`: Ein unsicherer und
     # wahrscheinlich falscher Name soll nicht die Anzeigeform eines Registereintrags besetzen, dem
     # sich spaeter der richtige anschliesst.
@@ -1132,7 +1127,7 @@ class MotifAssessmentSource(enum.StrEnum):
     verdraengte lokale wandert vorher in `photo_local_motif_snapshots`.
 
     `provider` ist `NULL` sowohl bei `local` als auch bei `eye` - Eye ist kein Cloud-Anbieter, ein
-    Anbieterwert behauptete einen Kontakt, der nicht stattfand (ADR 0138 Punkt 4). Die
+    Anbieterwert behauptete einen Kontakt, der nicht stattfand. Die
     Modellrevision steht in `photo_eye_results`."""
 
     CLOUD = "cloud"
@@ -1200,9 +1195,9 @@ class PhotoEyeResult(Base):
 
     Sie steht NEBEN `photo_motif_assessments`, nicht darin: Eye schreibt eine vollstaendige
     Schattenzeile (auch fuer Fotos mit Cloud-Kopfzeile), damit die Cloud-Ergebnisse gueltig bleiben
-    und ein Ausbau ohne Datenverlust moeglich ist (ADR 0138 Punkt 4). Geschrieben wird sie EINMAL
+    und ein Ausbau ohne Datenverlust moeglich ist. Geschrieben wird sie EINMAL
     je Foto: Die Phase holt nur nach, wer noch keine Zeile hat, und laesst bestehende Zeilen samt
-    `computed_at` und `mapping_version` stehen (Spec 0621).
+    `computed_at` und `mapping_version` stehen.
 
     `excluded_document` ist NOT NULL und BEWUSST ohne jeden Default - derselbe Grund wie bei der
     Motiv-Kopfzeile: ein Schreibpfad, der die Spalte vergisst, soll laut scheitern statt still
@@ -1214,7 +1209,7 @@ class PhotoEyeResult(Base):
     Eye schreibt NIE in `photo_album_suitability`, `photo_fine_labels` oder `fine_labels`: Die
     Cloud-Zeilen bleiben unberuehrt, und die Eye-Feinlabels stehen in einer eigenen Tabelle - ihr
     Vokabular ist ein anderes. `album_level` ist trotzdem die ZAHLENDE Stufe, sobald ein Lauf Eye
-    als Quelle eingefroren hat (ADR 0144); gelesen wird sie dann ausschliesslich ueber
+    als Quelle eingefroren hat; gelesen wird sie dann ausschliesslich ueber
     `album_stage.load_album_levels`."""
 
     __tablename__ = "photo_eye_results"
@@ -1264,7 +1259,7 @@ class PhotoEyeFineLabel(Base):
 
     Getrennt von `photo_fine_labels`/`fine_labels`: die dortige Registry ist geschlossen und
     dient der Cloud-Kategorieableitung; Eyes Vokabular ist ein anderes, und eine erzwungene
-    Zuordnung waere eine Aussage, die das Modell nie getroffen hat (ADR 0138 Punkt 4). Der Text
+    Zuordnung waere eine Aussage, die das Modell nie getroffen hat. Der Text
     ist fremder Modelltext und wird am Parser mit `cloud_vision.sanitize_label_text` saniert,
     laengenbegrenzt und leer weggelassen - gerendert ausschliesslich als React-Textknoten."""
 
@@ -1285,7 +1280,7 @@ class PhotoLocalMotifSnapshot(Base):
     Trifft Eye auf eine LOKALE Kopfzeile, wandert deren vollstaendiger Vektor vorher hierher
     (Kopfzeilenfelder plus acht Staerken in `photo_local_motif_snapshot_strengths`). Ohne ihn
     faellt ein Foto nach einem Ausbau auf "noch nicht klassifiziert" zurueck, obwohl es ein
-    lokales Ergebnis hatte (ADR 0138 Punkt 5).
+    lokales Ergebnis hatte.
 
     Es gibt hoechstens EINE Zeile je Foto (`photo_id` ist Primary Key); ein spaeterer lokaler
     Lauf trifft ein Foto mit Eye-Kopfzeile und schreibt seinen FRISCHEN Vektor hierher - ein
@@ -1501,8 +1496,7 @@ class PhotoAlbumSuitability(Base):
 
     Sie hängt an `photos` und NICHT an `photo_motif_assessments`: die Motiv-Kopfzeile ist eine
     Aussage über den Bildinhalt und existiert auch auf lokaler Grundlage, die Albumtauglichkeit
-    gibt es nur mit Cloud-Grundlage. Genau diese Trennung ist der Gegenstand von ADR 0095,
-    Abschnitt 4 - sie im Datenmodell zusammenzulegen hieße, sie aufzugeben.
+    gibt es nur mit Cloud-Grundlage. Sie im Datenmodell zusammenzulegen hieße, sie aufzugeben.
 
     Persistiert wird die STUFE `1..5`, nicht zusätzlich der normierte Wert: die Normierung ist
     eine reine Funktion (`album_suitability.py::normalize_level`), eine zweite Spalte daneben wäre
@@ -1526,7 +1520,7 @@ class PhotoAlbumSuitability(Base):
 
 
 class FinalSelectionDecision(Base):
-    """Die gemeinsame Entscheidung des PROJEKTS ueber EIN Foto: gehoert es ins Album (ADR 0099).
+    """Die gemeinsame Entscheidung des PROJEKTS ueber EIN Foto: gehoert es ins Album.
 
     Sie liegt eine Ebene UEBER den beiden Album-Entwuerfen, nicht daneben: Die Endauswahl selbst
     ist ABGELEITET (`album_selection.py::selection_state`), gespeichert wird ausschliesslich die
@@ -1541,7 +1535,7 @@ class FinalSelectionDecision(Base):
 
     DIE ABWESENHEIT DER ZEILE HEISST "UNENTSCHIEDEN", und es gibt keinen Weg zurueck in diesen
     Zustand: Es entsteht kein `DELETE`-Endpunkt, aendern heisst den anderen Wert schreiben.
-    "Wieder strittig werden" ist kein Zustand, den die Story kennt."""
+    "Wieder strittig werden" ist kein Zustand."""
 
     __tablename__ = "final_selection_decisions"
 
@@ -1554,7 +1548,7 @@ class FinalSelectionDecision(Base):
     photo_id: Mapped[int] = mapped_column(
         ForeignKey("photos.id", name="fk_final_selection_decisions_photo_id"), primary_key=True
     )
-    # NOT NULL, KEIN `default`, KEIN `server_default` (Auflage S4): Jede Zeile wird ausdruecklich
+    # NOT NULL, KEIN `default`, KEIN `server_default`: Jede Zeile wird ausdruecklich
     # geschrieben. Ein Vorgabewert erfaende eine Entscheidung, die niemand getroffen hat - und weil
     # es keinen Weg zurueck nach "unentschieden" gibt, waere ein so entstandener Zustand nicht
     # korrigierbar, nur ueberschreibbar.
@@ -1563,7 +1557,7 @@ class FinalSelectionDecision(Base):
 
 
 class ExportRun(Base):
-    """Ein Export-Lauf: die Endauswahl eines Projekts als neuer Ordner auf OpenCloud (ADR 0136).
+    """Ein Export-Lauf: die Endauswahl eines Projekts als neuer Ordner auf OpenCloud.
 
     KEIN `user_id` - das Ergebnis gehoert dem Projekt, nicht dem ausloesenden Nutzer, wie bei
     `FinalSelectionDecision`. Der Lauf traegt den Zielpfad (`target_path`) und die Bilanz
@@ -1606,7 +1600,7 @@ class ExportPhoto(Base):
     `CriterionScoringRun.rankings`).
 
     `relative_path` ist beim Anlegen des Laufs EINGEFROREN und zugleich der Zielpfad unter dem
-    Lauf-Ordner (der Zielordner spiegelt die Quellstruktur, ADR 0136 Punkt 2). `photo_id` ist
+    Lauf-Ordner (der Zielordner spiegelt die Quellstruktur). `photo_id` ist
     NULLABLE: ein spaeter geloeschtes Foto laesst den Schnappschuss stehen - "welche Auswahl wohin
     exportiert wurde" bleibt nachvollziehbar, auch wenn die Quelle verschwindet. `error` ist
     nullable und traegt die Fehlermeldung eines fehlgeschlagenen `COPY`; der Lauf laeuft weiter."""
@@ -1631,7 +1625,7 @@ class ExportPhoto(Base):
 
 class DuplicateDecision(enum.StrEnum):
     """Die Antwort des Nutzers auf die DUPLIKATFRAGE: Ueberlebt diese Aufnahme den
-    Ausschuss-Schritt (ADR 0104)?
+    Ausschuss-Schritt?
 
     `DISCARD` und ausdruecklich nicht `RatingStatus.REJECTED`: Jenes ist die Albumentscheidung
     eines Nutzers und keine Aussage ueber die Bildguete. Hier steht die andere Frage auf einer
@@ -1643,7 +1637,7 @@ class DuplicateDecision(enum.StrEnum):
 
 
 class PhotoDuplicateDecision(Base):
-    """Die Entscheidung des PROJEKTS ueber EIN Foto des Ausschusses (ADR 0104 Punkt 2).
+    """Die Entscheidung des PROJEKTS ueber EIN Foto des Ausschusses.
 
     DIE ABWESENHEIT DER ZEILE HEISST "NOCH NICHT ENTSCHIEDEN", und es gibt keinen Weg zurueck in
     diesen Zustand: Es entsteht kein `DELETE`-Endpunkt, aendern heisst den anderen Wert schreiben.
@@ -1658,7 +1652,7 @@ class PhotoDuplicateDecision(Base):
 
     __tablename__ = "photo_duplicate_decisions"
 
-    # Primaerschluessel UND Fremdschluessel (Muster `FinalSelectionDecision`, Auflage S11):
+    # Primaerschluessel UND Fremdschluessel (Muster `FinalSelectionDecision`):
     # "hoechstens eine Entscheidung je Foto" ist damit strukturell wahr, ohne eigenen
     # Unique-Constraint - und genau darauf beruht, dass ein wiederholtes `PUT` ueberschreibt statt
     # in einen `IntegrityError` und damit eine 500 zu laufen. Der echte Fremdschluessel ist
@@ -1668,14 +1662,14 @@ class PhotoDuplicateDecision(Base):
     photo_id: Mapped[int] = mapped_column(
         ForeignKey("photos.id", name="fk_photo_duplicate_decisions_photo_id"), primary_key=True
     )
-    # NOT NULL, KEIN `default`, KEIN `server_default` (Auflage S12): Ein Vorgabewert erfaende eine
+    # NOT NULL, KEIN `default`, KEIN `server_default`: Ein Vorgabewert erfaende eine
     # Entscheidung, die niemand getroffen hat - und diese Entscheidung bestimmt mit, welche
     # Bilddaten den Homeserver Richtung Cloud-Anbieter verlassen.
     #
     # `native_enum=False` wie ueberall im Datenmodell: Die Spalte ist eine Zeichenkette ohne
     # DB-seitige Pruefeinschraenkung. Der Wertevorrat wird von der Datenbank damit NICHT erzwungen,
     # und genau deshalb prueft das Ueberlebenden-Praedikat in `duplicates.py` POSITIV auf `KEEP`
-    # statt negativ auf `DISCARD` (Auflage S2) - ein unerwarteter Wert faellt so zur
+    # statt negativ auf `DISCARD` - ein unerwarteter Wert faellt so zur
     # zurueckhaltenden Seite, nicht zum Abfluss.
     decision: Mapped[DuplicateDecision] = mapped_column(
         SQLEnum(DuplicateDecision, native_enum=False, length=16)
@@ -1683,13 +1677,13 @@ class PhotoDuplicateDecision(Base):
 
 
 class FeedbackEventKind(enum.StrEnum):
-    """Die neun Arten der Nacharbeit, die aufgezeichnet werden (ADR 0100).
+    """Die neun Arten der Nacharbeit, die aufgezeichnet werden.
 
     DIE AUSSAGERICHTUNG STEHT ALS EIGENER WERT, nie als nullable Boolean daneben: Eine dritte
     Bedeutung von `NULL` waere auf keinem Lesepfad als Fehler erkennbar.
 
-    Fuer die gemeinsame Endauswahl gibt es folgerichtig KEINEN Ruecknahme-Wert - ADR 0099 kennt
-    kein `DELETE` auf ihr, "wieder strittig werden" ist kein Zustand, den die Story kennt."""
+    Fuer die gemeinsame Endauswahl gibt es folgerichtig KEINEN Ruecknahme-Wert - sie kennt
+    kein `DELETE`, "wieder strittig werden" ist kein Zustand."""
 
     PHOTO_INCLUDED = "photo_included"
     PHOTO_REMOVED = "photo_removed"
@@ -1703,13 +1697,13 @@ class FeedbackEventKind(enum.StrEnum):
 
 
 class FeedbackEvent(Base):
-    """EIN Handgriff der Nacharbeit am Album-Entwurf, unveraenderlich festgehalten (ADR 0100).
+    """EIN Handgriff der Nacharbeit am Album-Entwurf, unveraenderlich festgehalten.
 
     APPEND-ONLY: Auf diese Tabelle laeuft ausschliesslich `INSERT`. Kein Schreibpfad der Anwendung
     aendert oder loescht je eine ihrer Zeilen; einzige Ausnahme ist die Projektloeschung. Weder
     Schema noch Datenbank erzwingen das - der strukturelle Waechter dazu steht in
     tests/test_feedback_event_model.py. Aus der Zusage folgen ohne durchsetzenden Code beide
-    Aussagen der Story: Ein Ereignis ueberlebt jede Neuklassifizierung und die Ruecknahme der
+    Aussagen: Ein Ereignis ueberlebt jede Neuklassifizierung und die Ruecknahme der
     Korrektur, und mehrere Korrekturen am selben Foto bleiben in ihrer Reihenfolge erkennbar.
 
     DIE REIHENFOLGE IST DIE AUFSTEIGENDE `id`, nie `occurred_at`: Zwei Schreibvorgaenge derselben
@@ -1722,8 +1716,8 @@ class FeedbackEvent(Base):
     Ereignis.
 
     ES GIBT KEINE BILDDATEN UND KEINEN FREMDTEXT hier: Festgehalten werden ausschliesslich
-    Verweise, Zeitpunkt, Art und die eingefrorenen Zahlen (L8). `motif_key` stammt aus dem
-    geschlossenen Motivset und nie aus einem rohen Pfadparameter (S11).
+    Verweise, Zeitpunkt, Art und die eingefrorenen Zahlen. `motif_key` stammt aus dem
+    geschlossenen Motivset und nie aus einem rohen Pfadparameter.
 
     Die Feldmatrix je `kind` - welches Feld pflichtig, welches verboten - wird an der EINEN
     Schreibstelle gehalten (`feedback_log.py`) und dort ueber einen Fall je `kind` geprueft, nicht
@@ -1737,10 +1731,10 @@ class FeedbackEvent(Base):
     # projektuebergreifend, soll eine projektweise Sicht spaeter aber ohne Aenderung am Log
     # zulassen. Indiziert, weil das Log mit der Nacharbeit waechst.
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    # NULLABLE, und `NULL` heisst "KEINE ZUSCHREIBUNG" (S9). Genau die beiden
-    # `final_decision_*`-Arten tragen keinen Nutzer: Die gemeinsame Entscheidung gehoert nach ADR
-    # 0099 dem Projekt, und ihr Schreibendpunkt nimmt aus diesem Grund kein `current_user`
-    # entgegen. Ihn dafuer um einen zu erweitern, fuehrte das dort verworfene `decided_by` durch
+    # NULLABLE, und `NULL` heisst "KEINE ZUSCHREIBUNG". Genau die beiden
+    # `final_decision_*`-Arten tragen keinen Nutzer: Die gemeinsame Entscheidung gehoert
+    # dem Projekt, und ihr Schreibendpunkt nimmt aus diesem Grund kein `current_user`
+    # entgegen. Ihn dafuer um einen zu erweitern, fuehrte ein `decided_by` durch
     # die Hintertuer ein - und das Log waere der Ort, an dem man nachsieht, wer wollte, was das
     # Projekt entschieden hat.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
@@ -1804,7 +1798,7 @@ class QualityWeightSetOrigin(enum.StrEnum):
 
 
 class QualityWeightSet(Base):
-    """EINE Fassung des global geltenden Gewichtssatzes der Qualitaetskriterien (ADR 0100).
+    """EINE Fassung des global geltenden Gewichtssatzes der Qualitaetskriterien.
 
     ES GILT DIE FASSUNG MIT DER HOECHSTEN `id`; `id` IST die Version. Es gibt kein
     `active`-Kennzeichen, das danebentreten und mit ihr auseinanderlaufen koennte.
@@ -1814,12 +1808,12 @@ class QualityWeightSet(Base):
     unterscheiden, und "zurueck auf die Startwerte" hiesse danach "zurueck auf eine Fassung, die
     jemand uebernommen hat".
 
-    KEINE BINDUNG AN PROJEKT ODER NUTZER (G1). `created_by_user_id` ist Urheberschaft, nie
+    KEINE BINDUNG AN PROJEKT ODER NUTZER. `created_by_user_id` ist Urheberschaft, nie
     Geltungsbereich: Die Fassung wirkt auf jeden Lauf jedes Projekts.
 
     ZURUECKSETZEN IST EINE NEUE FASSUNG mit den Werten der Vorgaengerin, nie ein Loeschen - die
     Kette bleibt lueckenlos, und der zweite Druck fuehrt auf die Werte zurueck, von denen der
-    erste zurueckgesetzt hat (G10)."""
+    erste zurueckgesetzt hat."""
 
     __tablename__ = "quality_weight_sets"
 
@@ -1829,7 +1823,7 @@ class QualityWeightSet(Base):
     origin: Mapped[QualityWeightSetOrigin] = mapped_column(
         SQLEnum(QualityWeightSetOrigin, native_enum=False, length=16)
     )
-    # DAS ZUSTIMMUNGS-TOKEN auf den zuletzt beruecksichtigten Ereignisstand (S6), nie ein
+    # DAS ZUSTIMMUNGS-TOKEN auf den zuletzt beruecksichtigten Ereignisstand, nie ein
     # Objektverweis: Es wird nie zu einer Zeile aufgeloest, traegt keine Autorisierung und ist bei
     # leerem Log `0` - ein Wert, auf den kein Fremdschluessel zeigen koennte. Es ist das Einzige,
     # was "der Nutzer hat uebernommen, was ihm angezeigt wurde" wahr macht.
@@ -1848,7 +1842,7 @@ class QualityWeightSet(Base):
 
 class PlaceLookup(Base):
     """Die Auskunft darüber, was an einer vergröberten Ortszelle liegt - projektgebunden und
-    LAUF-UNABHÄNGIG (ADR 0102 Punkt 1).
+    LAUF-UNABHÄNGIG.
 
     Einmal beschafft, danach wiederverwendet: dieselbe Zelle wird in einem zweiten Lauf nicht
     erneut gefragt. Der Schlüssel ist das auf `places.PLACE_CELL_DIGITS` gerundete Zahlenpaar aus
@@ -1947,13 +1941,13 @@ class LandmarkPlaceLookup(Base):
     und lässt sie aus der Erreichbarkeitsprüfung der Projektlöschung nicht herausfallen.
 
     `points` ist die JSON-Liste von `[lat, lon]` der gefundenen Gazetteer-Punkte - NICHT nullbar und
-    darf LEER sein (ADR 0123 Punkt 2). Die drei Zustände fallen sonst zusammen: **keine Zeile**
+    darf LEER sein. Die drei Zustände fallen sonst zusammen: **keine Zeile**
     heißt „nie nachgeschlagen" (der Name fällt am Event, fail-closed; der nächste Lauf mit Auszug
     schlägt nach), eine **leere Liste** „nachgeschlagen, ohne Fund" (der Name fällt, und es wird
     nicht erneut nachgeschlagen), eine **gefüllte Liste** „nachgeschlagen, mit Fund" (der Name
     bleibt, wenn ein Fundort im Umkreis des Aufnahmeorts liegt).
 
-    KEINE Spalte für eine Entfernung, ein Prüfergebnis oder eine `event_id` (S1): eine persistierte
+    KEINE Spalte für eine Entfernung, ein Prüfergebnis oder eine `event_id`: eine persistierte
     Entfernung machte aus einer Namensauskunft eine Aufenthaltsaussage mit feinerer Körnung, als
     `PLACE_CELL_DIGITS = 2` sie zusichert. Die Punkte selbst sind öffentlich enumerierbare
     Gazetteer-Koordinaten, keine Koordinate eines Fotos, eines Events oder einer Zelle."""
@@ -1998,11 +1992,10 @@ class QualityWeightEntry(Base):
     `criterion_key` ist ein FREIER STRING OHNE FREMDSCHLUESSEL, derselbe Grund wie bei
     `photo_criterion_scores.criterion_key`: Ein neues Kriterium erzwingt nie eine Migration. Der
     Preis ist, dass eine Fassung Schluessel tragen kann, die der Startwertsatz nicht kennt - genau
-    dafuer prueft `quality_weights.py::effective_weights` die Ueberlagerung in BEIDE Richtungen
-    (G2).
+    dafuer prueft `quality_weights.py::effective_weights` die Ueberlagerung in BEIDE Richtungen.
 
     `weight` ist STRIKT POSITIV und endlich. Weder Schema noch Datenbank erzwingen das; die
-    Schreibstelle tut es, und der Lesepfad nimmt keinen anderen Wert an (S12). Ein gespeichertes
+    Schreibstelle tut es, und der Lesepfad nimmt keinen anderen Wert an. Ein gespeichertes
     `NaN` vergiftete jeden Qualitaetswert aller Projekte, ohne einen Fehler zu erzeugen."""
 
     __tablename__ = "quality_weight_entries"
@@ -2018,7 +2011,7 @@ class QualityWeightEntry(Base):
 
 
 class ClassificationReviewSideKind(enum.StrEnum):
-    """Das Verfahren EINER Pruefseite - geschlossener Vorrat, nie Freitext (Spec 0616, S6)."""
+    """Das Verfahren EINER Pruefseite - geschlossener Vorrat, nie Freitext."""
 
     CLOUD = "cloud"
     EYE = "eye"
@@ -2027,7 +2020,7 @@ class ClassificationReviewSideKind(enum.StrEnum):
 
 class ClassificationReviewPurpose(enum.StrEnum):
     """Die vier Pruefzwecke. `motifs`, `excluded_document` und `album_level` zaehlen FOTOS,
-    `motif_feature` zaehlt (Foto, Motiv)-PAARE (ADR 0139 Punkt 1)."""
+    `motif_feature` zaehlt (Foto, Motiv)-PAARE."""
 
     MOTIFS = "motifs"
     MOTIF_FEATURE = "motif_feature"
@@ -2037,7 +2030,7 @@ class ClassificationReviewPurpose(enum.StrEnum):
 
 class ReviewPhase(enum.StrEnum):
     """Der sichtbare Teilschritt eines Prueflaufs - ein ZUSTAND, kein Satz: die Oberflaeche
-    formuliert ihn. `NULL`, sobald der Lauf beendet ist (ADR 0139 Punkt 3)."""
+    formuliert ihn. `NULL`, sobald der Lauf beendet ist."""
 
     SIDE_A = "side_a"
     SIDE_B = "side_b"
@@ -2054,15 +2047,15 @@ class ClassificationVerdict(enum.StrEnum):
 
 
 class ClassificationReview(Base):
-    """Eine Pruefung zweier Klassifizierungsverfahren an denselben Fotos (Spec 0616).
+    """Eine Pruefung zweier Klassifizierungsverfahren an denselben Fotos.
 
-    EIGENER LAUF, EIGENE TABELLEN (ADR 0139 Punkt 2): Der Job klassifiziert die Pruefmenge fuer
+    EIGENER LAUF, EIGENE TABELLEN: Der Job klassifiziert die Pruefmenge fuer
     beide Seiten NEU und schreibt ausschliesslich hierher. Geltende Motiv-Kopfzeilen, Kriterien,
     Albumtauglichkeit, Rangfolge und die Kostenspalten der vier uebrigen Lauf-Tabellen bleiben
     dadurch strukturell unberuehrt - ein Verhaltenstest vergleicht den Bestand vor und nach einer
     Pruefung.
 
-    `sample_size` gilt JE ZWECK (ADR 0139 Punkt 6); daraus folgt die Obergrenze von vier
+    `sample_size` gilt JE ZWECK; daraus folgt die Obergrenze von vier
     vorgelegten Fallgruppen. `seed` wird beim Anlegen gezogen und mit den Abweichungen an
     `classification_comparison.py::compare_review` gereicht, damit die Auswahl reproduzierbar ist.
 
@@ -2075,7 +2068,7 @@ class ClassificationReview(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    # Der anlegende Nutzer ist ein AUDITFELD, kein Zugriffsschluessel (S1): beide Nutzer sehen und
+    # Der anlegende Nutzer ist ein AUDITFELD, kein Zugriffsschluessel: beide Nutzer sehen und
     # beurteilen dieselben Pruefungen.
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     status: Mapped[ScanStatus] = mapped_column(SQLEnum(ScanStatus, native_enum=False, length=20))
@@ -2094,18 +2087,18 @@ class ClassificationReview(Base):
     # Abbruchwunsch, analog ScanRun.cancel_requested_at.
     cancel_requested_at: Mapped[datetime | None] = mapped_column(default=None)
     # Ausschliesslich ein fester deutscher Satz aus der geschlossenen Menge in
-    # classification_review.py - nie `str(exc)` eines fremden Systems (S7).
+    # classification_review.py - nie `str(exc)` eines fremden Systems.
     error_message: Mapped[str | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="classification_reviews")
 
 
 class ClassificationReviewSide(Base):
-    """Die Herkunft EINER Seite und ihre Kosten (Spec 0616, ADR 0139 Punkte 3 und 6).
+    """Die Herkunft EINER Seite und ihre Kosten.
 
     Die Herkunft wird beim Anlegen GESPEICHERT, nicht beim Lesen abgeleitet: eine spaeter
     hinzugefuegte Eye-Fassung aendert eine bestehende Pruefung nicht. `provider` folgt
-    serverseitig aus `provider_for_vision_model(model)` (S6) - ein Anbieterfeld aus dem Client
+    serverseitig aus `provider_for_vision_model(model)` - ein Anbieterfeld aus dem Client
     existiert nicht.
 
     `estimated_cost_usd` ist die beim Anlegen neu berechnete und eingefrorene Schaetzung; sie ist
@@ -2134,7 +2127,7 @@ class ClassificationReviewSide(Base):
 
 
 class ClassificationReviewResult(Base):
-    """Die Aussage EINER Seite zu EINEM Foto (ADR 0139 Punkt 3).
+    """Die Aussage EINER Seite zu EINEM Foto.
 
     `excluded_document` und `album_level` sind NULLBAR, und `NULL` heisst hier "dieses Verfahren
     trifft dazu keine Aussage" - die lokale Seite hat weder Dokument-Ausschluss noch Albumstufe.
@@ -2184,7 +2177,7 @@ class ClassificationReviewCase(Base):
     """Ein VORGELGTER Fall - eine Abweichung, die die Stichprobe erwischt hat.
 
     `photo_position` ist die laufende Nummer des Fotos in der eingefrorenen Pruefmenge, EINMAL
-    geschrieben und von Fallliste und Export gemeinsam gelesen (ADR 0139 Punkt 3). Ohne sie waere
+    geschrieben und von Fallliste und Export gemeinsam gelesen. Ohne sie waere
     "das dritte Foto der Pruefung" in Oberflaeche und Export nicht dieselbe Stelle, denn ein Foto
     kann mehrere Faelle tragen.
 
@@ -2226,9 +2219,9 @@ class ClassificationReviewCase(Base):
 
 
 class ClassificationReviewVerdict(Base):
-    """Das EINE Urteil eines Falls - nicht eines je Nutzer (ADR 0139 Punkt 3).
+    """Das EINE Urteil eines Falls - nicht eines je Nutzer.
 
-    `updated_by_user_id` ist ein AUDITFELD, nie ein Zugriffsschluessel (S1): es wird
+    `updated_by_user_id` ist ein AUDITFELD, nie ein Zugriffsschluessel: es wird
     ausschliesslich aus `current_user.id` geschrieben und nur zur Anzeige "von {Nutzer}" gelesen,
     nie als Aufsuch- oder Filterbedingung."""
 

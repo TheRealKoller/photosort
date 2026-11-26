@@ -1,4 +1,4 @@
-"""REIN LESENDES Messkommando der Personen-Erkennung (S12).
+"""REIN LESENDES Messkommando der Personen-Erkennung.
 
 Aufruf::
 
@@ -6,15 +6,11 @@ Aufruf::
 
 Gezaehlt wird aus der KORREKTURSPUR gegen die ROHE Erkennung, nie gegen die wirksame Zuordnung:
 Eine Erkennung mit `applies=false` ist ein Fehlgriff, und die wirksame Zuordnung saehe ihn nie,
-weil die Korrektur ihn gerade verdeckt. Je Person (als "Person 1/2" nach Slot):
+weil die Korrektur ihn gerade verdeckt.
 
-* erkannt - Erkennungszeilen des Projekts;
-* richtig - erkannt und nicht von Hand entfernt;
-* falsch - erkannt UND `applies=false`;
-* ergaenzt - `applies=true` ohne Erkennung (uebersehen);
-* entfernt, nicht mehr erkannt - `applies=false` ohne Erkennung;
-* Quote = richtig / (richtig + ergaenzt). Sie ist eine OBERGRENZE der Erkennungsquote: Uebersehene
-  Fotos, die niemand ergaenzt hat, fehlen im Nenner. Ohne Nenner steht "nicht bestimmbar".
+Die Quote ist richtig / (richtig + ergaenzt) und damit eine OBERGRENZE der Erkennungsquote:
+Uebersehene Fotos, die niemand ergaenzt hat, fehlen im Nenner; ohne Nenner steht "nicht
+bestimmbar".
 
 Kein Modell, kein `cv2`, kein Schreibzugriff, kein Log; Ausgabe nur auf stdout, nur Anzahlen, kein
 Name, kein Pfad, keine Zeile je Foto und kein Schalter, der Namen ergaenzt - die Ausgabe geht in
