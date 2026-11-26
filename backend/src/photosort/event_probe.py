@@ -19,20 +19,20 @@ Preis ist, dass beide Dateien auf ``set.add``/``dict.update`` als Sammlungs-Meth
 SICHERHEIT:
 
 * DIE AUSGABE TRAEGT KEINE KOORDINATE, KEINEN ORTS- ODER SEHENSWUERDIGKEIT-NAMEN, KEINEN
-  OPENCLOUD-PFAD, KEINEN PROJEKTNAMEN UND KEINEN ZEITSTEMPEL (S2). Ein Projektname ist eine
+  OPENCLOUD-PFAD, KEINEN PROJEKTNAMEN UND KEINEN ZEITSTEMPEL. Ein Projektname ist eine
   Ortsangabe, ein ``taken_at`` ist der Zeitpunkt; ausgewiesen wird die Projekt-**Id**. Das ist die
   Bedingung dafuer, dass die Zahlen als Ganzes in ein oeffentliches Repository duerfen.
-* KEIN NAMENS-SCHALTER (S3): Messgegenstand ist hier die ZAHL der Widersprueche, nicht der Name.
+* KEIN NAMENS-SCHALTER: Messgegenstand ist hier die ZAHL der Widersprueche, nicht der Name.
   Pseudonymisierung waere kein Ausweg - die Menge der Sehenswuerdigkeitsnamen ist klein und
   oeffentlich, ein stabiler Hash per Woerterbuch rueckrechenbar.
-* ZEITEN UND ENTFERNUNGEN STEHEN NUR IN VORAB FESTGELEGTEN KLASSEN (S5), nie als Einzelwert und
+* ZEITEN UND ENTFERNUNGEN STEHEN NUR IN VORAB FESTGELEGTEN KLASSEN, nie als Einzelwert und
   nie in Reihenfolge: Ankerspannen und Zeitabstaende entstehen aus voller EXIF-Praezision, und
   eine geordnete Folge daraus waere ein Streckenabdruck. Eventdauern stehen als DAUER, nie als
   Anfang oder Ende.
-* AUSFALLRICHTUNG (S7): Fehlt der Ortsdatensatz oder weicht er von seinem Hash ab, meldet Block C2
+* AUSFALLRICHTUNG: Fehlt der Ortsdatensatz oder weicht er von seinem Hash ab, meldet Block C2
   "NICHT GEMESSEN", nie "0 %". Ein fehlendes Aggregat, das als gutes Messergebnis gelesen wird,
   truege hier die Entscheidung, an der Ortsbestimmung nichts zu aendern.
-* LOGGING (S8): Dieses Modul schreibt kein Log. Eine kuenftige Logzeile traegt weder eine
+* LOGGING: Dieses Modul schreibt kein Log. Eine kuenftige Logzeile traegt weder eine
   Koordinate noch einen Namen - nur ein festes Grund-Token und eine Id.
 """
 
@@ -94,7 +94,7 @@ from photosort.selection import carried_motifs, effective_target
 
 Cell = tuple[float, float]
 
-# DIE ENTFERNUNGSSCHWELLE, die "falsches Land" vertritt (Spec 0506, Block C). Der Laendercode steht
+# DIE ENTFERNUNGSSCHWELLE, die "falsches Land" vertritt (Block C). Der Laendercode steht
 # nicht in den fuenf behaltenen Feldern des Ortsauszugs; eine Zuordnung, die um mehr als diese
 # Entfernung von der Aufnahmeposition abweicht, ist falsch, ob sie eine Grenze ueberschreitet oder
 # nicht.
@@ -104,10 +104,10 @@ Cell = tuple[float, float]
 # ein Anteil von null waere dann kein Messergebnis, sondern eine Eigenschaft der Schwelle. Ein Test
 # haelt diese Ungleichung fest.
 #
-# Sie ist zugleich die oberste Klassengrenze (S5), damit die Abnahme ohne Einzelwerte auskommt.
+# Sie ist zugleich die oberste Klassengrenze, damit die Abnahme ohne Einzelwerte auskommt.
 DISTANCE_THRESHOLD_METERS = 10_000.0
 
-# DIE KLASSENRASTER, vorab festgelegt (S5). Genannt sind die INNEREN Grenzen; die unterste Klasse
+# DIE KLASSENRASTER, vorab festgelegt. Genannt sind die INNEREN Grenzen; die unterste Klasse
 # beginnt bei null, die oberste ist nach oben offen. Ein Wert GENAU auf einer Grenze faellt in die
 # obere Klasse - damit ist die oberste Klasse genau "ab der Schwelle", und es gibt keinen zweiten
 # Vergleich neben dem Raster.
@@ -150,7 +150,7 @@ class EventProbeError(Exception):
 
 def _class_counts(values: Iterable[float], bounds: Sequence[float]) -> tuple[int, ...]:
     """Die Besetzung der Klassen zu `bounds` - die EINZIGE Form, in der eine Zeit oder eine
-    Entfernung dieses Kommandos ausgegeben wird (S5).
+    Entfernung dieses Kommandos ausgegeben wird.
 
     `bisect_right` ordnet einen Wert GENAU AUF einer Grenze der oberen Klasse zu. Dadurch ist die
     oberste Entfernungsklasse genau "ab `DISTANCE_THRESHOLD_METERS`", und der Anteil oberhalb der
@@ -187,12 +187,12 @@ class EventProbeInput:
 
     `candidates` ist die Kandidatenmenge des letzten erfolgreichen Kriterien-Laufs, `entries` die
     Inferenzbasis der Ortsherleitung (jedes Foto des Projekts). Beide kommen aus
-    `event_inputs.py` - derselben Stelle, aus der sie auch der Lauf bezieht (ADR 0117 Punkt 5).
+    `event_inputs.py` - derselben Stelle, aus der sie auch der Lauf bezieht.
 
     `run_id` ist die Kennung des gemessenen Kriterien-Laufs; `None` heisst "dieses Projekt hat
     keinen erfolgreichen Lauf" und ist etwas anderes als "ein Lauf ohne Kandidaten". Sie steht in
     jedem Berichtskopf: Ohne sie laesst sich ein Protokolleintrag keinem Lauf mehr zuordnen, und
-    zwei Messungen desselben Projekts sehen aus wie dieselbe (Akzeptanzkriterium 4 der Spec 0506).
+    zwei Messungen desselben Projekts sehen aus wie dieselbe.
 
     EIN FELD, NICHT ZWEI: `run_found` ist abgeleitet, nicht daneben gespeichert. Zwei unabhaengige
     Angaben koennten dasselbe Verschiedenes behaupten - ein `run_found=True` ohne Kennung ergaebe
@@ -202,9 +202,9 @@ class EventProbeInput:
     `selection_target` ist der EINGESTELLTE Richtwert des Projekts; `None` heisst "nicht selbst
     eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`).
 
-    `landmark_points_by_name` ist die abgelegte Sehenswuerdigkeitsauskunft dieses Projekts
-    (Spec 0529), geschluesselt mit dem ROhen Kandidatennamen (so, wie `events.py::_name_of` ihn
-    liefert). Sie wird hier GELESEN, nicht beschafft: kein Dateidurchgang, kein Nachschlagen. Die
+    `landmark_points_by_name` ist die abgelegte Sehenswuerdigkeitsauskunft dieses Projekts,
+    geschluesselt mit dem ROhen Kandidatennamen (so, wie `events.py::_name_of` ihn liefert). Sie
+    wird hier GELESEN, nicht beschafft: kein Dateidurchgang, kein Nachschlagen. Die
     Vorgabe `{}` bedeutet "keine Zeile" - die Pruefung ist fail-closed, jeder Name faellt, wie bei
     einem fehlenden zweiten Auszug. Ein leerer Punktwert `()` heisst "nachgeschlagen, ohne Fund"
     und verwirft den Namen ebenso."""
@@ -235,7 +235,7 @@ class EventProbeInput:
 
 @dataclass(frozen=True)
 class SizeCounts:
-    """Block A. Dauern stehen als DAUER in Sekunden, nie als Anfang oder Ende (S2).
+    """Block A. Dauern stehen als DAUER in Sekunden, nie als Anfang oder Ende.
 
     `median_photos`, `longest_seconds` und `shortest_seconds` sind `None`, wenn es kein Event gibt:
     Eine Null hiesse "der Median ist null" bzw. "das kuerzeste Event dauert nichts" und waere eine
@@ -321,7 +321,7 @@ async def _landmark_points_by_name(
     Messung naehme die Auskunft eines spaeteren Laufs vorweg - genau das, was die Zusage dieses
     Moduls ausschliesst.
 
-    Die Bindung an `project_id` steht in der Abfrage ausgeschrieben (S1): Kein Rueckfall auf die
+    Die Bindung an `project_id` steht in der Abfrage ausgeschrieben: Kein Rueckfall auf die
     Zeile eines anderen Projekts - ein solcher waere der stille Weg, auf dem der Name eines Projekts
     an den Fotos eines anderen haengt.
 
@@ -459,7 +459,7 @@ class CauseCounts:
 
     `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache.
 
-    DIE GEGENANZEIGE steht daneben, und sie gehoert zu Block B: Beide Abnahmezahlen dieser Spec -
+    DIE GEGENANZEIGE steht daneben, und sie gehoert zu Block B: Beide Abnahmezahlen -
     der Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
     Verschmelzung BESSER erfuellt. Ohne `dissolved_by_merge` und `photos_moved_by_merge` misst eine
     Nachmessung nur die Unter-Zerstueckelung und bemerkte die Ueberverschmelzung nicht.
@@ -470,7 +470,7 @@ class CauseCounts:
 
     `photos_without_place_as_excursion` ist die Zahl der Fotos, deren Ort als Ausreisser nicht in
     die Bildung einging (`events.py::location_excursions`) - nur als Zahl ueber den Lauf, ohne
-    Event- oder Zeitbezug (S4)."""
+    Event- oder Zeitbezug."""
 
     boundaries_total: int
     involved: dict[str, int]
@@ -676,7 +676,7 @@ def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensit
     Zeile "aus" zeigt, wie viel er insgesamt traegt. Ohne sie bliebe offen, wie die Gliederung ganz
     ohne ihn aussaehe, und die Antwort waere aus keiner Rasterzeile zu erschliessen.
 
-    DIE SPALTE "ALLEINIGE URSACHE" STEHT SEIT ADR 0119 IN JEDER ZEILE AUF 0, und das ist hier der
+    DIE SPALTE "ALLEINIGE URSACHE" STEHT IN JEDER ZEILE AUF 0, und das ist hier der
     Nachweis, nicht ein Ausfall: Der Motivwechsel vermerkt eine Grenze, die ein Signal ohnehin
     gemeldet hat, und eroeffnet keine. Eine gelockerte Motivgrenze loest deshalb nirgends mehr eine
     Grenze auf. Handlungsleitend ist damit die Gleichheit der Gliederungsspalten ueber alle Zeilen
@@ -713,19 +713,16 @@ class CoherenceRow:
     """Ein Event in FUENF ANZAHLEN, und in nichts sonst.
 
     Keine Zelle, keine Koordinate, kein Orts- oder Motivname, kein Zeitstempel, keine Position im
-    Lauf (S2/S3). Die Aussagekraft entsteht aus den Zahlen selbst: Ein Event ueber fuenf Stunden mit
+    Lauf. Die Aussagekraft entsteht aus den Zahlen selbst: Ein Event ueber fuenf Stunden mit
     ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene Anlaesse.
 
     `measured_photos` TRAEGT GENAU DIESE DEUTUNG, und ohne sie ist `place_cells` nicht lesbar:
     `events.py::_cells_of` nimmt ausschliesslich Fotos mit GEMESSENER Koordinate, ein uebernommener
     Ort speist die Zellen nie. Ein Event, dessen Fotos ueberwiegend geerbt haben, zeigt deshalb eine
     kleine Zellzahl oder null - und die sieht aus wie "ein Ort, also ein Ausflug", waehrend
-    tatsaechlich nichts gemessen wurde. In der Ausgangsmessung dieser Spec trugen 30,0 % der
-    Kandidatenfotos keine eigene Koordinate, und sie koennen sich in einem einzigen Event ballen;
-    eine Gesamtzahl je Gliederung finge genau diesen Fall nicht. Sie ist selbst eine Anzahl und
-    damit S2-konform.
+    tatsaechlich nichts gemessen wurde.
 
-    `duration_seconds` steht als DAUER, nie als Anfang oder Ende (S2)."""
+    `duration_seconds` steht als DAUER, nie als Anfang oder Ende."""
 
     photos: int
     measured_photos: int
@@ -879,7 +876,7 @@ def inheritance_counts(
 
 @dataclass(frozen=True)
 class MatchDistanceCounts:
-    """Block C2. Die Entfernung steht in KLASSEN, nie je Zelle und nie neben Name oder Ebene (S4):
+    """Block C2. Die Entfernung steht in KLASSEN, nie je Zelle und nie neben Name oder Ebene:
     Die Entfernung zu einem benannten, oeffentlich enumerierbaren GeoNames-Eintrag ist ein
     Trilaterationsmittel - `locality` und `neighbourhood` derselben Zelle schneiden sich zu rund
     zwei Punkten und unterliefen die 1,1-km-Koernung, die `PLACE_CELL_DIGITS = 2` zusichert."""
@@ -914,21 +911,21 @@ class LandmarkCounts:
     """Block C3. Der Weg, ueber den eine Ortsaussage am weitesten danebenliegen kann: Ein Name
     benennt das GANZE Event und verdraengt dessen Koordinatenstufe.
 
-    Seit Spec 0514 (ADR 0120) benennt er es nur noch, wenn ihn mindestens `LANDMARK_MIN_SHARE`
+    Er benennt es nur, wenn ihn mindestens `LANDMARK_MIN_SHARE`
     seiner Mitglieder bezeugt. Die drei Zeilen `events_named`, `smallest_carrier_share` und
     `events_below_share` sind die GEGENANZEIGE dazu: Eine Schwelle, die jede Benennung abschaltet,
     waere mit den Widerspruchszahlen allein nicht zu bemerken. Der kleinste Anteil steht als
     BRUCH - die Grenze ist der Gegenstand, und eine gerundete Zahl verloere sie.
 
-    Gezaehlt werden WIDERSPRUECHE, nie Namen (S3): Ein in sich stimmiger Name ist ohne Rueckfrage
+    Gezaehlt werden WIDERSPRUECHE, nie Namen: Ein in sich stimmiger Name ist ohne Rueckfrage
     bei einem bezahlten Dienst nicht ueberpruefbar. Dieser Block BELEGT diesen Weg, wo Widersprueche
     auftreten, und kann ihn nicht widerlegen.
 
-    Seit Spec 0529 (ADR 0123) benennt er es ausserdem nur noch, wenn ein Fundort seines Namens im
+    Er benennt es ausserdem nur, wenn ein Fundort seines Namens im
     Umkreis des Aufnahmeorts liegt. `names_without_a_location` und `names_without_a_row` sind die
     GEGENANZEIGE dazu: Eine Auskunft ohne Fund oder ganz ohne Zeile nimmt dem Namen sein Event
     (fail-closed) - und keine andere Zahl dieses Blocks verriete das. Gezaehlt werden NAMEN ueber
-    den Lauf, nie eine Zeile je Name und nie eine je Event (S10)."""
+    den Lauf, nie eine Zeile je Name und nie eine je Event."""
 
     detections_total: int
     detections_without_place_hint: int
@@ -982,9 +979,9 @@ def landmark_counts(
     `_name_of` erfragt, weil genau der Abstand zwischen der vorgelegten Gliederung und der heute
     geltenden Schwelle der Messgegenstand ist.
 
-    `landmark_points_by_name` ist die Auskunft des Laufs (Spec 0529). Sie geht in GENAU ZWEI Zahlen
-    ein, beide ueber die VERSCHIEDENEN Namen des Laufs, keine Zeile je Name und keine je Event
-    (S10): `names_without_a_location` zaehlt die Namen, zu denen sie eine LEERE Punktmenge traegt -
+    `landmark_points_by_name` ist die Auskunft des Laufs. Sie geht in GENAU ZWEI Zahlen
+    ein, beide ueber die VERSCHIEDENEN Namen des Laufs, keine Zeile je Name und keine je Event:
+    `names_without_a_location` zaehlt die Namen, zu denen sie eine LEERE Punktmenge traegt -
     radius-unabhaengig, denn ein Fund weit ausserhalb des Umkreises ist ein Fund, der die Regel
     arbeiten laesst; erst "nachgeschlagen, ohne Fund" macht aus einem VORHANDENEN Auszug still
     einen namenlosen Lauf. `names_without_a_row` zaehlt die Namen OHNE Zeile ("nie
@@ -1057,7 +1054,7 @@ def landmark_counts(
 
 @dataclass(frozen=True)
 class PlaceMeasurement:
-    """Block C2 - oder der Grund seines Ausbleibens (S7).
+    """Block C2 - oder der Grund seines Ausbleibens.
 
     Ein ausgebliebener Ortsdatensatz MELDET SICH: "0 %" waere hier ein gutes Messergebnis und
     truege die Entscheidung, an der Ortsbestimmung nichts zu aendern."""
@@ -1071,7 +1068,7 @@ async def name_distances_by_cell(
 ) -> tuple[dict[Cell, float | None], dict[Cell, str]]:
     """Je Zelle die Entfernung zu dem Eintrag, der ihren Namen geliefert haette - und der Name.
 
-    Der NAME bleibt hier und erreicht den Bericht nie (S2/S4); er wird gebraucht, weil "diese
+    Der NAME bleibt hier und erreicht den Bericht nie; er wird gebraucht, weil "diese
     Zelle bekaeme einen Ortsnamen" ausschliesslich `places.usable_locality` entscheidet - es gibt
     keine zweite Fassung dieser Regel. `None` heisst "kein Name", und eine solche Zelle besetzt
     keine Entfernungsklasse.
@@ -1124,7 +1121,7 @@ def _share(share: Fraction | None) -> str:
 
 
 def _duration(seconds: float | None) -> str:
-    """Eine DAUER, nie ein Anfang und nie ein Ende (S2). `None` heisst "nicht gemessen"."""
+    """Eine DAUER, nie ein Anfang und nie ein Ende. `None` heisst "nicht gemessen"."""
     if seconds is None:
         return "-"
     hours, rest = divmod(int(seconds), 3600)
@@ -1139,7 +1136,7 @@ def _duration(seconds: float | None) -> str:
 
 def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     """Die Klassenbesetzung als Liste - die EINZIGE Form, in der Zeiten und Entfernungen dieses
-    Kommandos erscheinen (S5)."""
+    Kommandos erscheinen."""
     total = sum(counts)
     return [
         f"  - {label}: {count} ({_percent(count, total)})"
@@ -1154,7 +1151,7 @@ def report_head(title: str, probe: EventProbeInput) -> str:
     davon zu vergessen. Ein kuenftiger Modus bekommt seinen Kopf von hier oder wird von
     `TestEveryReportHeadComesFromTheOnePlace` rot gemeldet.
 
-    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der sechs Klassen aus S2: keine
+    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der verbotenen Klassen: keine
     Koordinate, kein Orts-, Sehenswuerdigkeit- oder Projektname, kein OpenCloud-Pfad, kein
     Zeitstempel. Der Projekt-NAME waere eine Ortsangabe, die Id ist keine.
 
@@ -1216,7 +1213,7 @@ def quota_lines(reach: QuotaReach) -> list[str]:
 
 
 def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityRow]) -> str:
-    """Block E als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+    """Block E als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE.
 
     Derselbe Bericht-Rand wie der Hauptbericht: keine Koordinate, kein Orts- oder
     Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
@@ -1312,7 +1309,7 @@ def _coherence_block(title: str, counts: CoherenceCounts) -> list[str]:
 def render_coherence_report(
     probe: EventProbeInput, operating: CoherenceCounts, switched_off: CoherenceCounts
 ) -> str:
-    """Der Kohaerenz-Modus als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+    """Der Kohaerenz-Modus als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE.
 
     Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts-, Sehenswuerdigkeit-
     oder Motivname, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen wird die
@@ -1367,7 +1364,7 @@ def render_coherence_report(
 
 
 def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str:
-    """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+    """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE.
 
     Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts- oder
     Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
@@ -1431,7 +1428,7 @@ def render_report(
     """Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE.
 
     Der Bericht traegt keine Koordinate, keinen Orts- oder Sehenswuerdigkeit-Namen, keinen
-    OpenCloud-Pfad, keinen Projektnamen und keinen Zeitstempel (S2); ausgewiesen wird die
+    OpenCloud-Pfad, keinen Projektnamen und keinen Zeitstempel; ausgewiesen wird die
     Projekt-Id. Damit sind die Zahlen als Ganzes weitergebbar, ohne Einzelfallpruefung."""
     sizes = size_counts(formation)
     causes = cause_counts(formation)
@@ -1681,7 +1678,7 @@ async def _probe_with_own_session(
     )
 
     # DERSELBE Auflöser und DIESELBE Pruefung wie im Lauf: Fehlt der Auszug oder weicht er von
-    # seinem Hash ab, wird auch hier keiner gebaut - und Block C2 MELDET sein Ausbleiben (S7).
+    # seinem Hash ab, wird auch hier keiner gebaut - und Block C2 MELDET sein Ausbleiben.
     resolver = build_geonames_resolver(cells, path=dataset_path)
     if resolver is None:
         return render_report(
@@ -1728,7 +1725,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
         return 1
     except SQLAlchemyError as exc:
         # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
-        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster demo_state.py).
+        # DATABASE_URL inklusive Zugangsdaten enthalten.
         print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(report)

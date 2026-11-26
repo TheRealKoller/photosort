@@ -1,15 +1,14 @@
 """Die EINE Aufzaehlung dessen, was an einem Projekt haengt.
 
-Metadatengeordnete Mengenloeschung statt ORM-Kaskade: `session.delete(project)` laedt bei
-mehreren tausend Fotos rund 10^5 abhaengige Zeilen als Objekte und setzt ein DELETE je Zeile ab.
-Stattdessen eine feste, kleine Anweisungsfolge `delete(Model).where(<spalte>.in_(...))` in
-Fremdschluessel-Reihenfolge - unabhaengig von der Datenmenge.
+Metadatengeordnete Mengenloeschung statt ORM-Kaskade: eine feste, kleine Anweisungsfolge
+`delete(Model).where(<spalte>.in_(...))` in Fremdschluessel-Reihenfolge, unabhaengig von der
+Datenmenge.
 
 Genutzt von `api/projects.py::delete_project` UND `demo_state.py::purge_demo_state`; es gibt
 danach genau eine Stelle, die weiss, welche Tabellen am Projekt haengen. Zwei Tests in
 `tests/test_project_deletion.py` sichern Reihenfolge und Vollstaendigkeit gegen `Base.metadata`
 ab - noetig, weil ein Fremdschluesselfehler die ERSTE vergessene Anweisung nennt und ueber die
-uebrigen schweigt. Die FK-Durchsetzung der Testdatenbank (Spec 0350, `db.py::make_engine`) deckt
+uebrigen schweigt. Die FK-Durchsetzung der Testdatenbank (`db.py::make_engine`) deckt
 die Reihenfolge zusaetzlich ab; nur die Zeilenzaehlung nennt aber die Tabelle, die eine Kaskade
 stehen liess.
 
@@ -17,7 +16,7 @@ Nicht geloescht werden `users` und `fine_labels`: beide sind Fremdschluessel-ELT
 Feinlabel-Registry ist projektuebergreifendes Vokabular) und fallen aus der
 Erreichbarkeitspruefung automatisch heraus, ohne eigene Ausnahmeliste.
 
-SICHERHEITS-MUSS-KRITERIUM (Demo-Seeder-Sperre M3): Dieses Modul importiert `demo_state` NICHT
+SICHERHEITS-MUSS-KRITERIUM: Dieses Modul importiert `demo_state` NICHT
 (die Import-Richtung ist umgekehrt), nimmt die zu loeschenden Projekt-IDs ausschliesslich vom
 Aufrufer entgegen und enthaelt KEINE Projekt-AUSWAHL-Logik (kein Namenspraefix, kein "alle
 Projekte"). Sonst waere ausgerechnet der Teil, den die dreiteilige Demo-Sperre bewacht, ueber
@@ -149,10 +148,9 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "photo_motif_strengths",
         delete(PhotoMotifStrength).where(PhotoMotifStrength.photo_id.in_(photo_ids)),
     )
-    # Spec 0609 / ADR 0138: die Eye-Schattendaten. Sie haengen ueber `photos` am Projekt (S9) und
+    # Die Eye-Schattendaten. Sie haengen ueber `photos` am Projekt und
     # muessen VOR ihren Elternteilen fallen: die Staerke- und Feinlabelzeilen vor
-    # `photo_eye_results`, die Schnappschuss-Staerken vor `photo_local_motif_snapshots`. Die
-    # Position folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)`.
+    # `photo_eye_results`, die Schnappschuss-Staerken vor `photo_local_motif_snapshots`.
     await _run(
         "photo_local_motif_snapshot_strengths",
         delete(PhotoLocalMotifSnapshotStrength).where(
@@ -167,10 +165,9 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "photo_eye_fine_labels",
         delete(PhotoEyeFineLabel).where(PhotoEyeFineLabel.photo_id.in_(photo_ids)),
     )
-    # Spec 0616 / ADR 0139 Punkt 3: die sechs Prueftabellen fallen mit dem Projekt. Ein Urteil
-    # haengt am Fall, ein Fall an der Pruefung, eine Staerkezeile am Ergebnis; die Reihenfolge
-    # folgt `reversed(Base.metadata.sorted_tables)` und ist damit durch den Ordnungstest
-    # erzwungen. Ohne diese Anweisungen ueberlebten Urteile ueber geloeschte Familienfotos ihr
+    # Die sechs Prueftabellen fallen mit dem Projekt. Ein Urteil
+    # haengt am Fall, ein Fall an der Pruefung, eine Staerkezeile am Ergebnis. Ohne diese
+    # Anweisungen ueberlebten Urteile ueber geloeschte Familienfotos ihr
     # Projekt - und ein Export koennte sie wieder sichtbar machen.
     await _run(
         "classification_review_verdicts",
@@ -223,16 +220,15 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "photo_fine_labels",
         delete(PhotoFineLabel).where(PhotoFineLabel.photo_id.in_(photo_ids)),
     )
-    # NACH `photo_fine_labels` (der Ordnung von `reversed(sorted_tables)` folgend) und VOR
-    # `photos`: die Eye-Kopfzeile ist der Elternteil der oben geloeschten Schatten-Kindzeilen.
+    # NACH `photo_fine_labels` und VOR `photos`: die Eye-Kopfzeile ist der Elternteil der oben
+    # geloeschten Schatten-Kindzeilen.
     await _run(
         "photo_eye_results",
         delete(PhotoEyeResult).where(PhotoEyeResult.photo_id.in_(photo_ids)),
     )
     # Ohne diese Anweisung ueberleben die Ausschuss-Entscheidungen ueber geloeschte Familienfotos
     # die Projektloeschung - und sie sind die Menge, die mitbestimmt, welche Bilddaten den
-    # Homeserver verlassen. Die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)`.
+    # Homeserver verlassen.
     await _run(
         "photo_duplicate_decisions",
         delete(PhotoDuplicateDecision).where(PhotoDuplicateDecision.photo_id.in_(photo_ids)),
@@ -246,25 +242,22 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         delete(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id.in_(photo_ids)),
     )
     # Ohne diese Anweisung ueberleben Aussagen ueber die Bildguete geloeschter Familienfotos die
-    # Projektloeschung. Die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)`.
+    # Projektloeschung.
     await _run(
         "photo_album_suitability",
         delete(PhotoAlbumSuitability).where(PhotoAlbumSuitability.photo_id.in_(photo_ids)),
     )
     # Ohne diese Anweisung ueberleben die gemeinsamen Entscheidungen ueber geloeschte
-    # Familienfotos die Projektloeschung - und sie sind die Menge, die als Album gilt. Die Position
-    # folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)`.
+    # Familienfotos die Projektloeschung - und sie sind die Menge, die als Album gilt.
     await _run(
         "final_selection_decisions",
         delete(FinalSelectionDecision).where(FinalSelectionDecision.photo_id.in_(photo_ids)),
     )
-    # DIE EINE AUSNAHME der Append-only-Zusage des Ereignis-Logs (ADR 0100 Punkt 1, S13). Ohne
+    # DIE EINE AUSNAHME der Append-only-Zusage des Ereignis-Logs. Ohne
     # diese Anweisung ueberleben Aussagen ueber geloeschte Familienfotos ihr Projekt. Adressiert
     # ueber die EIGENE `project_id`-Spalte und nicht ueber den Foto-Join: Die Spalte ist genau
     # dafuer da, und sie traegt den Index. VOR `photos` und `users` - beide sind
-    # Fremdschluessel-Eltern dieser Zeilen -, die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)`.
+    # Fremdschluessel-Eltern dieser Zeilen.
     #
     # Ein struktureller Waechter in tests/test_feedback_event_model.py haelt fest, dass dies die
     # EINZIGE Stelle im Anwendungscode bleibt, die eine Ereigniszeile loescht oder aendert.
@@ -277,9 +270,7 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     # Zeile zurueck.
     # Der Mengen-Schnappschuss haengt am LAUF (nicht am Foto) und an `photos` (nullable) - er
     # faellt ueber den Lauf. Ohne diese Anweisung ueberlebte die Liste "welche Auswahl wohin
-    # exportiert wurde" die Projektloeschung. Die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)` - VOR `export_runs`, `photos` und `events`, auf
-    # deren Elternteile keine Kante zeigt.
+    # exportiert wurde" die Projektloeschung.
     await _run(
         "export_photos",
         delete(ExportPhoto).where(ExportPhoto.export_run_id.in_(export_run_ids)),
@@ -314,8 +305,7 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         ),
     )
     # Der Merker "Ablaufuebersicht gesehen" beider Personen. Er haengt zugleich an `users` - der
-    # Nutzer wird dabei NICHT mitgeloescht. Die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)` - VOR `projects`, deren Zeilen ihr Elternteil sind.
+    # Nutzer wird dabei NICHT mitgeloescht. VOR `projects`, deren Zeilen ihr Elternteil sind.
     await _run(
         "project_overview_seen",
         delete(ProjectOverviewSeen).where(ProjectOverviewSeen.project_id.in_(project_ids)),
@@ -326,28 +316,25 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "project_cameras",
         delete(ProjectCamera).where(ProjectCamera.project_id.in_(project_ids)),
     )
-    # Die dauerhafteste Ortsspur des Systems (Spec 0434, S6): lauf-unabhaengig, und sie faellt
+    # Die dauerhafteste Ortsspur des Systems: lauf-unabhaengig, und sie faellt
     # deshalb NUR hier. Ohne diese Anweisung ueberlebte die Auskunft darueber, wo die Familie war,
-    # das geloeschte Projekt. Die Position folgt der per Test erzwungenen Ordnung
-    # `reversed(Base.metadata.sorted_tables)` - VOR `projects`, deren Zeilen ihr Elternteil sind.
+    # das geloeschte Projekt. VOR `projects`, deren Zeilen ihr Elternteil sind.
     await _run(
         "place_lookups",
         delete(PlaceLookup).where(PlaceLookup.project_id.in_(project_ids)),
     )
-    # Die Auskunft ueber die Fundorte eines Sehenswuerdigkeitsnamens (Spec 0529, S2): wie die
+    # Die Auskunft ueber die Fundorte eines Sehenswuerdigkeitsnamens: wie die
     # Namensspur, projektgebunden und lauf-unabhaengig, und sie faellt deshalb NUR hier. Ohne diese
     # Anweisung ueberlebte die Auskunft, welche Orte die Familie besucht hat, das geloeschte Projekt.
-    # Die Position folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)` -
     # VOR `projects`, deren Zeilen ihr Elternteil sind.
     await _run(
         "landmark_place_lookups",
         delete(LandmarkPlaceLookup).where(LandmarkPlaceLookup.project_id.in_(project_ids)),
     )
-    # Das Namensregister der Sehenswuerdigkeiten (Spec 0469, S8): projektgebunden und
+    # Das Namensregister der Sehenswuerdigkeiten: projektgebunden und
     # lauf-unabhaengig wie `place_lookups` daneben, und es faellt deshalb NUR hier. Ohne diese
     # Anweisung ueberlebten die Namen der Orte, an denen die Familie war, das geloeschte Projekt -
     # samt ihrer Einbettungsvektoren, die eine verlustbehaftete Kodierung genau dieser Namen sind.
-    # Die Position folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)` -
     # VOR `projects`, deren Zeilen ihr Elternteil sind.
     await _run(
         "landmark_names",
