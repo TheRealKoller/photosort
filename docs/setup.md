@@ -56,6 +56,17 @@ Die Klammern sind hier aus demselben Grund gesetzt wie weiter unten beim Install
 stünde man nach der ersten Zeile in `backend/`, und die beiden folgenden lösten
 `backend/frontend` und `backend/scripts` auf und schlügen fehl.
 
+Die Typen der Oberfläche entstehen aus der OpenAPI-Beschreibung des Backends. Nach einer Änderung
+an einer Antwortstruktur wird sie in zwei Schritten nachgeführt und beides committet:
+
+```bash
+(cd backend && .venv/bin/python scripts/export_openapi.py)
+(cd frontend && npm run api:generate)
+```
+
+`npm run typecheck` (Teil von `./scripts/check.sh`) prüft, ob der erzeugte Stand nachgeführt ist;
+`backend/tests/test_openapi_vertrag.py` prüft dasselbe für `backend/openapi.json`.
+
 Der Backend-Testlauf lässt sich lokal über alle Kerne parallelisieren (`pytest-xdist`, liegt in
 den dev-Dependencies) — derselbe Aufruf, den der CI-Job `backend` fährt:
 

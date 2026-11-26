@@ -1,9 +1,10 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-23 (Spec [`0650`](../features/0650-ci-unter-fuenf-minuten.md) — Backend und e2e laufen je in Shards, der geforderte Aggregator bewertet die Vereinigung, der Image-Cache wird nur hinter dem Fork-Ausschluss geschrieben; davor 2026-11-16: Spec [`0655`](../features/0655-lockdatei-und-dokumentnamen-ohne-sonderzeichen.md) — drei netzfreie Wächter für Backend-Lock, Lockmenge und Dokumentnamen, ohne `uv` im Test; Lieferketten-Zelle und drei benannte Grenzen des Locks; davor 2026-11-14: Spec [`0641`](../features/0641-vorgaenge-abbrechen.md)/ADR [`0147`](../decisions/0147-kooperativer-abbruch-und-wartezustand-der-laeufe.md) — kooperativer Abbruch: der Abbruchzeitpunkt als Haken im Test-Double, der blockierende Fake-`sleep` für Drosselungs- und Retry-Wartezeiten, der Watchdog über künstlich gealterte `last_progress_at`-Werte und die auf `queued` verschobene Lücke der Projektlöschung)
+**Letzte Aktualisierung:** 2026-11-26 (Spec [`0654`](../features/0654-typen-aus-der-schnittstellenbeschreibung.md) — ein eingechecktes Vertragsartefakt `backend/openapi.json` und die daraus erzeugten Typen, drei Prüfstufen mit je eigenem Nachführschritt; davor 2026-11-23: Spec [`0650`](../features/0650-ci-unter-fuenf-minuten.md) — Backend und e2e laufen je in Shards, der geforderte Aggregator bewertet die Vereinigung, der Image-Cache wird nur hinter dem Fork-Ausschluss geschrieben; ältere Einträge stehen in der Git-Historie.)
 **Nachtrag 2026-11-16 (Spec [`0652`](../features/0652-pruefungen-pruefen-die-wirkung.md), ADR [`0148`](../decisions/0148-der-rote-waechtertest-traegt-eine-aussage-oder-eine-form.md)):** Die Repo-Wächter tragen drei Prüfklassen statt einer Formprüfung je Schreibweise; ein Verletzungsbeleg je Invariante und eine maschinelle Bilanz ersetzen die Negativtests (siehe Abschnitt „Repo-Konfiguration & Dokumentation").
 **Nachtrag 2026-11-23 (Spec [`0650`](../features/0650-ci-unter-fuenf-minuten.md), ADR [`0151`](../decisions/0151-ci-unter-fuenf-minuten-shards-mit-einem-aggregator.md)):** Backend und e2e laufen je in Shards; der geforderte Kontext ist der Aggregator, der `needs` auf alle Shards hält, `if: always()` trägt und die Vereinigung bewertet. Die Testmenge bleibt quelltextgleich, die Coverage-Schwelle gilt auf der Vereinigung, und die blockierende Reichweite ist selbst eine Invariante (siehe „Repo-Konfiguration & Dokumentation“).
+**Nachtrag 2026-11-26 (Spec [`0654`](../features/0654-typen-aus-der-schnittstellenbeschreibung.md), ADR [`0153`](../decisions/0153-typen-aus-der-schnittstellenbeschreibung.md)):** Der API-Vertrag wird als erzeugtes, eingechecktes Artefakt geführt und in drei Stufen geprüft (geparste Strukturen gegen `create_app().openapi()`, `api:check` in `typecheck`, `tsc` an der Aufrufstelle); die Meldung jeder Stufe nennt ihren Nachführschritt, und der Wächter `test_frontend_typen.py` prüft die erzeugten Typen statt der Handschrift (siehe „Vertragsartefakt und Nachführkette").
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -37,6 +38,30 @@ einnehmen könnte. An seine Stelle tritt ein Vorher-Nachher-Vergleich auf demsel
 `# type: ignore` und `// prettier-ignore` sehen aus wie Doku und sind Code. Sie werden vor dem
 Schnitt aufgezählt und danach einzeln nachgewiesen; ihr Verlust zeigt sich in (3), in
 `mypy --strict` oder in der Formatprüfung, nie im Testausgang.
+
+## Vertragsartefakt und Nachführkette (OpenAPI → erzeugte Typen → tsc)
+
+**Muster (neu für Spec [`0654`](../features/0654-typen-aus-der-schnittstellenbeschreibung.md), ADR
+[`0153`](../decisions/0153-typen-aus-der-schnittstellenbeschreibung.md)):** Ein erzeugtes,
+eingechecktes Artefakt ist der Vertrag. `backend/tests/test_openapi_vertrag.py` vergleicht
+`backend/openapi.json` mit `create_app().openapi()` über **geparste Strukturen** — nie Bytes, nie
+eine Momentaufnahme — und nennt bei Abweichung den Ort in Punktnotation samt Nachführbefehl;
+`npm run api:check` (Teil von `npm run typecheck`) prüft, dass `schema.d.ts` byte-gleich aus dem
+Artefakt erzeugt ist; `tsc` prüft jede Aufruf- und Anzeigestelle. Jede Stufe nennt nur ihren
+eigenen Nachführschritt. Die Meldung des Vergleichs ist selbst getestet (synthetische Soll/Ist-
+Paare), sonst degradiert sie still.
+
+**Grenze:** `api:check` läuft ohne Python, ohne DB und ohne laufenden Server, nur gegen das
+eingecheckte Artefakt — deshalb kann der `frontend`-Job die mittlere Stufe führen, ohne die
+Backend-Abhängigkeiten zu installieren.
+
+**Wächter:** `scripts/tests/test_frontend_typen.py` prüft die erzeugten Typen (kein `interface`
+über einem Schemanamen, belegte Schemabezeichnungen, beide Abschnittsmarker in Reihenfolge, kein
+Typ als Typargument an `apiFetch`, Beschreibungstext am Typ) und die Verdrahtung `typecheck ⊇
+api:check`; je Invariante eine Mutation, Klassen A/B.
+
+**Nachweis ohne Rot-Grün:** Für die Seiten-Aufteilung der Spec gilt der Vorher-Nachher-Vergleich
+oben; das Frontend hat keine Coverage-Größe, dort tragen (1) und (2) allein.
 
 ## Backend (`backend/`, `pytest`)
 
