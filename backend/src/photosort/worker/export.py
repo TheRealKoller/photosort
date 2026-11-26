@@ -24,7 +24,7 @@ from photosort.run_cancel import cancel_requested
 
 class ExportClient(Protocol):
     """The subset of OpenCloudClient that export needs — narrow, so tests can fake it and record
-    which write operation went where (the first time tests assert *what is written where*)."""
+    which write operation went where."""
 
     async def resolve_drive(self, name: str | None) -> Any: ...
 
@@ -35,7 +35,7 @@ class ExportClient(Protocol):
 
 # Der feste Wurzelordner des Exports - eine Modulkonstante, KEIN Env-Parameter. Er begrenzt den
 # ersten Schreibpfad der Anwendung auf OpenCloud strukturell: Jede Schreiboperation (MKCOL/COPY)
-# liegt unter diesem einen Ordner (Security Muss, ADR 0136).
+# liegt unter diesem einen Ordner.
 EXPORT_ROOT_FOLDER = "PhotoSort-Export"
 
 
@@ -46,8 +46,8 @@ EXPORT_FOLDER_NAME_MAX_LENGTH = 200
 
 # Checkpoint-Granularitaet der je-Foto-Ergebnisse: je Block werden `exported_count`/`failed_count`,
 # `last_progress_at` und die bereits geschriebenen `export_photos.error`-Zeilen committet. Ein
-# Abbruch mitten im Lauf verliert so hoechstens die Ergebnisse des letzten Blocks statt des
-# ganzen Laufs (AK8 "nachvollziehbar").
+# Abbruch mitten im Lauf verliert so hoechstens die Ergebnisse des letzten Blocks statt des ganzen
+# Laufs.
 EXPORT_COMMIT_BATCH_SIZE = 50
 
 
@@ -60,12 +60,12 @@ _CONTROL_CHARS = frozenset(
 
 
 def sanitize_project_name(name: str) -> str:
-    """Bereinigt den Projektnamen fuer den Zielordnernamen (ADR 0136 Punkt 2, Security Muss).
+    """Bereinigt den Projektnamen fuer den Zielordnernamen (Security Muss).
 
     Entfernt werden C0/C1-Steuerzeichen sowie Schraeg- und Rueckwaertsschraegstrich; anschliessend
     wird Leerraum zusammengezogen und die Laenge begrenzt. Reine Punkt-Namen (`.`, `..`) werden
-    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `join_remote_path`'s `..`-Ablehnung,
-    nicht der alleinige Schutz."""
+    geleert, damit kein `..`-Segment entsteht - die Rueckfallebene ist `join_remote_path`'s
+    `..`-Ablehnung, nicht der alleinige Schutz."""
     cleaned = "".join(ch for ch in name if ch not in _CONTROL_CHARS)
     cleaned = cleaned.replace("/", " ").replace("\\", " ")
     cleaned = " ".join(cleaned.split())
@@ -76,7 +76,7 @@ def sanitize_project_name(name: str) -> str:
 
 def build_export_folder_name(project_name: str, now: datetime) -> str:
     """`<bereinigter Projektname> <YYYY-MM-DD HH-MM-SS.ffffff>` - dateisystem-/WebDAV-sicher, ohne
-    `:` im Zeitstempel, mit Mikrosekunden fuer strukturelle Eindeutigkeit (ADR 0136 Punkt 2)."""
+    `:` im Zeitstempel, mit Mikrosekunden fuer strukturelle Eindeutigkeit."""
     timestamp = now.strftime("%Y-%m-%d %H-%M-%S.%f")
     name = sanitize_project_name(project_name)
     return f"{name} {timestamp}".strip()
@@ -84,7 +84,7 @@ def build_export_folder_name(project_name: str, now: datetime) -> str:
 
 def _parent_folders(relative_path: str) -> list[str]:
     """Die Unterordner eines `relative_path` (ohne den Dateinamen), in Einfuegetiefe - die MKCOL-
-    Menge, die den Zielordner die Quellstruktur spiegeln laesst (ADR 0136 Punkt 2)."""
+    Menge, die den Zielordner die Quellstruktur spiegeln laesst."""
     parts = [part for part in relative_path.split("/") if part][:-1]
     folders: list[str] = []
     current = ""
@@ -97,7 +97,7 @@ def _parent_folders(relative_path: str) -> list[str]:
 def _export_overlaps_scan_root(opencloud_path: str) -> bool:
     """Der Export-Wurzelordner `PhotoSort-Export` liegt am Drive-Root. Er liegt damit im Scan-Baum,
     wenn der Scan die Drive-Wurzel selbst ist (`opencloud_path` leer oder `/`) - der naechste Scan
-    importierte die exportierten Kopien sonst als neue Fotos (ADR 0136 Punkt 2)."""
+    importierte die exportierten Kopien sonst als neue Fotos."""
     return opencloud_path.strip("/") == ""
 
 
@@ -108,16 +108,15 @@ async def run_export(
     *,
     run_id: int | None = None,
 ) -> ExportRun | None:
-    """Der Export-Lauf: Menge ableiten -> Lauf + Schnappschuss -> MKCOL Wurzel/Unterordner -> je
-    Foto COPY. Ein leeres Projekt erzeugt KEINEN Lauf (None).
+    """Der Export-Lauf. Ein leeres Projekt erzeugt KEINEN Lauf (None).
 
     Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf; wurde der in der
-    Warteschlange abgebrochen, endet er ohne jede Arbeit (None). Ohne `run_id` (ein vor dem
-    Wartezustand eingereihter Job) legt er die Zeile selbst an.
+    Warteschlange abgebrochen, endet er ohne jede Arbeit (None). Ohne `run_id` legt er die Zeile
+    selbst an.
 
     Einzelfehler je `COPY` schreiben in die Schnappschusszeile (`export_photos.error`) und lassen
     den Lauf weiterlaufen - er endet trotz Teilfehlern `success`. Nur ein fataler Fehler
-    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed` (ADR 0136 Punkt 3).
+    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed`.
     Ein Abbruchwunsch wird vor jedem COPY gelesen: der Ordner und die bereits kopierten Fotos
     bleiben auf OpenCloud, der Lauf endet `cancelled`."""
     if run_id is not None:
@@ -136,8 +135,8 @@ async def run_export(
         await session.refresh(run)
 
     # Der Zeitstempel wird HIER genommen - im nacheinander arbeitenden Worker -, damit zwei Laeufe
-    # nicht in derselben Mikrosekunde beginnen (ADR 0136 Punkt 2: ein erneuter Export erzeugt immer
-    # einen weiteren neuen Ordner).
+    # nicht in derselben Mikrosekunde beginnen: ein erneuter Export erzeugt immer einen weiteren
+    # neuen Ordner.
     target_path = f"{EXPORT_ROOT_FOLDER}/{build_export_folder_name(project.name, runs.now_utc())}"
     run.target_path = target_path
     run.photo_count = len(included)
@@ -151,16 +150,16 @@ async def run_export(
     await session.commit()
 
     # Vor dem `try`, damit beide Fehlerpfade die Zaehler-Standorte kennen - sie stehen auch bei
-    # einem Abbruch VOR der COPY-Schleife auf 0 (Muss-Fix 3).
+    # einem Abbruch VOR der COPY-Schleife auf 0.
     exported = 0
     failed = 0
 
     try:
         drive = await client.resolve_drive(settings.opencloud_drive_name or None)
-        # ADR 0136 Punkt 2: Der Export gehoert auf die WebDAV-URL des am PROJEKT persistierten
-        # `opencloud_drive_id`, nie auf den globalen Config-Namen. Weicht die Konfiguration
-        # zwischen Scan und Export ab, faellt der Lauf hier VOR jedem Schreibzugriff aus - ein
-        # stiller COPY aus einem fremden Space waere ein Vertraulichkeits-/Integritaetsbruch.
+        # Der Export gehoert auf die WebDAV-URL des am PROJEKT persistierten `opencloud_drive_id`,
+        # nie auf den globalen Config-Namen. Weicht die Konfiguration zwischen Scan und Export ab,
+        # faellt der Lauf hier VOR jedem Schreibzugriff aus - ein stiller COPY aus einem fremden
+        # Space waere ein Vertraulichkeits-/Integritaetsbruch.
         if drive.id != project.opencloud_drive_id:
             raise OpenCloudError(
                 f"OpenCloud-Space der Konfiguration ({drive.id!r}) weicht vom Projekt "
@@ -218,7 +217,7 @@ async def run_export(
         await session.commit()
     except asyncio.CancelledError:
         # Persistiert den bis hierher erzielten Stand, BEVOR fail_export_run zurueckrollt - der
-        # failed-Bericht bildet so die real erfolgten COPYs ab (Muss-Fix 3).
+        # failed-Bericht bildet so die real erfolgten COPYs ab.
         run.exported_count = exported
         run.failed_count = failed
         run.last_progress_at = runs.now_utc()
