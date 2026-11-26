@@ -31,8 +31,7 @@ from photosort.places import (
 
 # Isoliertes Modul - haelt den synchronen criteria.py-Vertrag aller sieben lokalen Kriterien
 # unangetastet. Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN
-# anthropic-Python-SDK - exakt das Muster von opencloud/client.py (eigene Exception-Klasse,
-# httpx.AsyncClient, httpx.MockTransport-testbar).
+# anthropic-Python-SDK; httpx.MockTransport macht ihn testbar.
 #
 # URLs, Modell-IDs, Timeout und die Response-Huellen-Helfer liegen providerneutral in
 # cloud_vision.py; hier stehen nur re-exportierte Aliase.
@@ -45,26 +44,20 @@ LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 # JSON-Objekt wird erwartet).
 _MAX_RESPONSE_TOKENS = 256
 
-# Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie
-# `MAX_FINE_LABEL_LENGTH` eine DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort
-# wird VERWORFEN statt abgeschnitten: Ein abgeschnittener Name landete als `events.landmark_name`
+# Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Eine
+# DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und VERWORFEN statt abgeschnitten: Ein
+# abgeschnittener Name landete als `events.landmark_name`
 # in der Event-Ueberschrift und benennte das Event falsch. Verworfen faellt das Event stattdessen
 # auf die Koordinatenstufe zurueck.
-#
-# 80 statt der 60 des Feinlabel-Pfads: Sehenswuerdigkeitsnamen sind laenger.
 MAX_LANDMARK_NAME_LENGTH = 80
 
-# DIE EINE GRENZE fuer jede Verwendung des Namens (ADR 0107 Punkt 1): ab hier gilt ein Treffer als
-# sicher genug, `>=` und inklusiv. `criteria.py` liest sie von HIER als
+# DIE EINE GRENZE fuer jede Verwendung des Namens: ab hier gilt ein Treffer als sicher genug,
+# `>=` und inklusiv. `criteria.py` liest sie von HIER als
 # `CRITERIA_REGISTRY["landmark"].presence_threshold`, und die Importrichtung ist erzwungen -
 # `criteria.py` importiert bereits aus diesem Modul, umgekehrt entstuende ein Zyklus. Solange der
-# Wert an zwei Stellen geschrieben werden koennte, koennten Bewertung und Name auseinanderlaufen;
-# genau das war der Ausgangszustand.
+# Wert an zwei Stellen geschrieben werden koennte, koennten Bewertung und Name auseinanderlaufen.
 #
-# Dokumentiert-unkalibriert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING, es gibt keinen
-# Fotokorpus im Repo). Gegen das beobachtete Ueberidentifikations-Risiko des Vision-LLM ist sie die
-# strukturelle, aber womoeglich nicht ausreichende Gegenmassnahme - ob sie steigen muss, entscheidet
-# die Abnahme an einer echten Reise.
+# Sie ist die strukturelle Gegenmassnahme gegen die Ueberidentifikation des Vision-LLM.
 LANDMARK_CONFIDENCE_THRESHOLD = 0.5
 
 _PROMPT = (
@@ -76,7 +69,7 @@ _PROMPT = (
 )
 
 # Die Markierung des abgegrenzten Datenfelds. Es ist die LETZTE ZEILE des Prompts und besteht aus
-# genau einer Zeile - beides zusammen ist die Abgrenzung (S4a).
+# genau einer Zeile - beides zusammen ist die Abgrenzung.
 #
 # Getragen wird sie davon, dass der Feldinhalt keinen Zeilenumbruch enthalten KANN:
 # `sanitize_place_name` laeuft ueber `sanitize_label_text`, das jede Whitespace-Folge zu einem
@@ -85,7 +78,7 @@ _PROMPT = (
 # das Feld nicht beenden und keine Instruktion beginnen.
 _PLACE_HINT_MARKER = "AUFNAHMEORT:"
 
-# Die Auflage aus ADR 0106 Punkt 5. Ein lokaler Abgleich "liegt diese Sehenswuerdigkeit an dieser
+# Ein lokaler Abgleich "liegt diese Sehenswuerdigkeit an dieser
 # Koordinate" ist im Bestand nicht moeglich (der Ortsdatensatz fuehrt nur Orte und
 # Verwaltungsebenen, keine Bauwerke) - die Pruefung fuehrt deshalb das Modell selbst, und ein so
 # gemeldeter Treffer faellt unter LANDMARK_CONFIDENCE_THRESHOLD.
@@ -101,7 +94,7 @@ _PLACE_HINT_INSTRUCTION = (
 
 class LandmarkApiError(Exception):
     """Fehler beim Aufruf der Anthropic Messages API (Netzwerk, 4xx/5xx, unerwartete
-    Antwortstruktur) - analog OpenCloudError. SICHERHEIT: Meldungen betten NIEMALS den API-Key oder
+    Antwortstruktur). SICHERHEIT: Meldungen betten NIEMALS den API-Key oder
     Base64-Bilddaten ein, nur Statuscode/Reason-Phrase bzw. eine generische
     Strukturbeschreibung."""
 
@@ -133,8 +126,7 @@ class PlaceHint:
     Darstellungen derselben Abwesenheit gibt.
 
     Der Vorrat ist bewusst geschlossen: kein Viertel, keine Region, kein Land, kein
-    zusammengesetzter Anzeigename, keine weitere Zeichenkette aus der Datenbank (ADR 0106 Punkt 6,
-    S2/S4)."""
+    zusammengesetzter Anzeigename, keine weitere Zeichenkette aus der Datenbank."""
 
     locality: str | None = None
     cell: tuple[float, float] | None = None
@@ -147,21 +139,21 @@ class PlaceHint:
 def place_hint_for(
     locality: str | None, gps_lat: float | None, gps_lon: float | None
 ) -> PlaceHint | None:
-    """Die Stufenwahl der Ortsangabe an genau EINER Stelle (ADR 0106 Punkt 2).
+    """Die Stufenwahl der Ortsangabe an genau EINER Stelle.
 
     Ortsname, sonst grobe Koordinate, sonst nichts. Beide Stufen sind dauerhaft; die
     Koordinatenstufe ist kein Uebergangszustand bis zu einer besseren Namensaufloesung, sie greift
     bevorzugt dort, wo sich kein Ortsname aufloesen liess.
 
     `locality` ist bereits das Ergebnis von `places.usable_locality` - es gibt keine zweite Fassung
-    von "ein Ortsname gilt als aufgeloest" (S2). Er laeuft hier dennoch ein weiteres Mal durch
+    von "ein Ortsname gilt als aufgeloest". Er laeuft hier dennoch ein weiteres Mal durch
     `sanitize_place_name`: Das ist der AUSGEHENDE Rand, und er verlaesst sich nicht auf die
     Sanitisierung am Schreibrand. Ueberlebt der Name sie nicht, greift die Koordinatenstufe - ein
     unbrauchbarer Name macht das Foto nicht ortlos.
 
     OHNE eigene gemessene Koordinate gibt es GAR KEINEN Hinweis, und damit strukturell auch keinen
     Ortsnamen: der Name stammt aus der Zelle des Fotos. Eine ueber `events.py::infer_locations`
-    uebernommene Koordinate erreicht diese Funktion nie (S3) - eine Schaetzung truege Ortsdaten auch
+    uebernommene Koordinate erreicht diese Funktion nie - eine Schaetzung truege Ortsdaten auch
     fuer Aufnahmen hinaus, die selbst nie eine hatten. Das Fehlen ist kein Fehlerfall: das Foto wird
     unveraendert erkannt."""
     if gps_lat is None or gps_lon is None:
@@ -193,12 +185,12 @@ def build_prompt(hint: PlaceHint | None) -> str:
     """Der Prompt, wahlweise mit Ortsangabe - ERZEUGT aus dem `PlaceHint`, nie als zweites Literal
     gefuehrt.
 
-    Ohne Hinweis bleibt der Prompt wortgleich der bisherige: Ein Foto ohne eigene Koordinate wird
+    Ohne Hinweis bleibt der Prompt unveraendert: Ein Foto ohne eigene Koordinate wird
     unveraendert erkannt, und die Antwortform haengt nicht am Hinweis.
 
     Mit Hinweis kommen ZWEI Teile dazu, in dieser Reihenfolge: die Auflage (Instruktionsteil) und
     danach, als letzte Zeile, das abgegrenzte Datenfeld. Die Angabe wird NIE in den Instruktionssatz
-    hineingeschrieben (S4a).
+    hineingeschrieben.
 
     `_MAX_RESPONSE_TOKENS` bleibt unangetastet - der Prompt waechst nur auf der EINGABESEITE."""
     if hint is None:
@@ -207,8 +199,7 @@ def build_prompt(hint: PlaceHint | None) -> str:
 
 
 class LandmarkClientLike(Protocol):
-    """Schmale, injizierbare Schnittstelle - erlaubt ein Test-Double ohne echtes Netzwerk/Secret,
-    analog FaceDetectorLike/OpenCloudScanClient.
+    """Schmale, injizierbare Schnittstelle - erlaubt ein Test-Double ohne echtes Netzwerk/Secret.
 
     `hint` ist ein PFLICHTPARAMETER ohne Vorgabewert, dieselbe Begruendung wie bei Modell und
     Schrittmacher der Client-Klassen: Mit einer Vorgabe `None` fiele eine Aufrufstelle, die den
@@ -254,13 +245,13 @@ def usable_landmark_name(
     unterscheiden: es entsteht kein Anzeigezustand und kein Hinweis auf die verworfene Vermutung,
     das Foto faellt auf Ortsname bzw. Koordinate zurueck.
 
-    Ueber die Verwendbarkeit entscheidet damit die LESESTELLE, nicht die Schreibstelle (ADR 0107
-    Punkt 2): Die Erkennungszeile bleibt unveraendert vollstaendig - die Antwort ist bezahlt - und
+    Ueber die Verwendbarkeit entscheidet damit die LESESTELLE, nicht die Schreibstelle: Die
+    Erkennungszeile bleibt unveraendert vollstaendig - die Antwort ist bezahlt -, und
     eine spaetere Aenderung der Grenze wirkt beim naechsten Neuaufbau der Gruppierung, ohne einen
     einzigen erneuten Cloud-Aufruf.
 
-    Der KANONISCHE Name schlaegt den Rohnamen (ADR 0107 Punkt 5); eine Zeile ohne kanonischen Namen
-    verhaelt sich exakt wie vor dem Register. SICHERHEIT (S9): `sanitize_landmark_name` wirkt auf
+    Der KANONISCHE Name schlaegt den Rohnamen; fehlt er, gilt der Rohname. SICHERHEIT:
+    `sanitize_landmark_name` wirkt auf
     den zurueckgegebenen Wert, GLEICH ob kanonischer Name oder Rohname - die Altbestandsdeckung
     darf nicht dadurch entfallen, dass ein neues Feld daneben tritt. Uebersteht der kanonische Name
     die Sanitisierung nicht, faellt der Aufruf auf den Rohnamen zurueck."""
@@ -282,9 +273,9 @@ def landmark_detection_from_json(parsed: Any, usage: TokenUsage | None = None) -
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.") from exc
     if name is not None and not isinstance(name, str):
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
-    # Sicherheits-Muss-Kriterium: Sanitisierung und Laengengrenze AN DER QUELLE. Solange der Name
-    # nirgends gerendert wurde, ging er als Rohwert in die Datenbank - mit dem Rendern in der
-    # Event-Ueberschrift faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie
+    # Sicherheits-Muss-Kriterium: Sanitisierung und Laengengrenze AN DER QUELLE - der Name geht
+    # sonst als Rohwert in die Datenbank und wird in der Event-Ueberschrift gerendert. Ein zu
+    # langer Name wird GANZ verworfen, nie
     # abgeschnitten: Ein abgeschnittener Name landete als `events.landmark_name` in der
     # Event-Ueberschrift und benennte das Event falsch.
     name = sanitize_landmark_name(name)
@@ -301,7 +292,7 @@ def landmark_detection_from_json(parsed: Any, usage: TokenUsage | None = None) -
 class AnthropicLandmarkClient:
     """Echte, httpx-basierte Implementierung von LandmarkClientLike - direkter REST-Aufruf gegen
     die Anthropic Messages API, kein anthropic-SDK. `transport` ist injizierbar
-    (httpx.MockTransport in Tests, analog OpenCloudClient) - `build_landmark_client()` unten laeuft
+    (httpx.MockTransport in Tests) - `build_landmark_client()` unten laeuft
     dagegen NIE in einem automatisierten Test (echtes Secret + echter Netzwerkversuch)."""
 
     def __init__(
@@ -338,7 +329,7 @@ class AnthropicLandmarkClient:
         self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
     ) -> LandmarkDetection:
         # Der Hinweis geht in den TEXTTEIL derselben Nachricht, die das Bild traegt - kein
-        # zusaetzlicher Aufruf und kein zweiter Empfaenger. SICHERHEIT (S4b): `body` bleibt ein
+        # zusaetzlicher Aufruf und kein zweiter Empfaenger. SICHERHEIT: `body` bleibt ein
         # Python-Objekt und geht als solches an `post_vision_request(..., json=body)`; hier wird
         # NIE ein JSON-Text zusammengesetzt.
         body = {
@@ -379,8 +370,8 @@ class AnthropicLandmarkClient:
 
 
 class MistralLandmarkClient:
-    """Echte, httpx-basierte Implementierung von LandmarkClientLike, exakt analog
-    AnthropicLandmarkClient - direkter REST-Aufruf gegen die Mistral Chat Completions API, kein
+    """Echte, httpx-basierte Implementierung von LandmarkClientLike - direkter REST-Aufruf gegen
+    die Mistral Chat Completions API, kein
     Mistral-SDK. `transport` ist injizierbar (httpx.MockTransport in Tests) -
     `build_landmark_client()` unten laeuft dagegen NIE in einem automatisierten Test (echtes Secret
     + echter Netzwerkversuch)."""
@@ -395,8 +386,7 @@ class MistralLandmarkClient:
         throttle: CloudRequestThrottle,
     ) -> None:
         self._model = model
-        # Pflicht-Schluesselwortparameter ohne Default, Begruendung wortgleich zu
-        # AnthropicLandmarkClient oben.
+        # Pflicht-Schluesselwortparameter ohne Default.
         self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
@@ -415,7 +405,7 @@ class MistralLandmarkClient:
     async def detect(
         self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
     ) -> LandmarkDetection:
-        # Der Hinweis im Textteil, Begruendung wortgleich zu AnthropicLandmarkClient.detect oben.
+        # Der Hinweis im Textteil wie bei AnthropicLandmarkClient.detect.
         body = {
             "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
@@ -439,7 +429,6 @@ class MistralLandmarkClient:
                 }
             ],
         }
-        # Begruendung wortgleich zu AnthropicLandmarkClient.detect oben.
         response = await post_vision_request(
             self._client,
             MISTRAL_ENDPOINT,
@@ -458,10 +447,9 @@ def build_landmark_client(model: str) -> LandmarkClientLike:
     """Dispatch-Factory zwischen AnthropicLandmarkClient und MistralLandmarkClient.
 
     Der Anbieter folgt aus DEM MODELL (`cloud_vision.py::provider_for_vision_model`), nicht aus
-    `settings.landmark_provider`: seit Spec 0383 ist das Cloud-Modell eine Eigenschaft des
-    Projekts je Taetigkeit, und zwei Taetigkeiten duerfen in einem Lauf zwei Anbieter treffen
-    (ADR 0143 Punkt 2). Fuer Projekte ohne eigene Wahl ist es wirkungsgleich, weil die
-    Installationsvorgabe gegen ihren Anbieter validiert ist.
+    `settings.landmark_provider`: Das Cloud-Modell ist eine Eigenschaft des Projekts je Taetigkeit,
+    und zwei Taetigkeiten duerfen in einem Lauf zwei Anbieter treffen. Fuer Projekte ohne eigene
+    Wahl ist es wirkungsgleich, weil die Installationsvorgabe gegen ihren Anbieter validiert ist.
 
     Eine Modell-ID ausserhalb der Registry ist ein `ValueError` statt eines stillen Rueckfalls
     auf den Installationsanbieter: die Wahl ist geschlossen, und ein geratener Anbieter schickte
