@@ -29,7 +29,7 @@ interface ModalDialogProps {
  * (Hintergrundklick ja oder nein) legt der Aufrufer fest.
  *
  * FOKUSFALLE UND ESC SIND IN EIGENEM JS IMPLEMENTIERT, nicht dem nativen Element ueberlassen.
- * Grund ist keine Geschmacksfrage: jsdom implementiert weder `showModal()` noch die Fokusfalle
+ * jsdom implementiert weder `showModal()` noch die Fokusfalle
  * noch die Esc-Behandlung - eine Zusage, die allein auf dem nativen Verhalten beruhte, waere
  * untestbar, und der Projekt-Polyfill in setupTests.ts wuerde in einem Test nur sich selbst
  * bestaetigen.
@@ -133,9 +133,8 @@ export function useModalDialog({
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
     const active = document.activeElement
-    // Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt - vorwaerts traf kein Zweig zu
-    // und der Fokus wanderte aus dem Modal heraus. Beide Richtungen fangen ihn jetzt gleich ab:
-    // rueckwaerts auf das letzte, vorwaerts auf das erste Element.
+    // Beide Richtungen fangen den Ausreisser ab: rueckwaerts auf das letzte, vorwaerts auf das
+    // erste Element - sonst wanderte der Fokus aus dem Modal heraus.
     const hasStrayFocus = !dialog.contains(active)
 
     if (event.shiftKey && (hasStrayFocus || active === first)) {
