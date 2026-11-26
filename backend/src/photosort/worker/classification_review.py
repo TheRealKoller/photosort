@@ -1,10 +1,9 @@
-"""Der Prueflauf zweier Klassifizierungsverfahren (Spec 0616, ADR 0139).
+"""Der Prueflauf zweier Klassifizierungsverfahren.
 
 Der Job klassifiziert die eingefrorene Pruefmenge fuer BEIDE Seiten neu und schreibt
 ausschliesslich in die sechs Prueftabellen. Geltende Motiv-Kopfzeilen, Kriterien,
 Albumtauglichkeit, Rangfolge und die Kostenspalten der uebrigen Laeufe bleiben unberuehrt - die
-Isolation ist die Zusage aus ADR 0139 Punkt 2 und wird von zwei Wachtern getragen (Syntaxbaum und
-Bestandsvergleich).
+Isolation wird von zwei Wachtern getragen (Syntaxbaum und Bestandsvergleich).
 
 Reihenfolge: erst die kostenfreien Seiten (Eye, dann lokal), danach die kostenpflichtige Cloud.
 Faellt der Sidecar mitten im Lauf, ist noch nichts bezahlt.
@@ -203,8 +202,7 @@ async def _run_eye_sides(
 
     Eine Eye-Seite ohne gespeicherte Fassung ist ein `EyeMappingError` VOR dem ersten Foto, kein
     Rueckfall auf die Lauf-Fassung: die Pruefung endet `FAILED` (`ERROR_GENERIC`), statt eine
-    Fassung zu pruefen, die niemand gewaehlt hat.
-    """
+    Fassung zu pruefen, die niemand gewaehlt hat."""
 
     versions: list[tuple[str, str]] = []
     for side in sides:
@@ -275,10 +273,9 @@ async def _run_local_sides(
     """Die lokale Seite: `compute_content_criteria` + `local_motif_strengths`, ohne
     Sehenswuerdigkeits-Beitrag und ohne eine Zeile in `photo_criterion_scores`.
 
-    Die Detektoren werden EINMAL gebaut; ein einzelner Fehlschlag laesst nur die davon
-    abhaengigen Kriterien fehlen (dieselbe Best-effort-Regel wie im Kriterienlauf). Ein Foto ohne
-    `display`-Datei ergibt acht Nullen - das ist eine Beurteilung und kein fehlendes Ergebnis.
-    """
+    Die Detektoren werden EINMAL gebaut; ein einzelner Fehlschlag laesst nur die davon abhaengigen
+    Kriterien fehlen. Ein Foto ohne `display`-Datei ergibt acht Nullen - das ist eine Beurteilung
+    und kein fehlendes Ergebnis."""
 
     detector = runs.try_build(build_detector)
     animal_detector = runs.try_build(build_animal_detector)
@@ -344,7 +341,7 @@ async def _run_cloud_side(
     build_client: Callable[[str], CategoryDetectionClientLike],
 ) -> set[int]:
     """Die kostenpflichtige Seite. Der Client wird nur gebaut, wenn die Einwilligung des Projekts
-    vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall (ADR 0139 Punkt 5)."""
+    vorliegt - ein Fehlen ist ein fester Fehlersatz, kein stiller Rueckfall."""
 
     if not project.cloud_vision_detection_enabled:
         raise ReviewAbort(ERROR_NO_CONSENT)
@@ -613,10 +610,10 @@ async def execute_classification_review(
                 build_client=build_cloud_client,
             )
 
-        # Edge Case 4: Eine Seite, die auf JEDEM Foto gezaehlt gescheitert ist, hat ein Ergebnis -
-        # "keins je Foto". Erst eine Seite, die ohne einen einzigen gezaehlten Fotofehler nichts
-        # liefert, ist der kaputte Client (unbekannte Fassung, falsche Antwort) und endet FAILED;
-        # eine leere Uebersicht verdeckte ihn.
+        # Eine Seite, die auf JEDEM Foto gezaehlt gescheitert ist, hat ein Ergebnis - "keins je
+        # Foto". Erst eine Seite, die ohne einen einzigen gezaehlten Fotofehler nichts liefert, ist
+        # der kaputte Client (unbekannte Fassung, falsche Antwort) und endet FAILED; eine leere
+        # Uebersicht verdeckte ihn.
         if any(
             not ids and not (sides[letter].failed_calls or 0)
             for letter, ids in results_by_side.items()
@@ -662,7 +659,7 @@ async def fail_review(session: AsyncSession, review: ClassificationReview, messa
     """Setzt den Lauf auf `FAILED` mit einem Satz aus der geschlossenen Menge und raeumt den
     Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
     behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
-    Ursache sichtbar (derselbe Grundsatz wie `worker/_runs.py::commit_phase_costs`)."""
+    Ursache sichtbar."""
 
     assert message in ERROR_MESSAGES
     try:
@@ -682,8 +679,8 @@ async def fail_review(session: AsyncSession, review: ClassificationReview, messa
 
 
 async def run_classification_review(ctx: dict[str, Any], review_id: int) -> int | None:
-    """Der arq-Job. `max_tries=1`: eine Pruefung wird nie automatisch wiederholt (ADR 0139
-    Punkt 6); ein Fehlschlag ist ein Endzustand mit fester Meldung.
+    """Der arq-Job. `max_tries=1`: eine Pruefung wird nie automatisch wiederholt; ein Fehlschlag
+    ist ein Endzustand mit fester Meldung.
 
     Die Zeile legt die API als `QUEUED` an; hier wird sie uebernommen. Wurde sie in der
     Warteschlange abgebrochen, endet der Job ohne jede Arbeit. Der Abbruch-Beobachter macht die
