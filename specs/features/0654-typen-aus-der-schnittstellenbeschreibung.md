@@ -1,6 +1,6 @@
 # 0654 - Die Typen der Oberfläche entstehen aus der Schnittstellenbeschreibung des Servers
 
-**Status:** Accepted
+**Status:** Implemented ([PR #672](https://github.com/TheRealKoller/photosort/pull/672))
 **Erstellt:** 2026-11-26
 **Bezug:** Issue [#654](https://github.com/TheRealKoller/photosort/issues/654)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil das Dokument zwei Umsetzungsschritte
