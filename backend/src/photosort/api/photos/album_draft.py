@@ -80,7 +80,7 @@ async def _draft_photo_ids(
     auf, auch eine Verwerfung aus dem Bildbestand und unabhaengig vom Vorschlag. Ein gestrichenes
     Foto OHNE Rangzeile (im Ausschuss aussortiert) erfuellt keinen Zweig.
 
-    SICHERHEIT (S2): `Photo.project_id == project_id` steht AUSSERHALB des `or_`, die Rangzeile
+    SICHERHEIT: `Photo.project_id == project_id` steht AUSSERHALB des `or_`, die Rangzeile
     haengt per `outerjoin` am Lauf DIESES Projekts, und alle drei Zweige lesen denselben Alias
     `own_rating` mit `user_id` in der Join-Bedingung. Untersagt sind ein zweiter `Rating`-Alias
     ohne Nutzerbedingung, ein Projektpraedikat innerhalb des `or_` und eine Rangzeile ohne
@@ -93,7 +93,7 @@ async def _draft_photo_ids(
 
     REIHENFOLGE `(events.position, photos.taken_at, photos.id)`, siehe `place_in_events`.
 
-    AUFLAGE S14 - die Komplexitaetsklasse ist verbindlich, nicht die Eingabegrenze: Die Menge
+    Die Komplexitaetsklasse ist verbindlich, nicht die Eingabegrenze: Die Menge
     waechst mit den eigenen Handlungen, bis hin zu jedem Foto des Projekts. Die Eventliste kommt
     FERTIG herein und die Zuordnung laeuft in einem Durchgang darueber, nie als Abfrage je Foto."""
     own_rating = aliased(Rating)
@@ -136,7 +136,7 @@ async def _draft_photo_ids(
 async def album_draft(
     project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste und hat kein Vollstaendigkeitsnetz - ein Endpunkt, der
     # diesen Parameter vergisst, waere STILL OEFFENTLICH und gaebe den Entwurf preis.
     current_user: User = Depends(get_current_user),
@@ -144,7 +144,7 @@ async def album_draft(
     """Der Album-Entwurf DES ANFRAGENDEN NUTZERS als GANZES samt Eventliste des letzten
     erfolgreichen Laufs; Menge und Reihenfolge siehe `_draft_photo_ids`.
 
-    SICHERHEIT (S4/S14 der Spec 0429/0430): kein `limit`/`offset`. Die Obergrenze der Antwort ist
+    SICHERHEIT: kein `limit`/`offset`. Die Obergrenze der Antwort ist
     der bewertete Bestand des Laufs zuzueglich der eigenen Aufnahmen; die Menge waechst nur durch
     Handlungen des Anfragenden selbst. Ein abgeschnittener Entwurf, den die Ansicht als
     vollstaendig ausweist, waere ein Zustand, den keine Anzeige als fehlerhaft erkennt.
@@ -201,7 +201,7 @@ async def album_draft(
             select(func.count())
             .select_from(PhotoRanking)
             .where(
-                # SICHERHEIT (S2): das Laufpraedikat bindet an dieses Projekt.
+                # SICHERHEIT: das Laufpraedikat bindet an dieses Projekt.
                 PhotoRanking.criterion_scoring_run_id == latest_run_id,
                 PhotoRanking.rank_score.is_not(None),
                 ~exists().where(
@@ -224,18 +224,18 @@ async def list_photos(
     rating_status: RatingFilter | None = None,
     # Der alte Entwurfsmodus, ersetzt durch `GET /projects/{id}/album-draft`. Er steht hier noch
     # als `None`-typisierter Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt
-    # still ignoriert zu werden - in BEIDEN Belegungen (S3). Ein vom Service Worker noch nicht
+    # still ignoriert zu werden - in BEIDEN Belegungen. Ein vom Service Worker noch nicht
     # ersetzter Client fiele mit `draft=true` sonst still in den Listing-Zweig und zeigte den
     # vollen Bestand als Entwurf, mit einem Zaehler, der niemandes Eingriffe misst.
     draft: None = Query(None, include_in_schema=False),
-    # Der alte Auswahlparameter, mit ADR 0098 ersetzt. Er steht hier noch als `None`-typisierter
+    # Der alte Auswahlparameter, ersetzt. Er steht hier noch als `None`-typisierter
     # Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt still ignoriert zu werden -
     # in BEIDEN Belegungen. `selection=false` ist der gefaehrlichere Fall: heute ein gueltiger
     # Aufruf, der sonst still in den Listing-Zweig fiele. Die Antwortmenge des Nachfolgers ist
     # zudem NUTZERABHAENGIG; ein stehengebliebener Aufrufer bekaeme also nicht bloss eine andere
     # Menge, sondern eine mit anderer Bedeutung.
     selection: None = Query(None, include_in_schema=False),
-    # Der alte Kuratierungsparameter, mit ADR 0097 ERSATZLOS entfallen. Er steht hier noch als
+    # Der alte Kuratierungsparameter, ERSATZLOS entfallen. Er steht hier noch als
     # `None`-typisierter Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt still
     # ignoriert zu werden: FastAPI uebergeht einen unbekannten Query-Parameter kommentarlos, und
     # ein stehengebliebener Aufrufer bekaeme dann den vollen Listing-Zweig statt einer Auswahl -
@@ -247,7 +247,7 @@ async def list_photos(
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
     # Liste erzeugt (Muster `MAX_QUERY_POSITION`).
     camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
-    # Der Personenfilter (S3): hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
+    # Der Personenfilter: hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
     # danach dedupliziert. Gefiltert wird ueber die Id, nie ueber einen Namen - ein Name gehoerte
     # sonst in Zugriffslog und Browserverlauf. Der Album-Entwurf kennt ihn nicht: er wird immer
     # vollstaendig geliefert und im Client eingeschraenkt, damit seine Zaehlung stimmt.

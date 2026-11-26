@@ -15,7 +15,7 @@ from photosort.motifs import (
 # Eine zweite Liste waere eine dauerhaft driftende Kopie, und die Staerkeliste braucht das volle
 # Set unabhaengig davon, was fuer ein einzelnes Foto beurteilt wurde.
 #
-# SICHERHEIT (S1): Auth am ROUTER (Muster wie api/projects.py). Der Eintrag in
+# SICHERHEIT: Auth am ROUTER (Muster wie api/projects.py). Der Eintrag in
 # der handgepflegten Router-Liste von tests/test_auth_guard.py::_protected_router_operations
 # gehoert dazu - ohne ihn waere ein spaeter ergaenzter zweiter Endpunkt DIESES Routers von keinem
 # Vollstaendigkeitstest erfasst. Inhaltlich exponiert der Endpunkt ausschliesslich statische

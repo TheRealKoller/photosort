@@ -2,7 +2,7 @@
 Gruppenabschluss.
 
 EIGENES MODUL UND EIGENER ROUTER, weil die geschriebene Entscheidung keinen Nutzer kennt: Wer sie
-trifft, geht in keine Zeile ein (ADR 0104 Punkt 2). Sie gehoeren ausdruecklich nicht nach
+trifft, geht in keine Zeile ein. Sie gehoeren ausdruecklich nicht nach
 `api/photos/` - siehe die Sicherungen unten.
 """
 
@@ -39,7 +39,7 @@ from photosort.models import (
     User,
 )
 
-# SICHERHEIT (S8): Der Torwaechter haengt am ROUTER. Alle Endpunkte tragen damit DREI Sicherungen
+# SICHERHEIT: Der Torwaechter haengt am ROUTER. Alle Endpunkte tragen damit DREI Sicherungen
 # statt einer: die Router-Dependency hier, den Eintrag in
 # `tests/test_auth_guard.py::_protected_router_operations()` und je einen eigenen, pfadbenannten
 # 401-Fall in `tests/test_api_duplicate_decisions.py`. Laege einer von ihnen stattdessen in
@@ -52,15 +52,15 @@ from photosort.models import (
 # ABWEICHUNG ZUM MUSTER `api/album_decisions.py`, benannt statt stillschweigend: Dort nimmt der
 # Endpunkt KEIN `current_user` entgegen. Hier tut er es zusaetzlich zur Router-Dependency, weil
 # alle Schreibwege mit derselben `DuplicateGroupOut` antworten wie der Lesepfad - und die traegt
-# `PhotoOut` samt `suggestion`/`ratings`, die eine Funktion des ANFRAGENDEN Nutzers sind (S10).
+# `PhotoOut` samt `suggestion`/`ratings`, die eine Funktion des ANFRAGENDEN Nutzers sind.
 # Ohne den Nutzer waere die Antwort entweder eine andere Form als der Lesepfad oder eine, die die
 # Vorschlags- und Bewertungsanzeige einer fremden Person zeigt. Die ENTSCHEIDUNG selbst bleibt
-# nutzerlos: Wer schreibt, geht in keine Zeile ein (ADR 0104 Punkt 2).
+# nutzerlos: Wer schreibt, geht in keine Zeile ein.
 router = APIRouter(tags=["duplicates"], dependencies=[Depends(get_current_user)])
 
 
 class DuplicateDecisionIn(BaseModel):
-    """SICHERHEIT (S6): der Koerper traegt AUSSCHLIESSLICH `decision`, pflichtig und ohne `null`.
+    """SICHERHEIT: der Koerper traegt AUSSCHLIESSLICH `decision`, pflichtig und ohne `null`.
 
     Kein `photo_id`, kein `user_id`, KEINE Id-Liste - und `extra="forbid"`, damit eine
     mitgeschickte Menge nicht still ignoriert, sondern zurueckgewiesen wird. Welche Fotos die
@@ -94,10 +94,10 @@ async def _write(
     star_photo_ids: list[int],
 ) -> None:
     """Setzt die Entscheidung fuer genau diese Fotos - OHNE `commit`, die Transaktionsgrenze
-    gehoert dem Endpunkt (S9).
+    gehoert dem Endpunkt.
 
     RAeumt ZUSAETZLICH den Automatik-Merker ALLER Mitglieder des Sterns in derselben Transaktion
-    ab (Spec 0639): Eine Nutzerentscheidung gewinnt immer gegen die automatische, auch wenn sie
+    ab: Eine Nutzerentscheidung gewinnt immer gegen die automatische, auch wenn sie
     nur ein Mitglied betrifft - der Stern ist ganz automatisch oder gar nicht. Die Menge kommt
     vom Endpunkt aus den projektgebundenen `links`; `Photo.project_id` steht in DERSELBEN
     Anweisung, damit ein fremdes Projekt unberuehrt bleibt. Die Entscheidungszeile selbst bleibt
@@ -108,7 +108,7 @@ async def _write(
     und damit in eine 500 auf einem alltaeglichen zweiten Druck. Beide Anweisungen liegen in
     DERSELBEN Transaktion; ein Zwischenzustand ohne Zeile ist von aussen nie beobachtbar.
 
-    SICHERHEIT (S9), zweite Haelfte: Das deckt den WIEDERHOLTEN Druck ab, nicht den
+    SICHERHEIT, zweite Haelfte: Das deckt den WIEDERHOLTEN Druck ab, nicht den
     NEBENLAEUFIGEN. Committet die andere Sitzung zwischen unserem `DELETE` und unserem `INSERT`,
     trifft das `INSERT` eine Zeile, die es beim `DELETE` noch nicht gab - und der
     Primaerschluessel wirft. Der `flush` VOR dem `commit` des Endpunkts holt diesen Fehler an eine
@@ -148,7 +148,7 @@ async def _write(
 
 
 async def _has_ausschuss_entry(session: AsyncSession, project_id: int, photo_id: int) -> bool:
-    """Ob DIESES Foto DIESES Projekts im Ausschuss-BESTAND liegt (Spec 0525/0637).
+    """Ob DIESES Foto DIESES Projekts im Ausschuss-BESTAND liegt.
 
     Die zweite Haelfte der Vorbedingung des Einzelwegs: offener Vorschlag ODER Entscheidungszeile.
     Die Projektbindung sitzt hier - `has_ausschuss_entry()` traegt selbst keine Projektbedingung,
@@ -173,14 +173,14 @@ async def set_duplicate_decision(
     photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     payload: DuplicateDecisionIn,
     session: AsyncSession = Depends(get_session),
-    # Ausschliesslich fuer die ANTWORT (S10) - siehe den Kopfkommentar dieser Datei. In die
+    # Ausschliesslich fuer die ANTWORT - siehe den Kopfkommentar dieser Datei. In die
     # geschriebene Zeile geht der Nutzer nicht ein.
     current_user: User = Depends(get_current_user),
 ) -> DuplicateGroupOut:
     """Entscheidet ueber EINE Aufnahme des Ausschusses: bleibt sie, oder geht sie.
 
     Sie ist KEINE Albumentscheidung. Dieser Weg schreibt ausdruecklich KEINE `Rating`-Zeile und
-    KEIN Nacharbeits-Ereignis (ADR 0104 Punkt 2): Die Nacharbeit misst Korrekturen am Album, nicht
+    KEIN Nacharbeits-Ereignis: Die Nacharbeit misst Korrekturen am Album, nicht
     am Ausschuss, und ueber `write_own_rating` geschrieben zoege jedes "behalten" das Foto zugleich
     in den Album-Entwurf des Anfragenden - eine Aussage, die niemand getroffen hat.
 
@@ -189,14 +189,14 @@ async def set_duplicate_decision(
     Aufnahme Duplikat-Verlierer ist - es uebersteuert die Duplikatablehnung und ausdruecklich keine
     Ablehnung aus einem anderen Grund. Eine wegen Unschaerfe abgelehnte Aufnahme bleibt abgelehnt.
 
-    SEIT SPEC 0525 IST DAS EINE ANGENOMMENE, ABER UNWIRKSAME HANDLUNG (Auflage S10). Die
+    DAS IST EINE ANGENOMMENE, ABER UNWIRKSAME HANDLUNG. Die
     Vorbedingung heisst "liegt im Ausschuss-Bestand": offener Vorschlag ODER Entscheidungszeile.
     Die Unschaerfe-Ablehnung ohne Gruppe darf entschieden werden, und `keep` bleibt dort
-    wirkungslos - die Anzeige bietet es gar nicht erst an. Der Server weist es NICHT ab (Auflage S4
-    der Spec 0486 gilt unveraendert): Eine solche Abweisung waere eine zweite Regel neben ADR 0104
-    Punkt 3 und liefe dem gruppenweiten Schreibweg entgegen.
+    wirkungslos - die Anzeige bietet es gar nicht erst an. Der Server weist es NICHT ab: Eine
+    solche Abweisung waere eine zweite Regel neben dem Ueberlebens-Praedikat in `duplicates.py`
+    und liefe dem gruppenweiten Schreibweg entgegen.
 
-    Die Entscheidungszeile traegt den Eintrag mit (Spec 0637): Ein alter `discard` aus einem
+    Die Entscheidungszeile traegt den Eintrag mit: Ein alter `discard` aus einem
     frueheren Lauf bleibt im Bestand und ist damit widerrufbar, auch wenn der Neulauf
     `suggested_status` UND `duplicate_of` zurueckgesetzt hat.
 
@@ -208,7 +208,7 @@ async def set_duplicate_decision(
     nicht entschieden" kennt die Story nicht, aendern heisst den anderen Wert schreiben.
 
     Die Antwort ist dieselbe `DuplicateGroupOut` wie auf dem Lesepfad - der vollstaendige Stand der
-    Gruppe, nicht ein Echo des Koerpers. Ohne Gruppe ist der Stand leer (AK6): Ein Aufruf, der eine
+    Gruppe, nicht ein Echo des Koerpers. Ohne Gruppe ist der Stand leer: Ein Aufruf, der eine
     Entscheidung getragen hat, darf nicht wie ein Fehlschlag aussehen.
 
     `404` fuer ein Foto, das NICHT im Ausschuss-Bestand dieses Projekts liegt - das deckt das
@@ -218,12 +218,12 @@ async def set_duplicate_decision(
     `decision`, `409` bei einem gleichzeitigen Schreibversuch, der sich nicht aufloesen laesst -
     nie eine `500`."""
     project = await _project_or_404(project_id, session)
-    # SICHERHEIT (S7): Die Projektbindung steht ausgeschrieben, hier ueber die bereits
+    # SICHERHEIT: Die Projektbindung steht ausgeschrieben, hier ueber die bereits
     # projektbegrenzte Kantenliste. Ein Foto eines fremden Projekts loest sich nicht auf und wird
     # deshalb auch nicht geschrieben.
     links = await load_duplicate_links(session, project.id)
     representative_id = representative_of(photo_id, links)
-    # SICHERHEIT (S10): Die zweite Haelfte der Vorbedingung ist projektgebunden und wird pro FOTO
+    # SICHERHEIT: Die zweite Haelfte der Vorbedingung ist projektgebunden und wird pro FOTO
     # beantwortet - ein Sammelweg entsteht daraus nicht.
     if representative_id is None and not await _has_ausschuss_entry(session, project.id, photo_id):
         raise HTTPException(
@@ -255,7 +255,7 @@ async def set_duplicate_group_decision(
     photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     payload: DuplicateDecisionIn,
     session: AsyncSession = Depends(get_session),
-    # Wie beim Einzelweg: ausschliesslich fuer die Antwort (S10).
+    # Wie beim Einzelweg: ausschliesslich fuer die Antwort.
     current_user: User = Depends(get_current_user),
 ) -> DuplicateGroupOut:
     """Entscheidet ueber ALLE Aufnahmen einer Duplikat-Gruppe in EINEM Aufruf.
@@ -267,7 +267,7 @@ async def set_duplicate_group_decision(
     Danach traegt jedes Mitglied denselben Zustand, auch jene, die vorher einzeln anders
     entschieden waren; ein anschliessender Einzelaufruf uebersteuert nur dieses eine Mitglied.
 
-    SICHERHEIT (S5): Der Repraesentant wird ZUERST aufgeloest; gibt es keine Gruppe, ist die
+    SICHERHEIT: Der Repraesentant wird ZUERST aufgeloest; gibt es keine Gruppe, ist die
     Antwort `404`, BEVOR geschrieben wird. Ein `None` als Vergleichswert des Gruppenpraedikats wird
     in SQLAlchemy zu `duplicate_of IS NULL` und traefe damit jede nicht aussortierte Aufnahme des
     Projekts: Ein Klick schriebe `discard` oder `keep` auf den gesamten Bestand - im einen Fall
@@ -275,7 +275,7 @@ async def set_duplicate_group_decision(
     Cloud-Anbieter. Die Gruppengroesse ist die Verstaerkung dieses einen Schreibwegs und der Grund,
     warum er schaerfer ist als der einzelne.
 
-    SICHERHEIT (S9): EINE Transaktion, ein `commit` ueber alle Zeilen. Eine halb entschiedene
+    SICHERHEIT: EINE Transaktion, ein `commit` ueber alle Zeilen. Eine halb entschiedene
     Gruppe waere eine willkuerliche Teilmenge im abfliessenden Bestand, ohne dass ein Lesepfad den
     Zwischenzustand als solchen erkennt. Ein gleichzeitiger Schreibzugriff beider Nutzer auf
     dieselbe Aufnahme wird `409`, nie `500` - und weil die Transaktion die GANZE Gruppe umfasst,
@@ -310,7 +310,7 @@ async def confirm_duplicate_group(
     project_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     session: AsyncSession = Depends(get_session),
-    # Wie beim Einzelweg: ausschliesslich fuer die Antwort (S10).
+    # Wie beim Einzelweg: ausschliesslich fuer die Antwort.
     current_user: User = Depends(get_current_user),
 ) -> DuplicateGroupOut:
     """Schliesst EINE Duplikat-Gruppe ab: Jedes Mitglied mit offenem Vorschlag bekommt `discard`.
@@ -321,30 +321,30 @@ async def confirm_duplicate_group(
     gehabt haette. Mitglieder mit Entscheidungszeile oder ohne Vorschlag bleiben ungeschrieben: Ihr
     angezeigter Zustand gilt schon ohne Zeile. Es entsteht kein Gruppenzustand "erledigt".
 
-    SICHERHEIT (S1): Der Stern wird ZUERST aufgeloest; ohne Gruppe ist die Antwort `404`, bevor
+    SICHERHEIT: Der Stern wird ZUERST aufgeloest; ohne Gruppe ist die Antwort `404`, bevor
     irgendetwas geschrieben wird - auch fuer ein Foto mit offenem Vorschlag. Die erweiterte
     Vorbedingung des Einzelwegs gilt hier nicht: `member_ids_of(None, ...)` liefert jedes Foto ohne
     `duplicate_of`, und ein Aufruf auf ein einzelnes unscharfes Foto schriebe sonst `discard` auf
     jede Unschaerfe-Ablehnung des Projekts - der projektweite Massenabschluss ohne dessen
     Bestaetigung.
 
-    SICHERHEIT (S2): Projektbindung, Mitgliedschaft und `has_open_suggestion()` stehen als
+    SICHERHEIT: Projektbindung, Mitgliedschaft und `has_open_suggestion()` stehen als
     UND-Glieder in EINER Anweisung mit innerem Join auf `PhotoScore`. `has_open_suggestion` traegt
     keine eigene Projektbedingung und setzt den Join voraus; ohne ihn wuerde die Bedingung fuer
     jedes Mitglied wahr, sobald irgendein Foto der Instanz einen offenen Vorschlag traegt, und der
     Gewinner, der "Behalten" zeigt, verloere still seinen Platz in Bewertung und Album.
 
-    SICHERHEIT (S3): Nur einfuegen, nur `discard`, eine Transaktion; der `flush` liegt vor dem
+    SICHERHEIT: Nur einfuegen, nur `discard`, eine Transaktion; der `flush` liegt vor dem
     `commit`, ein `IntegrityError` wird `409` mit vollstaendigem Rueckzug. KEIN `DELETE` und nie
     `_write`: Zwischen Auswahl und Schreiben kann der andere Nutzer eine `keep`-Zeile committen,
     und ein vorangestelltes `DELETE` ersetzte seine Handlung still durch `discard`. Ein zweiter
     Aufruf findet keine offene Aufnahme mehr und antwortet `200` mit derselben Gruppe.
 
-    SICHERHEIT (S4): Weder Menge noch Wert kommen vom Aufrufer - der Endpunkt nimmt kein
+    SICHERHEIT: Weder Menge noch Wert kommen vom Aufrufer - der Endpunkt nimmt kein
     Eingabeschema entgegen, ein mitgeschickter Koerper wird nie gelesen. Eine Id-Liste waere ein
     Massen-Schreibweg auf beliebige Fotos, ein Wert ein Massen-`keep`.
 
-    SICHERHEIT (S5): `gate_confirmed_at` bleibt unberuehrt. Der Zeitstempel oeffnet den
+    SICHERHEIT: `gate_confirmed_at` bleibt unberuehrt. Der Zeitstempel oeffnet den
     Cloud-Teilschritt; ihn setzt allein der projektweite Abschluss, der auch die
     Unschaerfe-Ablehnungen ausserhalb jeder Gruppe uebernimmt.
 

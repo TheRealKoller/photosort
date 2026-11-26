@@ -53,12 +53,12 @@ from photosort.thumbnails import measure_cache_usage
 # Momentaufnahme ohne Filter ist - mehrere Endpunkte erzeugten mehrere Ladezustaende fuer einen
 # fachlich atomaren Stand.
 #
-# Auth doppelt (Security-Abschnitt der Spec, Punkt 1): `current_user` als expliziter Parameter,
+# Auth doppelt: `current_user` als expliziter Parameter,
 # weil der Bewertungsstand das User-Objekt braucht, UND `dependencies=[Depends(get_current_user)]`
 # am Router. FastAPI cached die Dependency innerhalb eines Requests (identischer Callable), der
 # Torwaechter kostet also weder eine zweite JWT-Pruefung noch ein zweites session.get(User, ...).
-# Er ist noetig, weil dies ein NEU angelegtes Modul ist: ohne Router-Ebene hinge die Absicherung
-# eines kuenftigen zweiten Endpunkts allein daran, dass niemand den Parameter vergisst.
+# Er ist noetig, weil ohne Router-Ebene die Absicherung eines kuenftigen zweiten Endpunkts allein
+# daran hinge, dass niemand den Parameter vergisst.
 router = APIRouter(prefix="/projects", tags=["stats"], dependencies=[Depends(get_current_user)])
 
 
@@ -86,7 +86,7 @@ class MotifEntryOut(BaseModel):
     nicht" sind verschiedene Aussagen. Ueberall mit `is None` statt truthy zu pruefen.
 
     KEIN `share`-Feld: ein Anteil setzte eine Grundmenge voraus, zu der die Zahlen sich summieren -
-    und genau das tun sie seit diesem Motivset nicht mehr."""
+    und genau das tun sie nicht."""
 
     motif_key: str
     display_name: str
@@ -98,7 +98,7 @@ class MotifEntryOut(BaseModel):
 
 class CostPurpose(enum.StrEnum):
     """Die Kostenposten der Statistik: die beiden Cloud-Vision-Laeufe und die Pruefung der
-    Klassifizierungsverfahren (Spec 0616).
+    Klassifizierungsverfahren.
 
     Eigener Typ und NICHT `CloudVisionPhase`: die Pruefung ist kein Cloud-Vision-Lauf je Foto, sie
     hat keinen Foto-Fortschritt und keine `photo_cloud_vision_errors`-Zeile. Haenge sie an jene
@@ -129,14 +129,11 @@ class CostOut(BaseModel):
 
 
 class ProgressOut(BaseModel):
-    """Die fuenf Verarbeitungsstufen aus Akzeptanzkriterium F1. Bezugsgroesse ist ueberall
-    `photo_count`.
+    """Die fuenf Verarbeitungsstufen. Bezugsgroesse ist ueberall `photo_count`.
 
-    Bewusst OHNE eine sechste Kennzahl "Kriterien berechnet" (`photo_criterion_scores`), die die
-    Response-Skizze des Architekturabschnitts noch mitfuehrte: F1 zaehlt genau fuenf Stufen auf,
-    und das Akzeptanzkriterium "Darstellung und Abgrenzung" schliesst Kennzahlen ueber diesen
-    Katalog hinaus ausdruecklich aus. Fuer den Leser waere sie zudem inhaltlich redundant zu
-    `ranked` (beide entstehen im selben Lauf)."""
+    Bewusst OHNE eine sechste Kennzahl "Kriterien berechnet" (`photo_criterion_scores`): Der
+    Katalog umfasst genau diese fuenf Stufen, und die Zahl waere inhaltlich redundant zu `ranked`
+    (beide entstehen im selben Lauf)."""
 
     scanned: int
     thumbnails_ready: int
@@ -146,12 +143,12 @@ class ProgressOut(BaseModel):
 
 
 class RatingsOut(BaseModel):
-    """AUSSCHLIESSLICH die Bewertungen des angemeldeten Nutzers (Security-Abschnitt der Spec,
-    Punkt 2). `unrated` ist die Differenz zur Fotoanzahl, NIE `photos_total - COUNT(ratings)` -
+    """AUSSCHLIESSLICH die Bewertungen des angemeldeten Nutzers. `unrated` ist die Differenz zur
+    Fotoanzahl, NIE `photos_total - COUNT(ratings)` -
     letzteres zaehlte die Bewertungen der anderen Person mit und machte deren Fortschritt aus der
     Differenz rekonstruierbar.
 
-    DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` ist seit ADR 0098 eine eigene Spalte
+    DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` ist eine eigene Spalte
     und steht NEBEN der Albumentscheidung - dasselbe Foto kann in `favorite` und in
     `album_worthy` zaehlen. Erschoepfend und ueberschneidungsfrei sind allein die drei Zahlen der
     Albumentscheidung: `album_worthy + rejected + unrated == photo_count`. Die Oberflaeche darf
@@ -191,7 +188,7 @@ class DiagnosticsOut(BaseModel):
 
 class ProjectStatsOut(BaseModel):
     """Die vollstaendige Momentaufnahme eines Projekts. Ausschliesslich explizite Pydantic-
-    Modelle, kein Durchreichen von ORM-Objekten (Security-Muss-Kriterium der Spec)."""
+    Modelle, kein Durchreichen von ORM-Objekten."""
 
     photo_count: int
     storage: StorageOut
@@ -224,7 +221,7 @@ class ProjectStatsOut(BaseModel):
 COST_CURRENCY = "USD"
 
 # Statisches SQL-Literal mit `current_database()` - NIE ein per f-String zusammengesetzter
-# Datenbankname (Security-Abschnitt der Spec, Punkt 3).
+# Datenbankname.
 DATABASE_SIZE_SQL = text("SELECT pg_database_size(current_database())")
 
 
@@ -246,9 +243,9 @@ async def local_database_bytes_estimate(
     session: AsyncSession, project_photo_count: int
 ) -> int | None:
     """Dialekt-Weiche ueber `dialect.name`, BEWUSST nicht ueber ein try/except um fehlschlagendes
-    SQL: ein DBAPI-Fehlertext kann Datenbank-, Host- und Verbindungsangaben enthalten
-    (Security-Abschnitt der Spec, Punkt 3). Ausserhalb Postgres wird gar kein SQL abgesetzt und
-    der Wert ist `None` ("nicht ermittelbar"), nicht `0`."""
+    SQL: ein DBAPI-Fehlertext kann Datenbank-, Host- und Verbindungsangaben enthalten.
+    Ausserhalb Postgres wird gar kein SQL abgesetzt und der Wert ist `None` ("nicht
+    ermittelbar"), nicht `0`."""
     if session.get_bind().dialect.name != "postgresql":
         return None
     total_database_bytes = (await session.execute(DATABASE_SIZE_SQL)).scalar_one()
@@ -339,7 +336,7 @@ async def _motif_band_stats(
     Staerkezeile faellt in genau eines. Beide Grenzen inklusiv, und die Konstanten stehen nur in
     `motifs.py`.
 
-    Projekt-Skopierung ueber `_assessed_photo_ids` ist Muss-Kriterium mit eigenem Test: keine der
+    Projekt-Skopierung ueber `_assessed_photo_ids` ist Pflicht und eigens getestet: keine der
     drei Motiv-Tabellen traegt eine eigene `project_id`, die Einschraenkung ist die einzige
     Trennung zwischen zwei Projekten.
 
@@ -411,7 +408,7 @@ async def _cost_out(
         Token-Preisen groesser null ist das strukturell unmoeglich und damit ein zuverlaessiger
         Indikator fuer eine Erfassungsluecke, kein heuristischer Verdacht.
 
-    Der Posten `review` (Spec 0616) folgt derselben Lueckenregel (b) - und NUR ihr: es gibt keine
+    Der Posten `review` folgt derselben Lueckenregel (b) - und NUR ihr: es gibt keine
     Altzeilen ohne Betrag, denn die Tabellen entstehen mit dieser Revision. Eine Seite ohne
     `api_calls` (Eye, lokal) ist kostenfrei und loest nie einen Hinweis aus; `estimated_cost_usd`
     ist ein Beleg und fliesst in keinen Betrag ein.
@@ -508,12 +505,12 @@ async def _cost_out(
 async def _ratings_out(
     session: AsyncSession, project_id: int, user_id: int, photo_count: int
 ) -> RatingsOut:
-    """Ausschliesslich ueber `Rating.user_id == current_user.id` (Security-Muss-Kriterium): die
+    """Ausschliesslich ueber `Rating.user_id == current_user.id`: die
     `user_id` stammt allein aus dem JWT, der Endpunkt hat keinen `user_id`-Parameter in Pfad,
     Query oder Body.
 
     DREI GEFILTERTE ZAEHLUNGEN STATT EINES `group_by(Rating.status)`, und das ist keine
-    Kosmetik: Seit `status` nullable ist, haette die Gruppierung eine `NULL`-Gruppe, und ein
+    Kosmetik: Da `status` nullable ist, haette die Gruppierung eine `NULL`-Gruppe, und ein
     `sum(counts.values())` darueber zaehlte eine reine Favoritenzeile als "bewertet" mit -
     `unrated` waere zu klein, ohne dass irgendetwas bricht. `favorite` kommt aus der SPALTE, nie
     aus dem Status: der entfallene Statuswert liest sich sonst still als `0` und behauptet, es
@@ -612,7 +609,7 @@ async def get_project_stats(
     #
     # Die ersten drei Werte kommen aus `photo_aggregates.py` und werden hier NICHT selbst
     # geschrieben: dieselben drei Zahlen stehen an `ProjectOut`, und zwei Definitionen liefen
-    # auseinander. SICHERHEIT (Spec 0375, S3): `RatingsOut.unrated` wird unten als
+    # auseinander. SICHERHEIT: `RatingsOut.unrated` wird unten als
     # `photo_count - eigene Bewertungen` gerechnet - der geteilte Zaehlausdruck muss unter dem
     # LEFT JOIN weiterhin genau eine Zeile je Foto zaehlen. Waere der Join einmal 1:N, zaehlte er
     # still zu hoch, und `unrated` wuerde groesser als der Bestand.
@@ -643,7 +640,7 @@ async def get_project_stats(
     # Gebuendelte Einzelwerte ueber verschiedene Tabellen in EINER Abfrage (Skalar-Subqueries auf
     # gemeinsamer, FROM-loser SELECT-Liste) - dieselben Werte einzeln abzufragen waeren vier
     # zusaetzliche Rundreisen. `last_scan_files_skipped` bezieht sich auf den zuletzt GESTARTETEN
-    # Scan-Lauf, unabhaengig von dessen Status (Akzeptanzkriterium D2); `id` als Zweitkriterium
+    # Scan-Lauf, unabhaengig von dessen Status; `id` als Zweitkriterium
     # loest zwei Laeufe mit identischem Zeitstempel deterministisch auf.
     (
         landmark_results,
@@ -699,9 +696,9 @@ async def get_project_stats(
     cache_entries = (
         await session.execute(select(Photo.id, Photo.etag).where(Photo.project_id == project_id))
     ).all()
-    # Ueber to_thread, damit die Event-Loop bei zwei os.stat je Foto nicht blockiert
-    # (Security-Abschnitt der Spec, Punkt 3 "Selbst-DoS begrenzen"; die zweite Haelfte der
-    # Gegenmassnahme sitzt am Frontend-Hook: kein Polling, staleTime > 0).
+    # Ueber to_thread, damit die Event-Loop bei zwei os.stat je Foto nicht blockiert (Selbst-DoS
+    # begrenzen; die zweite Haelfte der Gegenmassnahme sitzt am Frontend-Hook: kein Polling,
+    # staleTime > 0).
     cache_usage = await asyncio.to_thread(
         measure_cache_usage,
         Path(settings.photo_cache_dir),

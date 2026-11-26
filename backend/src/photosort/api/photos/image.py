@@ -65,7 +65,7 @@ async def _get_photo_or_404(photo_id: int, session: AsyncSession) -> Photo:
 
 
 class MotifCorrectionIn(BaseModel):
-    """SICHERHEIT (S5): der Body traegt AUSSCHLIESSLICH `applies`.
+    """SICHERHEIT: der Body traegt AUSSCHLIESSLICH `applies`.
 
     Kein `user_id`, `photo_id`, `motif_key`, `strength` oder `updated_at` im Eingabeschema -
     Massenzuweisung ist strukturell ausgeschlossen statt im Handler herausgefiltert. Ein Feld,
@@ -88,7 +88,7 @@ async def _stored_motif_strength(
 ) -> float | None:
     """Die GESPEICHERTE Modellstaerke dieses Paares, `None` ohne Staerkezeile.
 
-    AUSDRUECKLICH NICHT `motif_strengths.py::effective_strength_expression` (ADR 0100 Punkt 2):
+    AUSDRUECKLICH NICHT `motif_strengths.py::effective_strength_expression`:
     Die wirksame Staerke traegt bereits eine fruehere Korrektur desselben Paares. Eingefroren
     zeigte die ZWEITE Korrektur eines Motivs nie einen Modellfehler an - sie beantwortete die
     Frage nach der Modellaussage mit der Korrektur.
@@ -106,7 +106,7 @@ async def _stored_motif_strength(
 
 
 def _validated_motif_key(motif_key: str) -> str:
-    """SICHERHEIT (S4): reine Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, VOR
+    """SICHERHEIT: reine Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, VOR
     jeder Schreib- und Loeschaktion, fuer `PUT` UND `DELETE`.
 
     Kein `startswith`, kein Regex, keine Normalisierung des Eingabewerts - der Client schickt den
@@ -132,7 +132,7 @@ async def set_motif_correction(
     motif_key: str,
     payload: MotifCorrectionIn,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S2): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # Router-weite `dependencies`-Liste und hat deshalb auch keinen Vollstaendigkeitstest - ein
     # hier vergessener Parameter waere STILL OEFFENTLICH: kein Fehler, keine 401, nur Daten.
     current_user: User = Depends(get_current_user),
@@ -160,7 +160,7 @@ async def set_motif_correction(
     project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 
-    # SICHERHEIT (S6): die Aufsuch-Bedingung lautet `(photo_id, motif_key)` und filtert BEWUSST
+    # SICHERHEIT: die Aufsuch-Bedingung lautet `(photo_id, motif_key)` und filtert BEWUSST
     # NICHT zusaetzlich auf `user_id`. Mit dem Nutzer im Filter entstuenden zwei widersprueckliche
     # Zeilen fuer dasselbe Paar, und welche gilt, entschiede die Sortierung.
     existing = (
@@ -172,13 +172,13 @@ async def set_motif_correction(
         )
     ).scalar_one_or_none()
 
-    # NUR BEI TATSAECHLICHER AENDERUNG (Spec 0432, L1): Dieselbe Korrektur erneut geschrieben ist
+    # NUR BEI TATSAECHLICHER AENDERUNG: Dieselbe Korrektur erneut geschrieben ist
     # keine Korrektur - auch dann nicht, wenn die Zeile dabei den Nutzer wechselt. Der
-    # Bestandszustand des FOTOS bewegt sich nicht, und die Story misst Korrekturen.
+    # Bestandszustand des FOTOS bewegt sich nicht, und gemessen werden Korrekturen.
     changed = existing is None or existing.applies != payload.applies
 
     if existing is None:
-        # SICHERHEIT (S6): `user_id` stammt AUSSCHLIESSLICH aus `current_user.id` - nie aus Body
+        # SICHERHEIT: `user_id` stammt AUSSCHLIESSLICH aus `current_user.id` - nie aus Body
         # oder Query. Es ist ein Auditfeld und kein Zugriffsschluessel.
         session.add(
             PhotoMotifCorrection(
@@ -193,7 +193,7 @@ async def set_motif_correction(
         existing.user_id = current_user.id
         # `updated_at` traegt `onupdate=func.now()` und wird nie von Hand gesetzt.
 
-    # SICHERHEIT (S7): der `flush` VOR dem `commit` bringt den Unique-Constraint hier zum Tragen,
+    # SICHERHEIT: der `flush` VOR dem `commit` bringt den Unique-Constraint hier zum Tragen,
     # damit ein gleichzeitiger Schreibversuch beider Nutzer als `409` herauskommt und nie als
     # `500`. Eine Sperre (`with_for_update()`) ist nicht noetig und ausdruecklich nicht
     # vorzusehen: die Korrektur schreibt eine Zeile und leitet nichts ab, sie hat keinen
@@ -235,7 +235,7 @@ async def delete_motif_correction(
     photo_id: int,
     motif_key: str,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S2): siehe set_motif_correction - der 401-Nachweis ist fuer BEIDE Endpunkte
+    # SICHERHEIT: siehe set_motif_correction - der 401-Nachweis ist fuer BEIDE Endpunkte
     # Pflicht, weil dieser Router keinen Vollstaendigkeitstest hat.
     current_user: User = Depends(get_current_user),
 ) -> None:
@@ -245,9 +245,9 @@ async def delete_motif_correction(
     IDEMPOTENT (`204` auch ohne bestehende Zeile) und ohne Body. Auch die jeweils andere Person
     darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack.
 
-    Ein Aufruf auf ein NIE korrigiertes Motiv erzeugt kein Ereignis der Nacharbeit (Spec 0432,
-    L1): Er nimmt nichts zurueck. Die Ruecknahme einer bestehenden Korrektur dagegen erzeugt ein
-    ZUSAETZLICHES Ereignis - das urspruengliche bleibt unveraendert stehen (L6)."""
+    Ein Aufruf auf ein NIE korrigiertes Motiv erzeugt kein Ereignis der Nacharbeit: Er nimmt
+    nichts zurueck. Die Ruecknahme einer bestehenden Korrektur dagegen erzeugt ein
+    ZUSAETZLICHES Ereignis - das urspruengliche bleibt unveraendert stehen."""
     project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 

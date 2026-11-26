@@ -20,7 +20,7 @@ from photosort.api.deps import get_current_user, get_session
 from photosort.feedback_log import load_frozen_context, record_final_decision
 from photosort.models import FeedbackEventKind, FinalSelectionDecision, Photo
 
-# SICHERHEIT (S1): Der Torwaechter haengt am ROUTER, nicht am Endpunkt - und genau das ist hier
+# SICHERHEIT: Der Torwaechter haengt am ROUTER, nicht am Endpunkt - und genau das ist hier
 # moeglich, weil kein Endpunkt dieses Routers das `User`-Objekt selbst braucht.
 #
 # Dieser Endpunkt ist der einzige Schreibendpunkt des Projekts, dessen Authentifizierung an der
@@ -34,7 +34,7 @@ from photosort.models import FeedbackEventKind, FinalSelectionDecision, Photo
 # aendert.
 router = APIRouter(tags=["album"], dependencies=[Depends(get_current_user)])
 
-# SICHERHEIT (S3): Obergrenze der fremdgesteuerten Pfad-Id, deklarativ VOR jeder Verwendung. Ein
+# SICHERHEIT: Obergrenze der fremdgesteuerten Pfad-Id, deklarativ VOR jeder Verwendung. Ein
 # Pydantic-`int` ist unbeschraenkt und landet direkt in `session.get(Photo, photo_id)`; jenseits
 # von 2^63 wirft SQLite einen `OverflowError` und der Endpunkt antwortete `500` statt `404`.
 #
@@ -46,7 +46,7 @@ _MAX_PHOTO_ID = 1_000_000_000
 
 
 class AlbumDecisionIn(BaseModel):
-    """SICHERHEIT (S4): der Body traegt AUSSCHLIESSLICH `included`, pflichtig und ohne `null`.
+    """SICHERHEIT: der Body traegt AUSSCHLIESSLICH `included`, pflichtig und ohne `null`.
 
     Kein `photo_id`, kein `user_id`, kein `updated_at` im Eingabeschema - Massenzuweisung ist
     strukturell ausgeschlossen statt im Handler herausgefiltert.
@@ -62,7 +62,7 @@ class AlbumDecisionIn(BaseModel):
 
 
 class AlbumDecisionOut(BaseModel):
-    """Der PERSISTIERTE Zustand nach dem Schreibvorgang (Auflage S5).
+    """Der PERSISTIERTE Zustand nach dem Schreibvorgang.
 
     Er wird aus der Zeile gebildet, nie aus dem Body zurueckgespiegelt: Die Oberflaeche nimmt den
     eigenen Query-Schluessel von der Invalidierung aus und schreibt genau diesen Wert fort. Ein
@@ -120,13 +120,13 @@ async def set_album_decision(
     ES GIBT KEIN `DELETE`: "wieder strittig werden" ist kein Zustand, den die Story kennt; aendern
     heisst den anderen Wert schreiben.
 
-    SICHERHEIT (S3): Die Bindung laeuft ausschliesslich ueber die globale `photo_id` - keine
+    SICHERHEIT: Die Bindung laeuft ausschliesslich ueber die globale `photo_id` - keine
     Projektaufloesung, keine Mitgliedschaftspruefung, Muster `PUT /photos/{id}/rating`. Beide
     Nutzer sehen alle Projekte; es gibt keine Grenze, die hier zu ziehen waere. Der uebergebene
     Wert wird nicht zurueckgespiegelt.
 
-    Jede tatsaechliche AENDERUNG wird im Ereignis-Log der Nacharbeit festgehalten (Spec 0432) -
-    OHNE Nutzer (S9), weil die Entscheidung dem Projekt gehoert, und mit hoeherem Gewicht, weil
+    Jede tatsaechliche AENDERUNG wird im Ereignis-Log der Nacharbeit festgehalten -
+    OHNE Nutzer, weil die Entscheidung dem Projekt gehoert, und mit hoeherem Gewicht, weil
     sie das Urteil beider Personen ist. Ein wiederholtes identisches `included` ist keine
     Korrektur und erzeugt nichts."""
     # Die `project_id` VOR dem `flush` festhalten: Dessen `rollback`-Zweig laesst jedes geladene
@@ -135,7 +135,7 @@ async def set_album_decision(
     project_id = (await _get_photo_or_404(photo_id, session)).project_id
 
     decision = await _existing_decision(session, photo_id)
-    # NUR BEI TATSAECHLICHER AENDERUNG (ADR 0100 Punkt 4). Die Abwesenheit der Zeile heisst
+    # NUR BEI TATSAECHLICHER AENDERUNG. Die Abwesenheit der Zeile heisst
     # "unentschieden" und ist damit selbst ein Vorzustand, von dem aus jede Richtung ein Wechsel
     # ist.
     changed = decision is None or decision.included != payload.included
@@ -146,7 +146,7 @@ async def set_album_decision(
         decision.included = payload.included
         # `updated_at` traegt `onupdate=func.now()` und wird nie von Hand gesetzt.
 
-    # SICHERHEIT (S6): der `flush` VOR dem `commit` bringt den Primaerschluessel auf `photo_id`
+    # SICHERHEIT: der `flush` VOR dem `commit` bringt den Primaerschluessel auf `photo_id`
     # hier zum Tragen. Die Arbeitssicht laedt zum schnellen Durchklicken ein und jede Kachel
     # traegt zwei Schaltflaechen; zwei gleichzeitige Anfragen sehen beide "keine Zeile" und fuegen
     # beide ein. Ohne diese Behandlung waere das Ergebnis eine `500` auf einen alltaeglichen
@@ -174,7 +174,7 @@ async def set_album_decision(
         await session.flush()
 
     if changed:
-        # KEIN `user_id` (S9) - und der Endpunkt koennte gar keines liefern: Dieser Router nimmt
+        # KEIN `user_id` - und der Endpunkt koennte gar keines liefern: Dieser Router nimmt
         # bewusst kein `current_user` entgegen, und ein struktureller Waechter haelt das fest.
         await record_final_decision(
             session,

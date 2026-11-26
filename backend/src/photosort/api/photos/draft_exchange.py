@@ -102,7 +102,7 @@ async def _alternative_page(
     der Endpunkt setzt sie nur zusammen. `None` heisst: leere Restmenge."""
     # (2) Die Kandidaten: die Rangzeilen dieses Events ABZUEGLICH des eigenen Entwurfs.
     #
-    # Der Entwurf ist `(Vorschlag ∪ Aufgenommen) \ Gestrichen` (ADR 0098 Punkt 1); hier steht
+    # Der Entwurf ist `(Vorschlag ∪ Aufgenommen) \ Gestrichen`; hier steht
     # dessen Verneinung, ausgeschrieben als zwei Bedingungen:
     #
     #   (a) nicht selbst aufgenommen, und
@@ -182,13 +182,13 @@ async def _alternative_page(
 @router.get("/projects/{project_id}/draft-alternatives", response_model=DraftAlternativesOut)
 async def draft_alternatives(
     project_id: int,
-    # SICHERHEIT (S4): zwei fremdgesteuerte Objekt-Ids, deklarativ begrenzt VOR jeder Verwendung.
+    # SICHERHEIT: zwei fremdgesteuerte Objekt-Ids, deklarativ begrenzt VOR jeder Verwendung.
     # `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert jenseits von
     # 2^63 unter SQLite einen `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt.
     # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
     # React-Textknoten gerendert, nie geloggt.
     event_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
-    # Optional (S8): ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Zeitordnung, nie die
+    # Optional: ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Zeitordnung, nie die
     # Bindung an Lauf und Event.
     photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `photos` mit ihren
@@ -204,7 +204,7 @@ async def draft_alternatives(
     # erste Seite der vollen Reihe als Band zu bekommen - Muster des `draft`-Riegels.
     nearest: None = Query(None, include_in_schema=False),
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
     # `_protected_router_operations()` in `test_auth_guard.py` fuehrt ihn nicht - fuer ihn gibt es
     # KEIN Vollstaendigkeitsnetz. Ein Endpunkt, der diesen Parameter vergisst, waere STILL
@@ -213,7 +213,7 @@ async def draft_alternatives(
     # laengst bewertete Fotos wieder aufblitzen).
     current_user: User = Depends(get_current_user),
 ) -> DraftAlternativesOut:
-    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5).
+    """Die Alternativen zu EINEM Bild des Entwurfs.
 
     Inhalt: die Fotos DIESES Events im letzten erfolgreichen Lauf ABZUEGLICH des Entwurfs des
     anfragenden Nutzers (`Vorschlag ∪ eigene Aufnahmen`). Ein von ihm GESTRICHENES Foto ist damit
@@ -230,7 +230,7 @@ async def draft_alternatives(
     `series_rest` und `total` entstehen aus DERSELBEN Kandidatenabfrage; es gibt keine eigene
     Zaehl- oder Positionsabfrage.
 
-    SICHERHEIT - Projektbindung (S2): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
+    SICHERHEIT - Projektbindung: `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
     ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert unter `/projects/A/…`
     eindeutig FREMDE Rangzeilen. Ohne das Lauf-Praedikat liefe der Endpunkt nicht in eine
     erkennbar falsche Kollisionsmenge, sondern lieferte KOHAERENTE Fotos eines fremden Projekts:
@@ -242,7 +242,7 @@ async def draft_alternatives(
     (`load_effective_strengths`) bekommt ausschliesslich die Ids der ausgelieferten Seite.
     `photos` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
 
-    SICHERHEIT - das Bezugsbild (S3): `photo_id` wird samt `taken_at` AUSSCHLIESSLICH ueber EINE
+    SICHERHEIT - das Bezugsbild: `photo_id` wird samt `taken_at` AUSSCHLIESSLICH ueber EINE
     Abfrage auf eine Rangzeile desselben Laufs UND desselben Events aufgeloest, nie ueber
     `session.get(Photo, …)` oder eine zweite Abfrage auf `Photo.taken_at`. Scheitert das, endet
     die Anfrage vor jeder weiteren Abfrage mit `200` und dem byte-gleichen Leerkoerper
@@ -251,7 +251,7 @@ async def draft_alternatives(
     `series_rest`); ohne das Praedikat wuerde die Zeitposition eines fremden Fotos ablesbar.
     Ein abweichender Statuscode oder Koerper waere daneben ein Existenz-Orakel ueber fremde Ids.
 
-    OHNE `photo_id` (S8) entfaellt Schritt (1) und mit ihm die Zeitordnung: `order_by_quality`
+    OHNE `photo_id` entfaellt Schritt (1) und mit ihm die Zeitordnung: `order_by_quality`
     ordnet dann nach Qualitaet, `reference_index` ist `None`, `series` ergibt `422`. Die
     Kandidatenabfrage steht mit Lauf- UND Event-Praedikat unveraendert - eine unbekannte oder
     projektfremde `event_id` ergibt den Leerkoerper. Untersagt sind ein Ersatz-Bezugsbild (etwa
@@ -271,8 +271,8 @@ async def draft_alternatives(
         return _no_alternatives()
 
     # (1) Das Bezugsbild samt `taken_at` in EINER Abfrage - alle drei Praedikate ausgeschrieben,
-    # siehe Docstring (S3). Nur mit `photo_id`; ohne gibt es keines, und es wird keines
-    # ersatzweise gewaehlt (S8).
+    # siehe Docstring. Nur mit `photo_id`; ohne gibt es keines, und es wird keines
+    # ersatzweise gewaehlt.
     reference: TimedCandidate | None = None
     if photo_id is not None:
         reference_row = (
@@ -350,7 +350,7 @@ async def draft_alternatives(
 
 
 class DraftExchangeIn(BaseModel):
-    """SICHERHEIT (S4): der Body traegt GENAU ZWEI Felder, beide mit deklarativen Grenzen.
+    """SICHERHEIT: der Body traegt GENAU ZWEI Felder, beide mit deklarativen Grenzen.
 
     Kein `user_id`, kein `event_id`, kein `weight`, kein `kind`, kein `criterion_scoring_run_id`,
     kein `motif_strength` - Massenzuweisung ist strukturell ausgeschlossen statt im Handler
@@ -370,7 +370,7 @@ class DraftExchangeIn(BaseModel):
 
 
 class DraftExchangeOut(BaseModel):
-    """Der geschriebene Zustand BEIDER Bewertungszeilen (L2).
+    """Der geschriebene Zustand BEIDER Bewertungszeilen.
 
     Beide, damit die Oberflaeche wie bisher in ihre bereits geladene Liste fortschreibt statt neu
     zu laden - ein Neuladen risse die gerade getauschte Kachel aus der Entwurfsliste."""
@@ -381,7 +381,7 @@ class DraftExchangeOut(BaseModel):
 
 @dataclass(frozen=True)
 class _ExchangeSide:
-    """Eine Seite des Austauschs, AUFGELOEST UEBER IHRE RANGZEILE (S2)."""
+    """Eine Seite des Austauschs, AUFGELOEST UEBER IHRE RANGZEILE."""
 
     photo_id: int
     event_id: int
@@ -389,7 +389,7 @@ class _ExchangeSide:
     quality: float | None
 
 
-# S14: EIN Text fuer die unbekannte und fuer die projektfremde Id. Verschiedene Antworten machten
+# EIN Text fuer die unbekannte und fuer die projektfremde Id. Verschiedene Antworten machten
 # den Endpunkt zum Existenz-Orakel ueber fremde Foto-Ids.
 _EXCHANGE_REFUSAL = (
     "Beide Bilder muessen zum selben Ereignis des juengsten Vorschlagslaufs dieses Projekts "
@@ -405,7 +405,7 @@ async def _exchange_sides(
 ) -> dict[int, _ExchangeSide]:
     """Loest beide Foto-Ids UEBER EINE RANGZEILE des uebergebenen Laufs auf.
 
-    SICHERHEIT (S2), und das ist die tragende Entscheidung dieses Endpunkts: Die Aufloesung laeuft
+    SICHERHEIT, und das ist die tragende Entscheidung dieses Endpunkts: Die Aufloesung laeuft
     ausschliesslich ueber `PhotoRanking` mit dem Praedikat "juengster erfolgreicher Lauf DIESES
     Projekts", NIE ueber `session.get(Photo, …)` mit nachgelagerter Projektpruefung.
 
@@ -418,8 +418,8 @@ async def _exchange_sides(
 
     Die Modellstufe kommt aus dem EINEN Lesepunkt (`album_stage.load_album_levels`) mit dem am Lauf
     eingefrorenen Verfahren - und ausschliesslich fuer die Foto-Ids, die eine Rangzeile gestellt
-    haben (S3): `load_album_levels` loest nichts auf, die Projektbindung traegt das Laufpraedikat.
-    Ein Foto ohne Stufe dieses Verfahrens haelt den Austausch nicht auf (L4), sein Paar ist in der
+    haben: `load_album_levels` loest nichts auf, die Projektbindung traegt das Laufpraedikat.
+    Ein Foto ohne Stufe dieses Verfahrens haelt den Austausch nicht auf, sein Paar ist in der
     Diagnose spaeter nur `unbestimmt`."""
     rows = (
         await session.execute(
@@ -448,7 +448,7 @@ async def exchange_draft_photo(
     project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     payload: DraftExchangeIn,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
     # Vollstaendigkeitsnetz - ein hier vergessener Parameter waere still oeffentlich: kein Fehler,
     # keine 401, sondern ein unauthentifizierter Schreibzugriff, der ZWEI Bewertungszeilen aendert.
     current_user: User = Depends(get_current_user),
@@ -461,8 +461,8 @@ async def exchange_draft_photo(
     nachtraeglich nur ueber eine Heuristik zu einem Paar zusammenfuegen, und der zweite kann
     fehlschlagen - dann bliebe ein halb ausgefuehrter Austausch stehen.
 
-    BEIDE Bewertungszeilen und das eine Ereignis gehen in EINER Transaktion oder gar nicht
-    (Auflage S5). Das Favoriten-Kennzeichen bleibt auf beiden Seiten unberuehrt, weil der Austausch
+    BEIDE Bewertungszeilen und das eine Ereignis gehen in EINER Transaktion oder gar nicht.
+    Das Favoriten-Kennzeichen bleibt auf beiden Seiten unberuehrt, weil der Austausch
     durch dieselbe Schreibstelle laeuft wie `PUT /photos/{id}/rating`.
 
     Er erzeugt AUSDRUECKLICH KEIN zusaetzliches Streich- und Aufnahme-Ereignis: Sonst zaehlte jeder
@@ -472,7 +472,7 @@ async def exchange_draft_photo(
     `404` ohne Projekt. `422`, wenn beide Verweise dasselbe Foto benennen, wenn eines der Bilder
     nicht ueber eine Rangzeile des juengsten erfolgreichen Laufs dieses Projekts erreichbar ist,
     oder wenn die beiden nicht zum selben Ereignis gehoeren - in allen drei Faellen mit
-    demselben Text (Auflage S14). `409` bei einem gleichzeitigen Schreibversuch auf eine der
+    demselben Text. `409` bei einem gleichzeitigen Schreibversuch auf eine der
     beiden Zeilen.
 
     Die Antwort traegt BEIDE geschriebenen Zeilenzustaende, damit die Oberflaeche fortschreibt
@@ -487,12 +487,12 @@ async def exchange_draft_photo(
     run_id = await latest_successful_criterion_scoring_run_id(session, project_id)
     if run_id is None:
         # Ohne erfolgreichen Lauf gibt es keine Rangzeile, ueber die die Projektbindung liefe -
-        # und damit keinen Entwurf, in dem etwas auszutauschen waere. Derselbe Text (S14).
+        # und damit keinen Entwurf, in dem etwas auszutauschen waere. Derselbe Text.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
         )
 
-    # Der Lauf existiert hier bereits - die Quelle stammt damit aus ihm selbst (S2). Ein Foto, das
+    # Der Lauf existiert hier bereits - die Quelle stammt damit aus ihm selbst. Ein Foto, das
     # nur die Stufe des anderen Verfahrens traegt, bleibt "unbestimmt".
     sides = await _exchange_sides(
         session,
@@ -503,7 +503,7 @@ async def exchange_draft_photo(
     taken = sides.get(payload.photo_id)
     struck = sides.get(payload.replaced_photo_id)
     # EINE Bedingung fuer alle drei Ablehnungsgruende: unbekannt, projektfremd, verschiedene
-    # Ereignisse. `event_id` stammt damit aus der Rangzeile und nie aus dem Body (S3).
+    # Ereignisse. `event_id` stammt damit aus der Rangzeile und nie aus dem Body.
     if taken is None or struck is None or taken.event_id != struck.event_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
@@ -541,13 +541,13 @@ async def exchange_draft_photo(
         quality=taken.quality,
         replaced_quality=struck.quality,
     )
-    # DER EINE COMMIT ueber beide Zeilen und das Ereignis (S5).
+    # DER EINE COMMIT ueber beide Zeilen und das Ereignis.
     await session.commit()
     return DraftExchangeOut(taken=written_taken, struck=written_struck)
 
 
 class DraftExchangeUndoIn(BaseModel):
-    """SICHERHEIT (S6): GENAU vier Felder. Dieselben beiden Ids wie beim Tausch und die beiden
+    """SICHERHEIT: GENAU vier Felder. Dieselben beiden Ids wie beim Tausch und die beiden
     Vorzustaende als geschlossener Vorrat - jeweils der einzige Zustand ausser "keine
     Entscheidung", aus dem der Tausch die Seite geholt haben kann.
 
@@ -575,7 +575,7 @@ class DraftExchangeUndoOut(BaseModel):
     replaced: RatingWriteOut
 
 
-# S7: fester Text ohne Rueckspiegelung des gelesenen Zustands.
+# Fester Text ohne Rueckspiegelung des gelesenen Zustands.
 _UNDO_REFUSAL = (
     "Der Tausch laesst sich nicht mehr rueckgaengig machen: Mindestens eines der beiden Bilder "
     "wurde inzwischen veraendert."
@@ -587,7 +587,7 @@ async def undo_draft_exchange(
     project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     payload: DraftExchangeUndoIn,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
     # Vollstaendigkeitsnetz - ein hier vergessener Parameter waere ein unauthentifizierter
     # Schreibzugriff, der ZWEI Bewertungszeilen aendert.
     current_user: User = Depends(get_current_user),
@@ -595,14 +595,14 @@ async def undo_draft_exchange(
     """Stellt nach einem Tausch beide eigenen Bewertungszeilen auf ihren Zustand vor dem Tausch
     zurueck - beide oder keine.
 
-    REIHENFOLGE, verbindlich (S5): `404` Projekt -> `422` Bindung -> `409` Vorbedingung ->
+    REIHENFOLGE, verbindlich: `404` Projekt -> `422` Bindung -> `409` Vorbedingung ->
     Schreiben. Die Bindung ist wortgleich die des Tauschs (`_exchange_sides`, ein Text fuer gleiche
     Id, fehlenden Lauf, unbekannte, projektfremde Id und verschiedene Events). Stuende die
     Vorbedingung vorn, unterschiede die Antwort eine unbekannte Id (`409`) von einer projektfremden
     - ein Existenz-Orakel ueber fremde Foto-Ids; ohne die Bindung stellte der Endpunkt kohaerent
     zwei Bilder eines fremden Projekts wieder her.
 
-    VORBEDINGUNG (S7): aktuell `photo_id` = `album_worthy` und `replaced_photo_id` = `rejected`,
+    VORBEDINGUNG: aktuell `photo_id` = `album_worthy` und `replaced_photo_id` = `rejected`,
     gelesen AUSSCHLIESSLICH an den eigenen Zeilen - sonst entschiede der Zustand des anderen Nutzers
     ueber den eigenen Schreibweg. Sonst `409` mit festem Text, keine Zeile geaendert, kein
     Ereignis. Sie faengt die Wiederholung nach Abschluss ab (Doppelklick, zweiter Tab); eine
@@ -610,7 +610,7 @@ async def undo_draft_exchange(
 
     SCHREIBEN: zweimal `write_own_rating(record=False)` - `favorite` bleibt auf beiden Seiten
     unberuehrt, die Zeileninvariante setzt die Schreibstelle durch -, dazu genau EIN
-    `record_exchange` in Gegenrichtung (ADR 0100 Punkt 3: die Umkehr ist ein weiterer Tausch) und
+    `record_exchange` in Gegenrichtung (die Umkehr ist ein weiterer Tausch) und
     genau EIN Commit."""
     project = await get_project_or_404(project_id, session)
 

@@ -1,14 +1,14 @@
-"""Die Endpunkte der Klassifizierungspruefung (Spec 0616, ADR 0139).
+"""Die Endpunkte der Klassifizierungspruefung.
 
 EIGENER ROUTER, EIGENE TABELLEN: dieser Lesepfad liest ausschliesslich die Prueftabellen und die
-Fotos des Projekts - er schreibt keine Zeile einer bestehenden Tabelle (ADR 0139 Punkt 2).
+Fotos des Projekts - er schreibt keine Zeile einer bestehenden Tabelle.
 
-SICHERHEIT (S2): Die Projektbindung ist eine UND-Bedingung in DERSELBEN Anweisung. `review_id`
+SICHERHEIT: Die Projektbindung ist eine UND-Bedingung in DERSELBEN Anweisung. `review_id`
 wird zusammen mit `project_id` aufgeloest, `case_id` ueber den Join `cases -> reviews`. Eine fremde
 oder erfundene Id ergibt `404` mit wortgleichem Text, nie `403` - ein `403` waere ein
 Inhalts-Orakel. Es gibt keine Pruefungs-, Fall- oder Foto-Id aus Body oder Query.
 
-SICHERHEIT (S10): Der Torwaechter haengt am ROUTER und zusaetzlich am Eintrag in
+SICHERHEIT: Der Torwaechter haengt am ROUTER und zusaetzlich am Eintrag in
 `tests/test_auth_guard.py::_protected_router_operations()`.
 """
 
@@ -145,7 +145,7 @@ class ClassificationReviewEstimateOut(BaseModel):
 
 
 class ReviewSideIn(BaseModel):
-    """Die Verfahrenswahl EINER Seite - geschlossene Eingabe (S6).
+    """Die Verfahrenswahl EINER Seite - geschlossene Eingabe.
 
     Kein `provider`-Feld: der Anbieter folgt serverseitig aus dem Modell. `model` gilt nur fuer
     eine Cloud-Seite, `eye_mapping_version` nur fuer eine Eye-Seite; ein Wert am falschen Ort wird
@@ -159,14 +159,14 @@ class ReviewSideIn(BaseModel):
 
 
 class ReviewCreate(BaseModel):
-    """Der Koerper des Anlegens. KEIN Betrags-, Preis-, Anbieter- oder Kostenfeld (S8): die
+    """Der Koerper des Anlegens. KEIN Betrags-, Preis-, Anbieter- oder Kostenfeld: die
     Schaetzung entsteht serverseitig und wird eingefroren.
 
-    `sample_size` ist PFLICHT und `StrictInt` (S9): `"30"` und `true` sind Typfehler, nicht die
+    `sample_size` ist PFLICHT und `StrictInt`: `"30"` und `true` sind Typfehler, nicht die
     Zahl 30 und die Zahl 1 - die Vorgabe 30 ist eine Vorbelegung der Oberflaeche, kein stiller
-    Ersatzwert des Servers. Die GRENZEN 1…200 stehen dagegen absichtlich nicht im Schema: die
-    Ablehnungsreihenfolge der Spec stellt diesen `422` ANS ENDE (nach `403`/`404`/`409`/`503`),
-    und ein `Field(ge=…, le=…)` antwortete schon vor dem Handler."""
+    Ersatzwert des Servers. Die GRENZEN 1…200 stehen dagegen absichtlich nicht im Schema: sie
+    gehoeren ans ENDE der Ablehnungsreihenfolge (nach `403`/`404`/`409`/`503`), und ein
+    `Field(ge=…, le=…)` antwortete schon vor dem Handler."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -182,7 +182,7 @@ class ReviewCreatedOut(BaseModel):
 
 @dataclass(frozen=True)
 class ResolvedSide:
-    """Eine validierte Seite: die Herkunft, wie sie GESPEICHERT wird (S6).
+    """Eine validierte Seite: die Herkunft, wie sie GESPEICHERT wird.
 
     `provider` folgt aus dem Modell, nie aus dem Client; `eye_model_revision` ist die gepinnte
     Modellrevision der Fassung."""
@@ -208,7 +208,7 @@ class ResolvedSide:
 class ReviewUserOut(BaseModel):
     """Der Nutzer als AUSDRUECKLICHE Projektion auf zwei Spalten (Muster
     `api/photos/album_selection.py::_participants`): nie `model_validate(User)`,
-    `password_hash` erreicht keinen Lesepfad (S1)."""
+    `password_hash` erreicht keinen Lesepfad."""
 
     user_id: int
     username: str
@@ -237,7 +237,7 @@ class ReviewSidesOut(BaseModel):
 
 class ReviewPurposeCountsOut(BaseModel):
     """Eine Zaehlung MIT ihrer Einheit: `motifs`, `excluded_document` und `album_level` zaehlen
-    Fotos, `motif_feature` zaehlt (Foto, Motiv)-Paare (ADR 0139 Punkt 1). `presented` ist die Zahl
+    Fotos, `motif_feature` zaehlt (Foto, Motiv)-Paare. `presented` ist die Zahl
     der tatsaechlich vorgelegten Faelle = `min(Pruefgraesse, abweichend)`."""
 
     unit: Literal["photo", "pair"]
@@ -261,7 +261,7 @@ class ReviewVerdictCountsOut(BaseModel):
 class ReviewListItemOut(BaseModel):
     """Eine Zeile der Liste. `case_count`/`case_open` tragen den Stand („{n} von {m} Fällen
     offen"); `case_count == 0` heisst "keine Abweichungen" - ausser `unclassifiable_photo_count`
-    ist gleich `photo_count`: dann wurde nichts verglichen (Edge Case 4), und die Liste behauptet
+    ist gleich `photo_count`: dann wurde nichts verglichen, und die Liste behauptet
     keine Uebereinstimmung."""
 
     id: int
@@ -321,7 +321,7 @@ class ReviewCaseSideOut(BaseModel):
 class ReviewCaseOut(BaseModel):
     """Ein vorgelegter Fall mit Urteil und dessen Schreiber (Projektion auf zwei Spalten).
 
-    `photo_id` traegt die Fallansicht zum bestehenden Foto-Endpunkt (S2 erlaubt sie hier); der
+    `photo_id` traegt die Fallansicht zum bestehenden Foto-Endpunkt; der
     Export nennt stattdessen nur `photo_position` und bleibt ohne Foto-Id."""
 
     id: int
@@ -484,7 +484,7 @@ def _side_estimate(
     photo_count: int,
 ) -> ReviewSideEstimateOut:
     """Eye und lokal sind kostenfrei (`0.0`), eine Cloud-Seite kostet Fotozahl x Preis je Bild.
-    Der Anbieter folgt ausschliesslich aus dem Modell (S6) - ein Anbieterfeld gibt es nicht."""
+    Der Anbieter folgt ausschliesslich aus dem Modell - ein Anbieterfeld gibt es nicht."""
     if kind is not ClassificationReviewSideKind.CLOUD:
         return ReviewSideEstimateOut(
             kind=kind,
@@ -513,7 +513,7 @@ async def get_options(
 ) -> ClassificationReviewOptionsOut:
     """Waehlbare Verfahren, Modelle und Eye-Fassungen samt Sperrgruenden.
 
-    SICHERHEIT (S7): die Gruende sind feste Tokens, keine Variablennamen und keine Werte - die
+    SICHERHEIT: die Gruende sind feste Tokens, keine Variablennamen und keine Werte - die
     Antwort nennt nicht, WELCHER Schluessel fehlt."""
     project = await _get_project_or_404(project_id, session)
     return _options_out(project)
@@ -531,7 +531,7 @@ async def get_estimate(
     """Die Kostenvorschau vor dem Start: die Groesse der Pruefmenge x Preis je Bild, je Seite.
 
     Serverseitig gerechnet, aus derselben Zaehlung wie das Anlegen - ein vom Client geliefertes
-    Betragsfeld existiert nicht (S8). Ein unbekanntes Modell liefert `null` statt eines Fehlers:
+    Betragsfeld existiert nicht. Ein unbekanntes Modell liefert `null` statt eines Fehlers:
     die Vorschau ist ein Lesepfad, und `null` heisst "nicht schaetzbar"."""
     await _get_project_or_404(project_id, session)
     photo_count = await _review_photo_count(session, project_id)
@@ -576,10 +576,10 @@ async def _reject_while_a_review_runs(session: AsyncSession, project_id: int) ->
 
 
 def _resolve_side(side_in: ReviewSideIn, letter: str) -> ResolvedSide:
-    """Validiert EINE Seite gegen die geschlossene Wahl (S6) und legt ihre Herkunft fest.
+    """Validiert EINE Seite gegen die geschlossene Wahl und legt ihre Herkunft fest.
 
-    Alle Ablehnungen hier sind `422` und stehen im Handler, nicht im Schema: die Reihenfolge der
-    Spec verlangt sie NACH `403`/`404`/`409`/`503`."""
+    Alle Ablehnungen hier sind `422` und stehen im Handler, nicht im Schema: sie stehen NACH
+    `403`/`404`/`409`/`503`."""
     kind = side_in.kind
     if kind is ClassificationReviewSideKind.EYE:
         version = side_in.eye_mapping_version
@@ -640,7 +640,7 @@ async def create_review(
 ) -> ReviewCreatedOut:
     """Legt eine Pruefung an und reiht den Job ein.
 
-    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0616):
+    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage:
 
     1. `403`, wenn der Feature-Schalter aus ist.
     2. `403`, wenn eine Seite Eye ist und `EYE_ENABLED` aus ist - VOR jedem Projektzugriff, damit
@@ -652,10 +652,10 @@ async def create_review(
        ein eingereihter Job scheiterte garantiert, und ein stiller Rueckfall auf ein anderes
        Verfahren waere schlimmer als die sichtbare Ablehnung.
     7. `422` (zwei gleiche Seiten, unbekanntes Modell, unbekannte Fassung, Groesse ausserhalb
-       1…200) - erst hier, weil die Spec diese Ablehnung ans Ende stellt.
+       1…200) - erst hier, weil diese Ablehnung ans Ende der Reihenfolge gehoert.
 
     Danach: Schaetzung je Seite serverseitig berechnen, an der Seite EINFRIEREN, Zeile und Job
-    schreiben (S8). Kein Client-Feld traegt einen Betrag. Die Pruefung entsteht mit `QUEUED`:
+    schreiben. Kein Client-Feld traegt einen Betrag. Die Pruefung entsteht mit `QUEUED`:
     sie ist damit sofort sichtbar und abbrechbar, und der Job uebernimmt genau diese Zeile."""
     if not settings.category_selection_enabled:
         raise HTTPException(
@@ -761,7 +761,7 @@ _MOTIF_ORDER: Final[dict[str, int]] = {
     motif_key: index for index, motif_key in enumerate(MOTIF_REGISTRY)
 }
 # Die Einheit je Zweck - eine Quelle fuer Detail und Export: `motif_feature` zaehlt PAARE, die
-# drei uebrigen FOTOS (ADR 0139 Punkt 1).
+# drei uebrigen FOTOS.
 _UNIT_BY_PURPOSE: Final[dict[str, Literal["photo", "pair"]]] = {
     "motifs": "photo",
     "motif_feature": "pair",
@@ -803,7 +803,7 @@ def _side_out(
 async def _review_or_404(
     project_id: int, review_id: int, session: AsyncSession
 ) -> ClassificationReview:
-    """Die Projektbindung als UND-Bedingung in DERSELBEN Anweisung (S2): eine Pruefung eines
+    """Die Projektbindung als UND-Bedingung in DERSELBEN Anweisung: eine Pruefung eines
     anderen Projekts ist `404` mit demselben Text wie eine erfundene Id."""
     review = (
         await session.execute(
@@ -974,7 +974,7 @@ async def _case_rows(session: AsyncSession, review_id: int) -> list[_CaseRow]:
     """Die gespeicherten Faelle mit Urteil und dessen Schreiber in EINER Abfrage.
 
     Der Schreiber kommt als ausdrueckliche Projektion (`users.id`, `users.username`) - nie als
-    geladenes `User`-Objekt (S1)."""
+    geladenes `User`-Objekt."""
     rows = (
         await session.execute(
             select(
@@ -1006,7 +1006,7 @@ async def _case_rows(session: AsyncSession, review_id: int) -> list[_CaseRow]:
 
 def _sort_cases(rows: Sequence[_CaseRow]) -> list[_CaseRow]:
     """Sortierung der Fallliste: `(photo_position, Zweck, Merkmal)` - Zweck in der Reihenfolge aus
-    `PURPOSES`, Merkmal in Registry-Ordnung (ADR 0139 Punkt 3)."""
+    `PURPOSES`, Merkmal in Registry-Ordnung."""
     return sorted(
         rows,
         key=lambda row: (
@@ -1308,7 +1308,7 @@ async def put_case_verdict(
 # Export: eine POSITIVLISTE, kein Weglassen
 # ---------------------------------------------------------------------------------------------
 
-# Der feste Schluesselsatz des Exports (Spec 0616, ADR 0139 Punkt 7). Er steht hier als
+# Der feste Schluesselsatz des Exports. Er steht hier als
 # POSITIVLISTE: der Serialisierer baut jeden Knoten aus genau diesen Namen, und der Waechter
 # prueft danach, dass nichts dazugekommen ist. Ein Feld, das "nur noch" ergaenzt wird, faellt
 # damit auf, bevor es die Datei erreicht - schliesslich geht die Datei an eine KI.
@@ -1404,7 +1404,7 @@ def _export_payload(
     """Der Exportkoerper aus der Positivliste.
 
     Jeder Zweig nennt seine Schluessel ausdruecklich - kein `model_dump()` eines Modells, damit ein
-    spaeter ergaenztes Feld nicht ungeprueft mitwandert (ADR 0139 Punkt 7)."""
+    spaeter ergaenztes Feld nicht ungeprueft mitwandert."""
     cases: list[dict[str, Any]] = []
     for row in rows:
         case = _case_out(row, statements)
