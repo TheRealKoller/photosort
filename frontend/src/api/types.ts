@@ -1,1582 +1,376 @@
-// `queued` = angenommen, aber noch nicht begonnen - die Oberflaeche nennt ihn
-// "wartet". `cancelled` = ohne Ergebnis beendet: weder Teilerfolg noch Fehler, nie ein Alert.
-export type ScanStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
+/**
+ * Die eine Importquelle der Oberfläche für Serverstrukturen.
+ *
+ * Zwei Abschnitte, beide mechanisch geprüft (`scripts/tests/test_frontend_typen.py`):
+ *
+ * - **Erzeugt**: je Serverstruktur ein Alias auf `components["schemas"]`. Die Struktur kommt
+ *   unverändert aus `backend/openapi.json`; der Alias darf einen Oberflächennamen tragen.
+ * - **Oberflächen-eigen**: Typen ohne Servergegenstück (Anzeige-Ableitungen, camelCase-
+ *   Parameterobjekte der API-Module, die Aufrufgrenze). Wo ein Serverfeld die Aussage trägt,
+ *   leiten sie sich aus einem erzeugten Typ ab, statt eine zweite Liste zu führen.
+ */
+import type { components, paths } from './generated/schema'
 
-export interface ScanSummary {
-  // Adressiert einen Abbruch GENAU dieses Laufs (POST .../operations/scan/{run_id}/cancel).
-  id: number
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  files_found: number
-  // null solange die Enumerationsphase noch nicht abgeschlossen ist - unterscheidet sich
-  // bewusst von 0 (leeres Projekt). Immer explizit `!== null`/`=== null` prüfen, nie truthy.
-  total_files: number | null
-  photos_added: number
-  photos_updated: number
-  photos_removed: number
-  files_skipped: number
-  error_message: string | null
-  // Gesetzt, sobald ein Abbruch angefordert ist, der Lauf aber noch laeuft.
-  cancel_requested_at: string | null
-}
+/* ===== Erzeugt ===== */
 
-export interface ScoringRunSummary {
-  // Wird als scoring_run_id an POST /classify weitergereicht - Staleness-Guard bei einem
-  // zwischenzeitlichen Re-Scan/Re-Scoring.
-  id: number
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  photos_total: number
-  photos_processed: number
-  suggestions_found: number
-  error_message: string | null
-  // Ausschuss-Gate: null = noch nicht bestätigt.
-  gate_confirmed_at: string | null
-  cancel_requested_at: string | null
-}
+/** Die Statuswerte eines Laufs. `queued` heißt angenommen, aber noch nicht begonnen. */
+export type ScanStatus = components['schemas']['ScanStatus']
 
-// Die Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
-//
-// 'eye' ist die Eye-Auswertung auf diesem Server und läuft VOR der Kriterien-Phase,
-// damit Rangfolge, Events und Auswahlvorschlag desselben Laufs schon den wirksamen Vektor lesen -
-// obwohl sie in der Anzeige hinter 'remote_categories' steht. 'landmark' ist die
-// Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge) gehört fachlich zur
-// Kriterien-Phase, läuft aber DANACH.
-export type ClassificationPhase =
-  'remote_categories' | 'eye' | 'criteria' | 'landmark' | 'ranking' | 'persons'
+/** Der Statuswert eines Export-Laufs - ein eigenes Vokabular, siehe `ExportRunStatus`. */
+export type ExportRunStatus = components['schemas']['ExportRunStatus']
+
+export type ScanSummary = components['schemas']['ScanSummary']
+export type ScoringRunSummary = components['schemas']['ScoringRunSummary']
+export type ClassificationPhase = components['schemas']['ClassificationPhase']
+export type CloudPhaseSummaryOut = components['schemas']['CloudPhaseSummaryOut']
+export type CriterionScoringRunSummary = components['schemas']['CriterionScoringRunSummary']
+
+export type ExportRunSummary = components['schemas']['ExportRunSummary']
+export type ExportPhotoErrorOut = components['schemas']['ExportPhotoErrorOut']
+export type ExportRunDetailOut = components['schemas']['ExportRunDetailOut']
+export type ExportPreviewOut = components['schemas']['ExportPreviewOut']
+
+export type OperationKind = components['schemas']['OperationKind']
+export type OperationOut = components['schemas']['OperationOut']
+export type OperationsOut = components['schemas']['OperationsOut']
+export type CancelOutcome = components['schemas']['CancelOutcome']
+export type CancelOperationOut = components['schemas']['CancelOut']
+export type CancelAllOperationsOut = components['schemas']['CancelAllOut']
+
+export type TriggerQueuedOut = components['schemas']['TriggerQueuedOut']
+export type AusschussGateConfirmedOut = components['schemas']['AusschussGateConfirmedOut']
+
+export type ProjectOut = components['schemas']['ProjectOut']
+export type ProjectModelChoiceOut = components['schemas']['ProjectModelChoiceOut']
+export type CreateProjectPayload = components['schemas']['ProjectCreate']
+export type ModelChoicePayload = components['schemas']['ModelChoiceIn']
+
+export type ClassificationEstimatePartOut = components['schemas']['ClassificationEstimatePartOut']
+export type ClassificationEstimateOut = components['schemas']['ClassificationEstimateOut']
+export type CloudModelOut = components['schemas']['CloudModelOut']
+export type ModelChoiceOut = components['schemas']['ModelChoiceOut']
+export type CloudVisionConsentOut = components['schemas']['CloudVisionConsentOut']
+
+export type BrowseEntry = components['schemas']['BrowseEntry']
+export type FolderCountOut = components['schemas']['FolderCountOut']
+
+export type LoginRequest = components['schemas']['LoginRequest']
+export type TokenResponse = components['schemas']['TokenResponse']
+
+export type RatingStatus = components['schemas']['RatingStatus']
+export type RatingFilter = components['schemas']['RatingFilter']
+export type RatingOut = components['schemas']['RatingOut']
+export type RatingWriteOut = components['schemas']['RatingWriteOut']
+
+export type SuggestionOut = components['schemas']['SuggestionOut']
+export type DuplicateDecision = components['schemas']['DuplicateDecision']
+export type DuplicateGroupItem = components['schemas']['DuplicateGroupPhotoOut']
+export type DuplicateGroupOut = components['schemas']['DuplicateGroupOut']
+export type DuplicateGroupIndexOut = components['schemas']['DuplicateGroupIndexOut']
+export type AusschussPhotoEntry = components['schemas']['AusschussPhotoEntryOut']
+export type AusschussGroupEntry = components['schemas']['AusschussGroupEntryOut']
+export type AusschussOut = components['schemas']['AusschussOut']
+
+export type MotifOut = components['schemas']['MotifOut']
+export type MotifStrengthBandsOut = components['schemas']['StrengthBandsOut']
+export type MotifSetOut = components['schemas']['MotifSetOut']
+export type MotifAssessmentOut = components['schemas']['MotifAssessmentOut']
+export type EyeResultOut = components['schemas']['EyeResultOut']
+export type MotifStrengthOut = components['schemas']['MotifStrengthOut']
+export type MotifCorrectionOut = components['schemas']['MotifCorrectionOut']
+
+export type DraftExchangeOut = components['schemas']['DraftExchangeOut']
+export type DraftExchangeUndoIn = components['schemas']['DraftExchangeUndoIn']
+export type DraftExchangeUndoOut = components['schemas']['DraftExchangeUndoOut']
+
+export type RankingOut = components['schemas']['RankingOut']
+export type CriterionSource = components['schemas']['CriterionSource']
+export type CriterionScoreOut = components['schemas']['CriterionScoreOut']
+export type FineLabelOut = components['schemas']['FineLabelOut']
+export type FineLabelCountOut = components['schemas']['FineLabelCountOut']
+
+export type CloudVisionPhase = components['schemas']['CloudVisionPhase']
+export type CloudVisionStatus = components['schemas']['CloudVisionStatus']
+export type CloudVisionStatusOut = components['schemas']['CloudVisionStatusOut']
+
+export type PhotoLocation = components['schemas']['PhotoLocationOut']
+export type EventPlace = components['schemas']['EventPlaceOut']
+export type EventOut = components['schemas']['EventOut']
+export type CameraOut = components['schemas']['CameraOut']
+export type ProjectCameraOut = components['schemas']['ProjectCameraOut']
+export type CameraTimeOffsetSuggestionOut = components['schemas']['CameraTimeOffsetSuggestionOut']
+export type PhotoOut = components['schemas']['PhotoOut']
+
+/** Herkunft einer Zuordnung: `recognized` = erkannt, `corrected` = von Hand zugeordnet. */
+export type PersonOrigin = components['schemas']['PhotoPersonOut']['origin']
+export type PhotoPersonOut = components['schemas']['PhotoPersonOut']
+export type FaceAssignmentOut = components['schemas']['FaceAssignmentOut']
+export type UnnamedFaceOut = components['schemas']['UnnamedFaceOut']
+export type UnnamedFacesPageOut = components['schemas']['UnnamedFacesPageOut']
+export type PersonOut = components['schemas']['PersonOut']
+export type FaceOut = components['schemas']['FaceOut']
+
+export type AlbumParticipantOut = components['schemas']['AlbumParticipantOut']
+export type AlbumSelectionOut = components['schemas']['AlbumSelectionOut']
+export type AlbumDecisionOut = components['schemas']['AlbumDecisionOut']
+export type AlbumSuitabilityOut = components['schemas']['AlbumSuitabilityOut']
+export type PhotoListOut = components['schemas']['PhotoListOut']
+export type DraftAlternativesOut = components['schemas']['DraftAlternativesOut']
+export type AlbumDraftOut = components['schemas']['AlbumDraftOut']
+
+export type ProjectStatsStorage = components['schemas']['StorageOut']
+export type ProjectStatsMotifEntry = components['schemas']['MotifEntryOut']
+export type ProjectStatsCostByPurpose = components['schemas']['CostByPurposeOut']
+export type ProjectStatsCost = components['schemas']['CostOut']
+export type ProjectStatsProgress = components['schemas']['ProgressOut']
+export type ProjectStatsRatings = components['schemas']['RatingsOut']
+export type ProjectStatsLastSuccessfulRuns = components['schemas']['LastSuccessfulRunsOut']
+export type ProjectStatsRemoteFailure = components['schemas']['RemoteFailureOut']
+export type OverviewSeenOut = components['schemas']['OverviewSeenOut']
+export type ProjectStatsDiagnostics = components['schemas']['DiagnosticsOut']
+export type ProjectStatsOut = components['schemas']['ProjectStatsOut']
+
+export type MotifErrorCase = components['schemas']['MotifErrorCase']
+export type ExchangeKind = components['schemas']['ExchangeKind']
+export type FeedbackMotifError = components['schemas']['MotifErrorOut']
+export type FeedbackExchangeStats = components['schemas']['ExchangeStatsOut']
+export type FeedbackCriterionAgreement = components['schemas']['CriterionAgreementOut']
+export type FeedbackCurrentWeight = components['schemas']['CriterionWeightOut']
+export type FeedbackProposedWeight = components['schemas']['ProposedWeightOut']
+export type FeedbackWeightPreview = components['schemas']['WeightPreviewOut']
+export type FeedbackDiagnosisOut = components['schemas']['FeedbackDiagnosisOut']
+
+export type ClassificationReviewSideKind = components['schemas']['ClassificationReviewSideKind']
+export type ClassificationReviewPurpose = components['schemas']['ClassificationReviewPurpose']
+export type ClassificationReviewPhase = components['schemas']['ReviewPhase']
+export type ClassificationVerdict = components['schemas']['ClassificationVerdict']
+export type ClassificationReviewVerdictIn = components['schemas']['ReviewVerdictIn']
+export type ClassificationReviewUserOut = components['schemas']['ReviewUserOut']
+export type ClassificationReviewSampleSizeOut = components['schemas']['ReviewSampleSizeOut']
+export type ClassificationReviewKindOptionOut = components['schemas']['ReviewKindOptionOut']
+export type ClassificationReviewCloudModelOptionOut =
+  components['schemas']['ReviewCloudModelOptionOut']
+export type ClassificationReviewEyeMappingOptionOut =
+  components['schemas']['ReviewEyeMappingOptionOut']
+export type ClassificationReviewOptionsOut = components['schemas']['ClassificationReviewOptionsOut']
+export type ClassificationReviewSideEstimateOut = components['schemas']['ReviewSideEstimateOut']
+export type ClassificationReviewEstimateOut =
+  components['schemas']['ClassificationReviewEstimateOut']
+export type ClassificationReviewSideIn = components['schemas']['ReviewSideIn']
+export type ClassificationReviewCreateBody = components['schemas']['ReviewCreate']
+export type ClassificationReviewCreatedOut = components['schemas']['ReviewCreatedOut']
+export type ClassificationReviewSideOut = components['schemas']['ReviewSideOut']
+export type ClassificationReviewSidesOut = components['schemas']['ReviewSidesOut']
+export type ClassificationReviewPurposeCountsOut = components['schemas']['ReviewPurposeCountsOut']
+export type ClassificationReviewVerdictCountsOut = components['schemas']['ReviewVerdictCountsOut']
+export type ClassificationReviewListItemOut = components['schemas']['ReviewListItemOut']
+export type ClassificationReviewDetailOut = components['schemas']['ReviewDetailOut']
+export type ClassificationReviewCaseSideOut = components['schemas']['ReviewCaseSideOut']
+export type ClassificationReviewCaseOut = components['schemas']['ReviewCaseOut']
+export type ClassificationReviewCasesOut = components['schemas']['ReviewCasesOut']
+export type ClassificationReviewVerdictOut = components['schemas']['ReviewVerdictOut']
+
+/* ===== Oberflächen-eigen ===== */
 
 /**
  * Die Wahl des Nutzers beim Auslösen: "wie im Projekt eingestellt" oder "nur lokal".
- * Der Name ist derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare
- * fuehren. Cloud und Eye sind keine Anfragewege, sondern Ergebnisse der im Projekt gespeicherten
+ *
+ * Der Name ist derselbe wie im Anfragekörper, damit Anfrage und Antwort nicht zwei Vokabulare
+ * führen. Cloud und Eye sind keine Anfragewege, sondern Ergebnisse der im Projekt gespeicherten
  * Wahl (`ClassificationPath`).
  */
 export type ClassificationWay = 'project' | 'local'
 
 /**
- * Der WIRKSAME Weg eines Laufs (Antwortfeld `CriterionScoringRunSummary.mode` und die
- * Schätzung): Cloud, Eye oder nur lokal. Vom `ClassificationWay` bewusst getrennt - ein Feld,
- * das beide Zustände mischte, machte "so eingestellt, aber lokal gelaufen" unlesbar.
+ * Der WIRKSAME Weg eines Laufs - vom `ClassificationWay` bewusst getrennt: ein Feld, das beide
+ * Zustände mischte, machte "so eingestellt, aber lokal gelaufen" unlesbar.
  */
-export type ClassificationPath = 'cloud' | 'eye' | 'local'
-
-// Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die Fortschrittsanzeige,
-// danach die Bilanz.
-//
-// Die Felder sind DURCHGÄNGIG `| null` und nicht optional (`?`): eine Auslassung an der
-// Anzeigestelle soll ein Typfehler sein, kein stilles `undefined`. `null` heißt überall "nicht
-// erfasst"/"unbekannt" - nie `0` und nie "kostenlos"; ein `?? 0` irgendwo im Pfad behauptete
-// Kostenfreiheit für einen Lauf, der Geld ausgegeben hat.
-export interface CloudPhaseSummaryOut {
-  purpose: CloudVisionPhase
-  photos_total: number | null
-  // Abgesetzte Aufrufe (Erfolge UND Fehlschlaege) - bewegt sich waehrend des Laufs.
-  photos_processed: number | null
-  // Fehlgeschlagene Einzelaufrufe - bewegt sich ebenfalls waehrend des Laufs.
-  failed_calls: number | null
-  // Verwertete Antworten; steht erst am Phasenende fest, wie Tokens und Betrag.
-  responses_used: number | null
-  input_tokens: number | null
-  output_tokens: number | null
-  cost_usd: number | null
-  model: string | null
-  // Aus `model` abgeleitet; null = Modell nicht (mehr) in der Registry. Die Oberflaeche zeigt
-  // dann die Modell-ID ALLEIN - nie einen geratenen Anbieter und nie einen
-  // Konfigurationshinweis.
-  provider: string | null
-}
-
-// Bewusst kein candidates_total/suggestions_found: der Job berechnet immer den vollen
-// Rangfolge-Pool je Partition, und welche Fotos davon im Vorschlag stehen, sagt
-// `selection_position` an der Rangzeile.
-export interface CriterionScoringRunSummary {
-  id: number
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  photos_total: number
-  photos_processed: number
-  error_message: string | null
-  // Diese Zusammenfassung beschreibt den GESAMTEN Klassifizierungslauf, nicht nur seine
-  // Kriterien-Phase.
-  //
-  // `phase`: der gerade laufende Teilschritt; null = läuft nicht mehr (beendet, oder
-  // Altlauf). Die Fortschrittszahlen der beiden Cloud-Teilschritte stehen in
-  // `cloud_phases`, die der Kriterien-Phase hier.
-  phase: ClassificationPhase | null
-  // War die Cloud-Nutzung fuer DIESEN Lauf angefordert? false heisst "das Ergebnis kann keine
-  // Cloud-Anreicherung enthalten" - Grundlage des entsprechenden Hinweises in der Oberflaeche.
-  cloud_requested: boolean
-  // Laufweite Zusammenfassung der Cloud-Probleme, null = keine. Ein gesetzter Wert heisst NICHT,
-  // dass der Lauf fehlgeschlagen ist: der lokale Bewertungsanteil laeuft trotzdem vollstaendig
-  // durch, das Ergebnis ist nur nicht (vollstaendig) angereichert.
-  cloud_error_message: string | null
-  // Die Bilanz DIESES Durchlaufs.
-  //
-  // `cloud_phases` in Ausfuehrungsreihenfolge (remote_category, dann landmark); ein Eintrag
-  // entsteht, sobald die Phase betreten wurde. Eine LEERE LISTE heisst "dieser Durchlauf hatte
-  // keinen Cloud-Teilschritt" - daran haengt die entsprechende Aussage der Bilanz.
-  //
-  // `estimated_cost_usd` ist die Schaetzung, mit der der Lauf gestartet wurde;
-  // `cloud_cost_total_usd` die Summe der Ist-Betraege, serverseitig `null`, sobald ein Anteil
-  // `null` ist.
-  cloud_phases: CloudPhaseSummaryOut[]
-  estimated_cost_usd: number | null
-  cloud_cost_total_usd: number | null
-  // Die geschaetzte Restdauer GENAU DES Teilschritts, den `phase` nennt - in Sekunden. Ein Feld,
-  // keines je Teilschritt: es laeuft immer genau einer.
-  //
-  // `null` heisst "noch nicht abschaetzbar", NIE "keine Restdauer" und nie "sofort fertig" - die
-  // Oberflaeche schreibt dort sichtbar hin, dass die Angabe noch fehlt, statt ein leeres Feld zu
-  // zeigen. `null` steht auch immer bei `ranking` (keine gezaehlte Menge) und bei jedem beendeten
-  // Lauf. Die Spanne entsteht aus dieser Zahl erst hier im Frontend (utils/classificationEta.ts).
-  //
-  // PFLICHTFELD ohne Vorgabewert - dann erzwingt `tsc` die Ergaenzung jeder lokalen Testfabrik,
-  // und es braucht keinen Test ueber deren Vollzaehligkeit.
-  phase_remaining_seconds: number | null
-  // Die Zaehler der Phase `persons`. `null` heisst "die Phase lief nicht" - nach
-  // Laufende wird der Teilschritt dann ausgeblendet. Keine Namen, keine Trefferzahl.
-  persons_photos_total: number | null
-  persons_photos_processed: number | null
-  // Der beim Start WIRKSAME Weg; `null` bei Altzeilen, deren Weg unbekannt ist. Nicht aus
-  // `cloud_requested` ableitbar: Eye mit Einwilligung fragt Cloud an, ohne der Cloud-Weg zu sein.
-  mode: ClassificationPath | null
-  // Die Zaehler der Eye-Phase (Muster `persons_*`). `null` heisst "diese Phase lief nicht" -
-  // der Teilschritt wird nach Laufende dann ausgeblendet.
-  eye_photos_total: number | null
-  eye_photos_processed: number | null
-  cancel_requested_at: string | null
-}
+export type ClassificationPath = NonNullable<
+  components['schemas']['CriterionScoringRunSummary']['mode']
+>
 
 /**
- * Der Polling-Zustand des Exports (Muster `last_scan`): Zustand, Anzahl und Zielpfad. Die
- * Einzelfehler je Foto liefert erst `GET /projects/{id}/exports/{run_id}`.
+ * Das Statusvokabular der Scan-Läufe plus `never` ("nie gelaufen"). Eine Ableitung, keine zweite
+ * Literalliste: ein zusätzlicher Serverwert wird an der behandelnden Stelle zum Typfehler.
  */
-export interface ExportRunSummary {
-  id: number
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  target_path: string | null
-  photo_count: number
-  exported_count: number
-  failed_count: number
-  error_message: string | null
-  cancel_requested_at: string | null
-}
+export type ScanStatusLabel = components['schemas']['ScanStatus'] | 'never'
 
-/** Ein fehlgeschlagenes Foto eines Export-Laufs, wie es der Detailendpunkt meldet. */
-export interface ExportPhotoErrorOut {
-  relative_path: string
-  error: string
-}
-
-/** Der Export-Lauf samt Fehlerliste je Foto - die Bestätigung DANACH. */
-export interface ExportRunDetailOut {
-  id: number
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  target_path: string | null
-  photo_count: number
-  exported_count: number
-  failed_count: number
-  error_message: string | null
-  cancel_requested_at: string | null
-  failed_photos: ExportPhotoErrorOut[]
-}
-
-/**
- * Die Vorgaenge eines Projekts, die einzeln oder gesammelt abgebrochen werden koennen.
- * `kind` ist derselbe Wortschatz wie im Abbruch-Pfad - ein zweites Vokabular zwischen
- * Abfrage und Anfrage waere eine stille Fehlerquelle.
- */
-export type OperationKind = 'scan' | 'ausschuss' | 'classification' | 'export' | 'review'
-
-/** Ein laufender oder wartender Vorgang samt dem Lauf, den ein Abbruch adressiert. */
-export interface OperationOut {
-  kind: OperationKind
-  run_id: number
-  /** Anzeigename aus denselben Wortlauten wie die Schritte (utils/stepActionTexts.ts). */
-  label: string
-  status: 'queued' | 'running'
-  /** Ein Abbruch ist bereits angefordert - der Knopf bleibt gesperrt, bis der Lauf endet. */
-  cancel_requested: boolean
-}
-
-export interface OperationsOut {
-  operations: OperationOut[]
-}
-
-/** `already_finished` heisst: es war nichts mehr abzubrechen, kein Fehler. */
-export interface CancelOperationOut {
-  kind: OperationKind
-  run_id: number
-  status: ScanStatus
-  outcome: 'cancel_requested' | 'already_finished'
-}
-
-export interface CancelAllOperationsOut {
-  cancelled: CancelOperationOut[]
-}
-
-/** Die Anzahl der Endauswahl-Fotos vor dem Auslösen (server-autoritativ). */
-export interface ExportPreviewOut {
-  photo_count: number
-}
-
-export interface ProjectOut {
-  id: number
-  name: string
-  opencloud_drive_id: string
-  opencloud_path: string
-  created_at: string
-  last_scan: ScanSummary | null
-  last_scoring_run: ScoringRunSummary | null
-  last_criterion_scoring_run: CriterionScoringRunSummary | null
-  // Der letzte Export-Lauf (Muster `last_scan`): der Polling-Zustand des Ausloesers samt Anzahl
-  // und Zielpfad. `null` = nie exportiert.
-  last_export_run: ExportRunSummary | null
-  // Globales Feature-Flag, nicht projektspezifisch.
-  category_selection_enabled: boolean
-  // Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse - Default
-  // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
-  cloud_vision_detection_enabled: boolean
-  cloud_vision_consent_at: string | null
-  // Die WIRKSAME Modellwahl je Tätigkeit. Die Verfügbarkeit beider Methoden liefert
-  // `GET …/model-choice`, hier steht, was der nächste Lauf tatsächlich aufruft. `provider: null`
-  // heißt "Modell nicht mehr wählbar" bzw. "Eye" - der Lesepfad rät keinen Empfänger.
-  model_choice: ProjectModelChoiceOut
-  // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
-  // Richtwert" - wirksam ist dann `effective_selection_target`, die feste Vorbelegung von 150
-  // Bildern. Das Frontend leitet die wirksame Zahl nie selbst ab; sie kommt fertig vom Server,
-  // weil die Ableitung dort an genau einer Stelle lebt. Nur der Vergleichssatz einer eigenen
-  // Angabe nennt die Vorbelegung selbst (`SelectionTargetField.DEFAULT_SELECTION_TARGET`).
-  selection_target: number | null
-  effective_selection_target: number
-  // Gibt es einen erfolgreichen Kriterien-Lauf, dessen Vorschlag ein Richtwert-`PUT` neu rechnet?
-  // Nicht aus `last_criterion_scoring_run` ableitbar: nach "erfolgreich, dann gescheitert" ist der
-  // neueste Lauf `failed`, der Vorschlag des erfolgreichen wird trotzdem neu gerechnet.
-  has_selection_proposal: boolean
-  // Bestandszahlen des Projekts. PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc` die
-  // Ergaenzung jeder lokalen `project()`-Testfabrik.
-  //
-  // `photo_count === 0` ist eine Aussage ("keine Fotos"), die beiden `null` sind ihre Abwesenheit
-  // ("kein Zeitraum bekannt"). Die Anzeige unterscheidet sichtbar: "0 Fotos" gegen den Strich
-  // `NOT_AVAILABLE`. Nie ein `?? 0` im Pfad.
-  photo_count: number
-  taken_at_earliest: string | null
-  taken_at_latest: string | null
-}
-
-/**
- * Ein Anteil der Kostenschätzung: je Tätigkeit einer. `null` im umgebenden Typ heißt
- * "dieser Anteil findet nicht statt" - unterscheidbar von "Betrag unbekannt" (`estimated_cost_usd:
- * null`). Eye-Kategorisierung ist `kind: 'eye'` mit `provider`/`model` `null` und Betrag `0.0`
- * ("kostenfrei", nicht "kein Preis hinterlegt").
- */
-export interface ClassificationEstimatePartOut {
-  kind: 'cloud' | 'eye'
-  provider: string | null
-  model: string | null
-  // `| null` heißt "für dieses Modell ist kein Preis hinterlegt", NIE 0.
-  price_per_image_usd: number | null
-  // `| null` heißt "Menge nicht verlässlich schätzbar" (vor dem ersten Durchlauf gibt es keine
-  // gespeicherten Kriterien-Werte), NIE "null Fotos" - eine 0 behauptete Kostenfreiheit.
-  candidate_count: number | null
-  estimated_cost_usd: number | null
-}
-
-export interface ClassificationEstimateOut {
-  // Die Wahl, auf die sich die Antwort bezieht (`project` = wie eingestellt, `local` = nur lokal).
-  mode: ClassificationWay
-  // Summe der BEKANNTEN Anteile - bei unbekanntem Anteil eine untere Schranke.
-  candidate_count: number
-  // `null` = dieser Anteil findet in diesem Durchlauf nicht statt (Eye-Anteil ist nie `null`,
-  // solange kategorisiert wird; `landmark` fehlt ohne Einwilligung und bei `local`).
-  categorization: ClassificationEstimatePartOut | null
-  landmark: ClassificationEstimatePartOut | null
-  // Summe der bekannten Anteile; `null` heißt "kein Preis hinterlegt ODER Anteil unbekannt",
-  // nie "kostenlos".
-  estimated_cost_usd: number | null
-}
-
-/**
- * Die wirksame Wahl eines Projekts im Projekt-Datensatz. Ohne `*_is_default`: die
- * Herkunft ("Installationsvorgabe" vs. ausdrücklich gespeichert) braucht nur die
- * Einstellungsseite, und die liest `GET …/model-choice`.
- */
-export interface ProjectModelChoiceOut {
-  category_method: 'cloud' | 'eye'
-  category_provider: string | null
-  category_model: string | null
-  landmark_provider: string | null
-  landmark_model: string
-}
-
-/** Ein wählbarer Katalogeintrag der Registry. Fehlender Preis ist `null`, nie `0`. */
-export interface CloudModelOut {
-  provider: string
-  model: string
-  estimate_usd_per_image: number | null
-  input_usd_per_mtok: number | null
-  output_usd_per_mtok: number | null
-  requests_per_minute: number
-  available: boolean
-  unavailable_reasons: 'no_api_key'[]
-}
-
-/** Die gespeicherte Wahl samt Katalog - Antwort von `GET`/`PUT …/model-choice`. */
-export interface ModelChoiceOut {
-  current: {
-    category_method: 'cloud' | 'eye'
-    category_model: string | null
-    category_provider: string | null
-    category_is_default: boolean
-    landmark_model: string
-    landmark_provider: string | null
-    landmark_is_default: boolean
-  }
-  cloud_models: CloudModelOut[]
-  eye: {
-    available: boolean
-    unavailable_reasons: 'eye_disabled'[]
-  }
-}
-
-export interface BrowseEntry {
-  name: string
-  path: string
-  // ISO 8601 mit Zeitzone; null, wenn OpenCloud fuer den Ordner kein Datum geliefert hat.
-  modified_at: string | null
-}
-
-// Rekursive Bilddatei-Anzahl (mit Obergrenze) pro direktem Unterordner, wie von
-// GET /opencloud/folder-counts geliefert. SICHERHEIT: bewusst kein Freitext-/Meldungsfeld -
-// error=true transportiert kein str(exc) vom Backend.
-export interface FolderCountOut {
-  path: string
-  count: number
-  at_limit: boolean
-  error: boolean
-}
-
-/**
- * Die ALBUMENTSCHEIDUNG eines Nutzers - zwei Werte, kein dritter. Sie sagt, ob das Bild ins
- * Album soll, und ist keine Aussage über seine Güte.
- *
- * `favorite` gehört ausdrücklich nicht dazu: Die Auszeichnung ist eine eigene, unabhängige
- * Angabe und kann gleichzeitig mit einer Albumentscheidung gesetzt sein.
- */
-export type RatingStatus = 'album_worthy' | 'rejected'
-/** Die Einträge des Rasterfilters. `favorite` filtert auf das eigene Kennzeichen, nicht auf
- * einen Status; `unrated` heißt "keine Albumentscheidung". */
-export type RatingFilter = 'unrated' | 'suggested' | 'favorite' | RatingStatus
+/** Die beiden Bildvarianten, die `GET /photos/{photo_id}/image` ausliefert. */
 export type PhotoVariant = 'thumbnail' | 'display'
 
-export interface RatingOut {
-  user_id: number
-  username: string
-  /** `null` heißt "keine Albumentscheidung" - auch bei vorhandener Zeile, die nur das
-   * Favoriten-Kennzeichen trägt. */
-  status: RatingStatus | null
-  favorite: boolean
-}
+/** Die beiden Cloud-Zwecke (Anzeige-Ableitung von `CloudVisionPhase`). */
+export type CloudVisionPurpose = components['schemas']['CloudVisionPhase']
 
 /**
- * Die Antwort der beiden schreibenden Bewertungs-Endpunkte - der Zustand der EIGENEN Zeile nach
- * dem Schreibvorgang, nicht ein Eintrag aus `PhotoOut.ratings[]`.
- *
- * `updated_at` ist `null`, wenn die Zeile dabei geleert und damit gelöscht wurde.
+ * Die Kostenzwecke der Statistik: die beiden Cloud-Zwecke plus `review`. Eigener Name, weil
+ * `review` kein Cloud-Aufruf ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Läufe
+ * unangetastet bleiben muss.
  */
-export interface RatingWriteOut {
-  photo_id: number
-  /** Der Nutzer, für den geschrieben wurde — serverseitig aus dem Token, nie aus der Anfrage.
-   * Er trägt das Fortschreiben des betroffenen Eintrags im Cache der Entwurfsabfrage: ein
-   * Eintrag von `PhotoOut.ratings[]` trägt `user_id`, und ohne dieses Feld müsste der Client
-   * eine Id erfinden. */
-  user_id: number
-  status: RatingStatus | null
-  favorite: boolean
-  updated_at: string | null
-}
-
-export type SuggestionReason = 'duplicate' | 'low_quality'
-
-// Der Grund eines Ausschuss-Eintrags. Der dritte Wert steht NUR hier, nicht an `SuggestionOut`:
-// Ein Lauf, der `suggested_status` und `duplicate_of` zuruecksetzt, laesst die Entscheidungszeile
-// stehen - die Aufnahme bleibt im Bestand, ist aber weder Duplikat noch Qualitaetsablehnung.
-export type AusschussReason = SuggestionReason | 'earlier_decision'
-
-// Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] - ein
-// Vorschlag ist strukturell nie eine Bewertung, sondern wird erst durch aktive Bestätigung
-// (PUT /photos/{id}/rating) zu einer. Der Kontext der Rangfolge lebt im eigenständigen
-// `PhotoOut.ranking`-Feld, nicht hier.
-export interface SuggestionOut {
-  status: RatingStatus
-  reason: SuggestionReason
-  duplicate_of: number | null
-  sharpness: number
-  exposure: number
-  cluster_key: string | null
-  computed_at: string
-}
+export type StatsCostPurpose = components['schemas']['CostPurpose']
 
 /**
- * Die Entscheidung des PROJEKTS über EINE Aufnahme des Ausschusses.
- *
- * AUSDRÜCKLICH KEIN `RatingStatus`: Jenes ist die Albumentscheidung eines Nutzers. Hier steht die
- * andere Frage — ob die Aufnahme den Ausschuss-Schritt überlebt. Ein geteilter Wertevorrat machte
- * die beiden an jeder Lesestelle verwechselbar.
- *
- * Es gibt keinen dritten Wert: Die Ansicht zeigt die Auswertung des Überlebens-Prädikats,
- * nicht die Entscheidungszeile — „noch nicht entschieden" ist kein darstellbarer Zustand.
+ * Das Motivset. Die Menge ist fachlich geschlossen, der Typ bleibt aber bewusst `string`: das Set
+ * kommt zur Laufzeit über `GET /motifs` vom Server, eine hier gespiegelte Union wäre eine dauerhaft
+ * driftende zweite Liste. Ein unbekannter Schlüssel wird über den generischen Fallback von
+ * `utils/motifLabels.ts` dargestellt, ohne Absturz.
  */
-export type DuplicateDecision = 'keep' | 'discard'
-
-/**
- * Ein Mitglied der Duplikat-Gruppe. Der Zustand reist NEBEN dem Foto, nicht an ihm: `PhotoOut`
- * trägt kein Feld dafür, weil er außerhalb dieser Ansicht keine Rolle hat.
- *
- * `effective_decision` ist das, was ohne weiteres Zutun eintritt — nicht die gespeicherte Zeile.
- * Ob ein Zustand vom System oder vom Nutzer stammt, geht daraus nicht hervor und wird nicht
- * angezeigt.
- *
- * **Dieser Wert wird nie aus `PhotoOut.suggestion` abgeleitet**: Jenes Feld fällt bei eigener
- * Albumbewertung und bei getroffener Entscheidung auf `null`. Bei Verletzung zeigt die Ansicht
- * einen anderen Zustand, als der Ausschuss-Schritt anwendet, ohne Fehler und ohne Meldung.
- *
- * `keep_possible === false` heißt: Kein Wert der Entscheidungszeile ändert diesen Zustand. Der
- * Grund reist nicht mit — er folgt aus der Bedingung selbst, und die Oberfläche rendert dort einen
- * festen Text.
- *
- * `sharpness`/`exposure` sind die Rohwerte aus `PhotoScore` (Schärfe: höher = schärfer;
- * Belichtung: Anteil geclippter Pixel, niedriger = besser), `null` ohne Messung. Die Bewertungszeile
- * liest sie **nie aus `PhotoOut.suggestion`** — jenes Feld fällt nach jeder Entscheidung auf `null`.
- */
-export interface DuplicateGroupItem {
-  photo: PhotoOut
-  effective_decision: DuplicateDecision
-  keep_possible: boolean
-  sharpness: number | null
-  exposure: number | null
-}
-
-/**
- * Die Antwortform ALLER VIER Endpunkte der Vergleichsansicht — Lesepfad, beide Schreibwege und der
- * Gruppenabschluss. Ein Schreibvorgang liefert damit denselben vollständigen Stand zurück, den ein
- * erneutes Laden liefern würde.
- *
- * `position`/`total` sind 1-basiert mit `1 <= position <= total` und beziehen sich auf ALLE
- * Duplikat-Gruppen des Projekts — eine vollständig entschiedene zählt weiter mit.
- *
- * `previous_photo_id`/`next_photo_id` tragen die Repräsentanten-Id der jeweils benachbarten
- * Gruppe, `null` am Rand. Die Ansicht schaltet dort auf `disabled`, statt die Schaltfläche
- * wegzulassen.
- *
- * `span_seconds` ist der Abstand zwischen frühester und spätester Aufnahme der Serie in ganzen
- * Sekunden (abgerundet), `0` im leeren Stand.
- */
-export interface DuplicateGroupOut {
-  items: DuplicateGroupItem[]
-  position: number
-  total: number
-  previous_photo_id: number | null
-  next_photo_id: number | null
-  span_seconds: number
-  /** Ganz automatisch entschieden oder gar nicht. `decision` bleibt `null`; die Rücknahme läuft
-   *  über die bestehende Handlung „Behalten" und setzt den Merker zurück. */
-  auto_decided: boolean
-}
-
-/**
- * Die Auskunft für den Einstieg in den Durchgang.
- *
- * `first_photo_id` ist `null`, wenn es keine Gruppe gibt — der Einstieg wird dann gar nicht
- * gerendert, statt auf eine leere Ansicht zu führen.
- */
-export interface DuplicateGroupIndexOut {
-  total: number
-  first_photo_id: number | null
-}
-
-/**
- * EIN Einzel-Eintrag der Ausschuss-Übersicht (`api/photos.py::AusschussPhotoEntryOut`).
- *
- * In der Liste steht er für jede Aufnahme OHNE auflösbare Duplikatgruppe — eine Aufnahme mit
- * Gruppe liegt im Stapel ihrer Gruppe. Am Detailfilter (`photo_id`) steht er für jede Aufnahme des
- * Bestands, auch für ein Gruppenmitglied; nur dort trägt er einen Gruppenanker.
- *
- * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer
- * TypeScript-Ableitung: `duplicate` genau dann, wenn das Foto ein Duplikat ist, `low_quality`,
- * wenn der Lauf es abgelehnt hat, sonst `earlier_decision` — die Entscheidungszeile hat den Lauf
- * ueberlebt, waehrend `suggested_status` und `duplicate_of` zurueckgesetzt wurden. Der Grund ist
- * damit unterscheidbar, statt ein Sammelzustand zu sein — Grund und Entscheidung sind zwei
- * verschiedene Aussagen ueber dieselbe Aufnahme.
- *
- * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
- * die Auswertung des Überlebens-Prädikats: Diese Übersicht zeigt den
- * Sichtungsfortschritt, und ein unwirksames `keep` (Unschärfe-Ablehnung ohne Gruppe) bleibt als
- * gespeicherte Handlung sichtbar. `null` heißt „noch nicht entschieden" — der einzige der drei
- * Zustände, in dem es keinen Rückweg gibt, weil er noch nie verlassen wurde.
- *
- * `group_anchor_photo_id` ist der Anker der Duplikat-Gruppe, in der diese Aufnahme liegt, oder
- * `null`. Die Detailansicht verweist darüber in die Vergleichsansicht.
- *
- * `keep_possible` ist die WIRKSAMKEIT des angebotenen „behalten" und kommt vom Server
- * (`duplicates.py::keep_possible_for`). Aus `reason` ist sie **nicht** ableitbar: Ein
- * Eintrag, dessen Entscheidungszeile einen Lauf überlebt hat, in dem `suggested_status` und
- * `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und trotzdem `true`. Eine zweite
- * Ableitung hier nähme dem Nutzer dort die einzige Handlung, die die Aufnahme zurückholt.
- */
-export interface AusschussPhotoEntry {
-  kind: 'photo'
-  photo: PhotoOut
-  reason: AusschussReason
-  decision: DuplicateDecision | null
-  group_anchor_photo_id: number | null
-  keep_possible: boolean
-  /** Wirksamkeit der GESPEICHERTEN Zeile: `null` ohne Zeile, `true` solange sie den Zustand
-   *  bestimmt, `false` bei einem veralteten `keep` ohne Gruppe. Serverwert
-   *  (`duplicates.py::decision_effective_for`), keine Ableitung im Client: `decision` sagt, was
-   *  gespeichert ist, `decision_effective`, ob es noch wirkt. */
-  decision_effective: boolean | null
-  /** Gehört die Aufnahme zu einem automatisch entschiedenen Stern (Verlierer über den Merker,
-   *  Repräsentant über die automatische Kante)? Reine Leseauskunft, keine Entscheidungszeile. */
-  auto_decided: boolean
-}
-
-/**
- * EIN Stapel der Ausschuss-Übersicht: alle Ausschuss-Aufnahmen einer Duplikatgruppe
- * (`api/photos.py::AusschussGroupEntryOut`).
- *
- * `cover` ist die erste Ausschuss-Aufnahme der Gruppe, nicht zwingend der Gewinner.
- * `group_size` zählt alle Mitglieder der Gruppe (dieselbe Zahl wie im Kopf der Vergleichsansicht),
- * `member_count` nur die Ausschuss-Aufnahmen. `decision_counts` zählt deren GESPEICHERTE Zeilen —
- * dieselbe Größe wie `decision` am Einzel-Eintrag, nie eine Ableitung in TypeScript.
- */
-export interface AusschussGroupEntry {
-  kind: 'group'
-  group_anchor_photo_id: number
-  cover: PhotoOut
-  member_count: number
-  group_size: number
-  decision_counts: { undecided: number; keep: number; discard: number }
-  /** Der Stapel ist ganz automatisch entschieden; dann entfällt in der Kachel die
-   *  Vorschlagszahl, die gespeicherten `decision_counts` bleiben die Zahl der Zeilen (0). */
-  auto_decided: boolean
-}
-
-export type AusschussEntryOut = AusschussPhotoEntry | AusschussGroupEntry
-
-/**
- * Die Antwort des Ausschuss-Lesepfads: die Einträge, ihre Zahl und die Zahl der offenen
- * Vorschläge.
- *
- * `total` zählt die EINTRÄGE des Gesamtbestands (Einzel-Einträge und Stapel), nicht der geladenen
- * Seite; `open_count` zählt die AUFNAHMEN mit offenem Vorschlag, projektweit und von
- * `limit`/`offset` unabhängig — es ist die Zahl, die der Bestätigungsbutton trägt. Beide bleiben
- * auch im Filterzweig (`photo_id`) dieselben, `items` trägt dann genau den gefilterten
- * Einzel-Eintrag oder nichts.
- */
-export interface AusschussOut {
-  items: AusschussEntryOut[]
-  total: number
-  open_count: number
-  /** Gruppen mit automatischer Entscheidung, projektweit und unabhängig von `limit`/`offset`
-   *  und Filter — dieselbe Einheit wie der Zähler im Schritt. */
-  auto_decided_group_count: number
-}
-
-// Das Motivset. Die Menge ist fachlich
-// GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
-// aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier
-// gespiegelte Union wäre eine dauerhaft driftende zweite Liste. Ein unbekannter Schlüssel wird
-// über den generischen Fallback von `utils/motifLabels.ts` dargestellt, ohne Absturz.
 export type MotifKey = string
 
-// Ein Eintrag des festen Achter-Sets, wie ihn GET /motifs liefert - in ANZEIGEREIHENFOLGE der
-// Server-Registry, auf jedem Foto dieselbe. KEIN Ordnungsfeld: eine Zahl daneben wäre die
-// abgeschaffte Vorrangreihenfolge zurück.
-export interface MotifOut {
-  key: MotifKey
-  display_name: string
-  definition: string
-  delimitation: string
-  /** Ob dieses Motiv OHNE Cloud-Aussage überhaupt beurteilbar ist. Kommt vom Server, damit die
-   * Oberfläche „0 weil nicht zu sehen" von „0 weil nicht angesehen" unterscheiden kann, ohne die
-   * Signalliste des Backends zu spiegeln. */
-  locally_assessable: boolean
-}
-
-/** Die beiden Anzeigebänder der STATISTIK, inklusiv verglichen. Kommen vom Server, damit das
- * Frontend sie nicht hinterlegt. Ausdrücklich KEINE Zugehörigkeitsschwelle - außerhalb der
- * Statistiktabelle erscheint kein Bandwort. */
-export interface MotifStrengthBandsOut {
-  strong: number
-  medium: number
-}
-
-export interface MotifSetOut {
-  items: MotifOut[]
-  strength_bands: MotifStrengthBandsOut
-}
-
-/** Die Kopfzeile des Stärkevektors eines Fotos. `null` an `PhotoOut.motif_assessment` heißt „noch
- * nicht klassifiziert" - unterscheidbar von „nichts erkannt" (Kopfzeile vorhanden, alle acht
- * Stärken niedrig). `provider` ist `null` bei `source === 'local'`. `excluded_document` lässt sich
- * von Hand NICHT korrigieren. */
-export interface MotifAssessmentOut {
-  source: 'cloud' | 'eye' | 'local'
-  provider: string | null
-  excluded_document: boolean
-  computed_at: string
-}
+/** Der Grund eines Vorschlags - der Server schreibt ausschließlich diese beiden Werte. */
+export type SuggestionReason = components['schemas']['SuggestionOut']['reason']
 
 /**
- * Die Eye-Auswertung eines Fotos. Gesetzt GENAU dann, wenn die Motiv-Kopfzeile
- * `source === 'eye'` traegt - ein Schattensatz neben einer Cloud-Kopfzeile ist Vergleichsmaterial
- * fuer das CLI und wird hier NICHT angezeigt.
- *
- * `fine_labels` sind die rohen Eye-Tags ab Konfidenz 0.5, serverseitig zeichensaniert und
- * laengenbegrenzt, absteigend nach Konfidenz. Als React-Textknoten rendern, nie als HTML.
- * `model_revision` steht hier und nicht in `MotifAssessmentOut.provider`: Eye ist kein
- * Cloud-Anbieter. `mapping_version` ist die Fassung der Uebersetzung, mit der die Zeile entstand
- * (Rohwert wie `eye-4.2.3/v2`), immer gesetzt; als Textknoten rendern.
+ * Der Grund eines Ausschuss-Eintrags. Der dritte Wert steht NUR am Ausschuss-Eintrag: Ein Lauf,
+ * der `suggested_status` und `duplicate_of` zurücksetzt, lässt die Entscheidungszeile stehen.
  */
-export interface EyeResultOut {
-  album_level: number
-  model_revision: string
-  mapping_version: string
-  computed_at: string
-  fine_labels: string[]
-}
+export type AusschussReason = components['schemas']['AusschussPhotoEntryOut']['reason']
 
-/** Die WIRKSAME Stärke eines Motivs samt Korrekturzustand. `strength` trägt die Korrektur bereits
- * eingerechnet - das Frontend rechnet nichts nach. `correction` ist `null` ohne Korrekturzeile;
- * auf `!== null` prüfen, nie auf Falsyness (`false` ist eine Aussage). */
-export interface MotifStrengthOut {
-  /** `key` wie in `MotifOut` - dieselbe Sache heißt an beiden Stellen gleich. */
-  key: MotifKey
-  strength: number
-  correction: boolean | null
-  /** Trägt das Foto dieses Motiv? Die AUSSAGE DES SERVERS; die Grenze wohnt in
-   * `selection.py::motif_is_present` und verlässt das Backend nie als Zahl. Für diese Frage wird
-   * `strength` NICHT gelesen — ein eigener Vergleich hier wäre die zweite Stelle, an der über
-   * Zugehörigkeit entschieden wird, und liefe bei der nächsten Kalibrierung auseinander. */
-  present: boolean
-}
+/** Ein Eintrag der Ausschuss-Übersicht: Einzelaufnahme oder Stapel. */
+export type AusschussEntryOut = components['schemas']['AusschussOut']['items'][number]
 
-// Antwort von PUT /photos/{id}/motif-corrections/{motif_key} - der gesetzte Wert wird direkt
-// zurückgegeben, analog PUT /photos/{id}/rating.
-export interface MotifCorrectionOut {
-  photo_id: number
-  motif_key: MotifKey
-  applies: boolean
-}
+/** Das an den Namen gebundene Gesicht: gezeigt, gewählt-aber-nicht-gelernt, oder keine Angabe. */
+export type PersonFace = components['schemas']['PhotoPersonOut']['face']
+
+/** Die geschlossenen Sperrgründe einer Prüfungswahl; `no_consent` steht vor `no_api_key`. */
+export type ClassificationReviewUnavailableReason =
+  components['schemas']['ReviewKindOptionOut']['unavailable_reasons'][number]
+
+/** Die Einheit einer Prüfungszählung, vom Server mitgeliefert. */
+export type ClassificationReviewUnit = components['schemas']['ReviewPurposeCountsOut']['unit']
 
 /**
- * Der geschriebene Zustand BEIDER Bewertungszeilen eines Austauschs.
- *
- * Beide, damit die Entwurfsansicht wie bisher in ihre bereits geladene Liste fortschreibt statt
- * neu zu laden — ein Neuladen risse die gerade getauschte Kachel aus der Liste.
+ * Die camelCase-Parameter der Fotoliste. `personIds` wird als wiederholter Query-Schlüssel
+ * `person_id` serialisiert; die Grenzen führt der Server.
  */
-export interface DraftExchangeOut {
-  /** Das aufgenommene Bild. */
-  taken: RatingWriteOut
-  /** Das ersetzte, damit gestrichene Bild. */
-  struck: RatingWriteOut
+export type ListPhotosParams = {
+  ratingStatus?: RatingFilter
+  limit?: number
+  offset?: number
+  cameraId?: number
+  personIds?: readonly number[]
 }
 
-/** Der Body des Rückgängig nach einem Tausch: dieselben beiden Ids wie beim Tausch und die
- * beiden Vorzustände - jeweils der einzige Zustand außer „keine Entscheidung", aus dem der Tausch
- * die Seite geholt haben kann. Beide Felder sind Pflicht, auch als `null`. */
-export interface DraftExchangeUndoIn {
-  photo_id: number
-  replaced_photo_id: number
-  photo_previous_status: 'rejected' | null
-  replaced_previous_status: 'album_worthy' | null
+/** Die camelCase-Parameter des Alternativen-Endpunkts. */
+export type ListDraftAlternativesParams = {
+  eventId: number
+  photoId?: number
+  limit?: number
+  offset?: number
+  /** Das Band: die Aufnahmeserie um das Bezugsbild, Fenster vom Server geschnitten. */
+  series?: true
 }
 
-/** Der geschriebene Zustand beider eigenen Zeilen nach dem Rückgängig. */
-export interface DraftExchangeUndoOut {
-  /** Die damals gewählte Alternative. */
-  photo: RatingWriteOut
-  /** Das damals ersetzte Bild. */
-  replaced: RatingWriteOut
+/** Die camelCase-Parameter des Ausschuss-Lesepfads. */
+export type ListAusschussParams = {
+  limit?: number
+  offset?: number
+  photoId?: number
+  autoDecided?: boolean
 }
 
-// Die Rangzeile eines Fotos aus der Kriterien-/Rangfolgen-Pipeline. Ein Foto hat je Lauf
-// GENAU EINE davon - die Partition ist allein das Event.
-export interface RankingOut {
-  event_id: number
-  /** Der QUALITÄTSWERT des Fotos auf [0, 1] - `null` heißt „kein Modellurteil, also kein Wert"
-   * (Cloud-Freigabe fehlt projektweit, oder der Aufruf für dieses Foto ist fehlgeschlagen). Auf
-   * `!== null` prüfen, NIE auf Falsyness: `0` ist ein gültiger Wert, und ein `?? 0` oder ein
-   * Falsyness-Filter verliert ihn lautlos. Es gibt keinen Rückfall auf einen lokal gebildeten
-   * Wert. */
-  rank_score: number | null
-  /** `null` gemeinsam mit `rank_score` - ein Foto ohne Qualitätswert hat keinen Rang. Die Zeile
-   * „Rang M von N" entfällt dann vollständig; „Rang – von 12" wäre eine Rangaussage über ein
-   * Foto ohne Rang. */
-  rank_position: number | null
-  /** Trägt der LAUF dieses Foto vor? Lauf-global, ohne jeden Nutzerbezug, auf allen Lesepfaden
-   * gesetzt. `false` bei gleichzeitiger eigener Entscheidung „Im Album" ist der Zustand
-   * „aufgenommen, vom aktuellen Vorschlag nicht getragen". */
-  proposed: boolean
-  // Größe der GESAMTEN Event-Partition (nicht nur des Vorschlags), für "Rang M von N"
-  // im Info-Popover.
-  partition_size: number
-  /** Der Platz dieses Fotos in der angezeigten Auswahl seines Events. `null` heisst: gehoert
-   * nicht zur angeforderten Auswahl, oder es wurde gar keine angefordert. AUSDRUECKLICH NICHT
-   * `rank_position` - jene ist die lauf-globale Rangaussage des Info-Popovers. Auf `!== null`
-   * pruefen, nie auf Falsyness. */
-  curation_position: number | null
-}
+/* --- Die Aufrufgrenze: Endpunktvorlage + getrennte Pfadparameter ------------------------------ */
 
-// Herkunft eines Kriterien-Werts (backend models.py::CriterionSource) - aktuell nur zur Anzeige
-// im Info-Popover, kein Frontend-Verhalten haengt vom konkreten Wert ab.
-export type CriterionSource = 'local_heuristic' | 'local_ml' | 'cloud'
+type HttpMethode = 'get' | 'post' | 'put' | 'patch' | 'delete'
+type Endpunkt = keyof paths
+type Vorgang<E extends Endpunkt, M extends HttpMethode> = NonNullable<paths[E][M]>
 
-// Ein einzelner, bereits normierter Kriterien-Wert eines Fotos. Best-effort: nur Kriterien,
-// für die tatsächlich ein Wert berechnet wurde, sind enthalten - kein 0/Platzhalter für
-// fehlende.
-export interface CriterionScoreOut {
-  criterion_key: string
-  display_name: string
-  value: number
-  source: CriterionSource
-  // `presence_threshold is not None` der Backend-Registry und die ALLEINIGE Grundlage der
-  // Gliederung in die Blöcke "Qualität" (false) / "Bildinhalt" (true) - im Frontend wird dazu
-  // bewusst keine Merkmalsliste gepflegt. Die Schwelle selbst kommt nicht mit: sie ist die
-  // Vorfilter-Grenze des Cloud-Aufrufs und hat in der Oberfläche nichts zu entscheiden.
-  has_presence_threshold: boolean
-}
+type VorgangsParameter<E extends Endpunkt, M extends HttpMethode> =
+  Vorgang<E, M> extends { parameters: infer P } ? P : never
 
-// Ein frei formuliertes, auf einen kanonischen Eintrag aufgelöstes Feinlabel - immer eine
-// Liste (0-2 Einträge), nie null. Reine ZUSATZINFORMATION am Foto, keine Kategoriequelle.
-//
-// SICHERHEITSHINWEIS: `display_name`/`raw_label` sind freier, extern erzeugter LLM-Text
-// (backend zeichensaniert). Sie dürfen ausschließlich als regulärer React-Textknoten
-// gerendert werden - nie über dangerouslySetInnerHTML, nie als HTML-String-Prop, nie in
-// href/src/style.
-export interface FineLabelOut {
-  canonical_key: string
-  display_name: string
-  raw_label: string
-  provider: string
-}
+/** `undefined` (aus einem optionalen `?: never`) gilt wie "nicht vorhanden". */
+type Vorhanden<X> = [X] extends [undefined] ? never : X
 
-// Häufigkeit eines Feinlabels IN EINEM PROJEKT (GET /projects/{id}/fine-labels), absteigend
-// sortiert - macht sichtbar, welche Kategorie im festen Set gegebenenfalls fehlt.
-export interface FineLabelCountOut {
-  canonical_key: string
-  display_name: string
-  photo_count: number
-}
+type ParameterArt<
+  E extends Endpunkt,
+  M extends HttpMethode,
+  Art extends 'path' | 'query',
+> = Vorhanden<
+  Art extends 'path'
+    ? VorgangsParameter<E, M> extends { path?: infer X }
+      ? X
+      : never
+    : VorgangsParameter<E, M> extends { query?: infer X }
+      ? X
+      : never
+>
 
-// Die beiden unabhängigen Cloud-Vision-Läufe, für die pro Foto genau einer von sechs Zuständen
-// angezeigt wird. Derselbe Typ schlüsselt auch die Cloud-Teilschritte eines Laufs
-// (`CloudPhaseSummaryOut.purpose`).
-export type CloudVisionPhase = 'landmark' | 'remote_category'
+type AnfrageKoerper<E extends Endpunkt, M extends HttpMethode> = Vorhanden<
+  Vorgang<E, M> extends { requestBody?: infer R }
+    ? R extends { content: { 'application/json': infer B } }
+      ? B
+      : never
+    : never
+>
 
-// Read-time aus bereits vorhandenen Signalen abgeleitet (backend api/photos.py::
-// _cloud_vision_status_out) - kein voller Status pro Foto persistiert. `no_result` tritt nur
-// bei `phase === 'landmark'` auf: Remote-Kategorie kennt keinen "nichts gefunden"-Fall,
-// ein Erfolg schreibt immer 1-3 Zeilen.
-export type CloudVisionStatus =
-  'not_run' | 'not_candidate' | 'consent_disabled' | 'error' | 'no_result' | 'result'
+type Antworten<E extends Endpunkt, M extends HttpMethode> =
+  Vorgang<E, M> extends { responses: infer R } ? R : never
 
-// Ein Eintrag von `PhotoOut.cloud_vision_status` - immer genau zwei (einer je CloudVisionPhase),
-// feste Reihenfolge [landmark, remote_category].
-export interface CloudVisionStatusOut {
-  phase: CloudVisionPhase
-  status: CloudVisionStatus
-  // Nur bei status === 'error' gesetzt.
-  error_message: string | null
-  // Nur bei status in {'error', 'no_result', 'result'} gesetzt.
-  attempted_at: string | null
-}
+type ErfolgsAntwort<E extends Endpunkt, M extends HttpMethode> = {
+  [K in keyof Antworten<E, M>]: K extends 200 | 201 | 202 | 203 | 204 ? Antworten<E, M>[K] : never
+}[keyof Antworten<E, M>]
 
-/** Der Ort DIESES Fotos, in voller EXIF-Präzision (keine serverseitige Rundung).
- *
- * `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail: der Trennabstand der
- * Clusterbildung begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den
- * DURCHMESSER eines Clusters - eine `"derived"`-Koordinate kann beliebig weit von der
- * tatsächlichen Aufnahmestelle entfernt liegen. Sie ist eine Schätzung, nie eine Messung;
- * kein künftiger Verbraucher (Kartenansicht, Export) darf `derived` wie `exif` behandeln. */
-export interface PhotoLocation {
-  lat: number
-  lon: number
-  source: 'exif' | 'derived'
-}
-
-/** Der bereits AUFGELÖSTE Ort des EVENTS - auf jedem Foto desselben Events identisch, `null`
- * ohne jede Ortsinformation.
- *
- * Der Server liefert den fertigen ZUSTAND, nicht die Rohdaten für eine Rangfolge. Das
- * Frontend bildet die Rangfolge (Sehenswürdigkeit -> Koordinate -> mehrere Orte) NICHT nach.
- * `kind: 'multiple'` trägt strukturell keine Koordinate.
- *
- * `kind` benennt die STUFE, nicht den einzigen Text des Events: `landmark_name` steht NEBEN
- * `place_name`, statt ihn zu verdrängen -
- * `utils/timeOfDay.ts::eventPlaceName` setzt beide zur Form "<Name>, <Ort>" zusammen. Verdrängt
- * bleibt allein die KOORDINATENSTUFE: `kind: 'coordinate'` erscheint nie als Name, und ohne
- * Ortsnamen fällt ein Event auf "Position N" zurück. `kind` bleibt `'landmark'` auch dann, wenn
- * daneben ein Ortsname steht.
- *
- * `landmark_name` ist freier, extern erzeugter LLM-Text: ausschließlich als regulärer
- * React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
- * `href`/`src`/`style`, nie als React-`key` (dieselbe Auflage wie bei
- * `FineLabelOut.raw_label`). Ein Event trägt ihn nur, wenn ihn mindestens ein Zehntel seiner
- * Fotos bezeugt (Backend `events.LANDMARK_MIN_SHARE`); ein zu schwach gestützter Name ist von
- * "nie erkannt" nicht zu unterscheiden und hat keinen eigenen Anzeigezustand. */
-export interface EventPlace {
-  kind: 'landmark' | 'coordinate' | 'multiple'
-  landmark_name: string | null
-  lat: number | null
-  lon: number | null
-}
-
-/** Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehört.
- * Nummer, Zeitspanne und Name stehen in der Zeile des Events und hängen damit NICHT davon ab,
- * welche Fotos eine Antwort gerade enthält.
- *
- * `place_name` ist der aufgelöste Ortsname dieses Events, `null` heißt "keiner". Er steht bewusst
- * NEBEN `place` und nicht darin: `place` ist `null`, sobald der Server die Ortsstufe nicht kennt,
- * und der Name fiele dort still mit. Die Form "Ort, Viertel" kommt FERTIG vom Server.
- *
- * Er steht auch NEBEN dem Sehenswürdigkeitsnamen: Der Server setzt die Überschrift NICHT
- * zusammen - `utils/timeOfDay.ts::eventPlaceName` verbindet beide Teile. Eine zweite Quelle
- * derselben Form liefe mit ihr auseinander.
- *
- * Es ist freier, extern erzeugter Text und trägt dieselbe Auflage wie `landmark_name`:
- * ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als
- * HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Die Schlüssel-Auflage ist
- * hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der Normalfall dieser Überschrift, und ein
- * doppelter Schlüssel bringt die Listenabgleichung durcheinander. */
-export interface EventOut {
-  id: number
-  position: number
-  started_at: string
-  ended_at: string
-  place: EventPlace | null
-  place_name: string | null
-}
-
-/** Die Kamera eines Fotos. `label` kommt vom SERVER - eine Stelle entscheidet, wie eine Kamera
- * heißt, und der Wert ist dort bereits von unsichtbaren Zeichen befreit. Nie aus `make`/`model`
- * im Frontend zusammensetzen; die Felder gibt es hier gar nicht. */
-export interface CameraOut {
-  id: number
-  label: string
-}
-
-/** Ein Eintrag der Kameraliste eines Projekts. `photo_count` zählt ausschließlich die Fotos
- * DIESES Projekts von dieser Kamera. */
-export interface ProjectCameraOut {
-  id: number
-  label: string
-  photo_count: number
-  offset_minutes: number
-}
-
-/** Ein errechneter Versatz-Vorschlag. Er GILT NOCH NICHT - erst ein `PUT` auf den
- * Versatz-Endpunkt setzt ihn. */
-export interface CameraTimeOffsetSuggestionOut {
-  camera_id: number
-  camera_label: string
-  offset_minutes: number
-  photo_taken_at_original: string
-  reference_taken_at: string
-}
-
-export interface PhotoOut {
-  id: number
-  relative_path: string
-  /** Die WIRKSAME (korrigierte) Aufnahmezeit: der um den Kamera-Versatz verschobene Wert. Jede
-   * Anzeige einer Aufnahmezeit liest diesen Wert. */
-  taken_at: string
-  /** Die AUFGEZEICHNETE Zeit. Nur im Korrekturfall anzuzeigen - bei `time_offset_minutes === 0`
-   * ist sie gleich `taken_at` und eine zweite Zeile wäre eine Aussage ohne Inhalt. */
-  taken_at_original: string
-  /** Die Differenz der beiden Zeiten in ganzen Minuten. `0` heißt "nicht korrigiert" - dann
-   * erscheint weder Kennzeichnung noch zweite Zeile. */
-  time_offset_minutes: number
-  /** `null` heißt "Kamera nicht bestimmbar" - ein regulärer Zustand, kein Fehler. */
-  camera: CameraOut | null
-  /** Breite geteilt durch Höhe des GEZEIGTEN Bildes (nach EXIF-Orientierung). `null` heißt "nicht
-   * bekannt" und ist ein regulärer Zustand, kein Fehler - das Raster plant ein solches Foto mit
-   * 3:2 ein und passt es in seinem Feld ein (`utils/justifiedRows.ts`). Optional deklariert wie
-   * `ranking`/`location`: `undefined` und `null` bedeuten an jeder Lesestelle dasselbe. */
-  aspect_ratio?: number | null
-  ratings: RatingOut[]
-  suggestion: SuggestionOut | null
-  /** Die Rangzeile des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi - `null`,
-   * solange kein erfolgreicher Lauf existiert oder das Foto darin keine Zeile hat.
-   *
-   * EIN Feld und keine Liste: ein Foto steht je Lauf in genau einer Zeile, seit die Partition
-   * allein das Event ist. Optional deklariert wie `location`/`event`: `undefined` und `null`
-   * bedeuten an jeder Lesestelle dasselbe. */
-  ranking?: RankingOut | null
-  criterion_scores: CriterionScoreOut[]
-  // Immer eine Liste (0-2 Einträge), nie null.
-  fine_labels: FineLabelOut[]
-  // Immer genau 2 Einträge, feste Reihenfolge [landmark, remote_category].
-  cloud_vision_status: CloudVisionStatusOut[]
-  /** Beide Felder liefert die API IMMER (auf allen Lesepfaden, `null` ohne Ortsinformation).
-   * Hier trotzdem OPTIONAL deklariert: `undefined` und `null` bedeuten an jeder Lesestelle
-   * dasselbe - kein Ort. */
-  location?: PhotoLocation | null
-  event?: EventOut | null
-  /** `null` heißt „noch nicht klassifiziert": dann ist `motifs` LEER und trägt ausdrücklich NICHT
-   * acht Einträge mit Wert 0. Auf `=== null` prüfen und an der Stelle der Liste einen Satz
-   * zeigen - acht Nullzeilen sind von „nichts erkannt" nicht zu unterscheiden. */
-  motif_assessment?: MotifAssessmentOut | null
-  /** Immer eine Liste, nie `null` (analog `ratings`): leer ohne Kopfzeile, sonst genau acht
-   * Einträge in Registry-Reihenfolge - auch bei unvollständigen Stärkezeilen. Die Stärke wird je
-   * Schlüssel nachgeschlagen, NIE über den Index der Antwortliste.
-   *
-   * Optional deklariert wie `location`/`event`: `undefined` und `[]` bedeuten an jeder Lesestelle
-   * dasselbe. */
-  motifs?: MotifStrengthOut[]
-  /** Die Albumtauglichkeit des Modells - `null` heißt „noch nicht bewertet" und ist von der
-   * niedrigsten Stufe unterscheidbar. Auf `=== null` prüfen, nie auf Falsyness. */
-  album_suitability?: AlbumSuitabilityOut | null
-  /** Die Eye-Auswertung, `null` ohne Eye-Kopfzeile. Optional deklariert wie `location`/`motifs`:
-   * `undefined` und `null` bedeuten an jeder Lesestelle dasselbe ("nicht angezeigt"). */
-  eye_result?: EyeResultOut | null
-  /**
-   * Die persistierte GEMEINSAME Entscheidung des Projekts über dieses Foto; `null` = keine
-   * getroffen. Sie ist keine Aussage eines Nutzers - `ratings[].status` heißt bereits
-   * „album_decision", und die beiden zu verwechseln ist der Fehler, den diese Ansicht
-   * ausschließt.
-   */
-  final_selection_decision: boolean | null
-  /**
-   * Gehört das Foto zur Endauswahl? DIE AUSSAGE DES SERVERS
-   * (`backend album_selection.py::selection_state`). Die Oberfläche leitet die Zugehörigkeit
-   * NIE selbst her - insbesondere nicht über `utils/albumDraft.ts::isInAlbum`, dessen Aussage
-   * nur innerhalb der Antwortmenge des Entwurfszweigs gilt.
-   */
-  in_final_selection: boolean
-  /** Sind sich die Nutzer über dieses Foto uneins und ist noch nicht gemeinsam entschieden? */
-  contested: boolean
-  /**
-   * Die WIRKSAM zugeordneten Personen: Korrektur vor Erkennung, vom Server
-   * berechnet. Nur Id und Herkunft - die Namen kommen aus `GET /persons`.
-   */
-  persons: PhotoPersonOut[]
-}
-
-/** Herkunft einer Zuordnung: `recognized` = erkannt, `corrected` = von Hand zugeordnet. */
-export type PersonOrigin = 'recognized' | 'corrected'
-
-/** Das an den Namen gebundene Gesicht: `shown` = gezeigt und gelernt, `assigned` = gewählt, aber
- * nicht gelernt (Obergrenze), `null` = Name für das ganze Foto oder erkannt. Nie eine Box. */
-export type PersonFace = 'shown' | 'assigned' | null
-
-export interface PhotoPersonOut {
-  person_id: number
-  origin: PersonOrigin
-  face: PersonFace
-}
-
-/** Die Antwort auf Festlegen und Zeigen. `learned: false` heißt: benannt, aber nicht gelernt. */
-export interface FaceAssignmentOut {
-  person: PersonOut
-  learned: boolean
-  photo_persons: PhotoPersonOut[]
-}
-
-/** Ein Gesicht ohne Namen - adressiert über (Foto, Index), der Ausschnitt als base64-JPEG. Kein
- * Pfad, keine Box, kein Wert. */
-export interface UnnamedFaceOut {
-  photo_id: number
-  face_index: number
-  crop_jpeg: string
-}
-
-export interface UnnamedFacesPageOut {
-  faces: UnnamedFaceOut[]
-  not_ready_photo_ids: number[]
-  next_after_id: number | null
-  photos_done: number
-  photos_total: number
-}
-
-/** Eine festgelegte Person. `reference_count` zählt die gezeigten Gesichter. */
-export interface PersonOut {
-  id: number
-  name: string
-  reference_count: number
-}
-
-/** Ein gefundenes Gesicht - die Box ist auf das Bild normiert (0..1). */
-export interface FaceOut {
-  index: number
-  box: { x: number; y: number; width: number; height: number }
-}
-
-/*
- * DIE DREI FELDER OBEN SIND PFLICHTIG DEKLARIERT, anders als `ranking`/`location`/`event`
- * daneben. Bei `location` bedeuten `undefined` und `null` dasselbe; bei `in_final_selection` und
- * `contested` läse `undefined` sich als `false`, also als „gehört nicht zur Endauswahl" bzw. „ist
- * nicht strittig". Beides ist plausibel, wirft nichts und erscheint an keiner Stelle als Fehler;
- * die Endauswahl ist die Menge, die als Album gilt und die der Export nimmt. Ein optionales Feld
- * machte daraus ein leeres Album statt einen Typfehler.
- */
+type AntwortKoerper<A> = [A] extends [never]
+  ? undefined
+  : A extends { content: { 'application/json': infer J } }
+    ? J
+    : undefined
 
 /**
- * EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, mehr liefert der Server nicht.
- * Die Länge der Liste ist zugleich der Nenner der Einigkeitsregel.
- *
- * SICHERHEIT: `username` ist fremdbestimmter Text und wird ausschließlich als regulärer
- * React-Textknoten gerendert - nie über `dangerouslySetInnerHTML`, nie in `href`, `src` oder
- * `style`, nie in eine URL.
+ * Der Antwortkörper eines Endpunkts. Die eine Typaussage an der HTTP-Grenze leitet sich damit aus
+ * `paths[Endpunkt][Methode]` ab; der Aufrufer kann sie nicht wählen.
  */
-export interface AlbumParticipantOut {
-  user_id: number
-  username: string
-}
+type Normalisiert<M extends string> = Lowercase<M> & HttpMethode
+
+export type ApiAntwort<E extends Endpunkt, M extends string> = AntwortKoerper<
+  ErfolgsAntwort<E, Normalisiert<M>>
+>
+
+/** Die Endpunkte, die eine Methode führen. Ein Endpunkt ohne die Methode ist kein Aufrufziel. */
+export type ApiPfad<M extends HttpMethode> = {
+  [E in Endpunkt]: [NonNullable<paths[E][M]>] extends [never] ? never : E
+}[Endpunkt]
 
 /**
- * Die Antwort von `GET /projects/{id}/album-selection` - die gemeinsame Endauswahl als GANZES.
- *
- * KEIN `total` und keine Seitenweise, wie beim Entwurfszweig: Die Menge wird vollständig
- * geliefert, und aus ihr entstehen LOKAL beide Sichten (Arbeitssicht `contested`, Ergebnissicht
- * `in_final_selection` samt der ausdrücklich Herausgenommenen). Der Umschalter lädt nichts nach.
+ * Die Methoden, die ein Endpunkt führt. Eine fremde Methode ist ein Typfehler; die Schreibweise
+ * (`put`/`PUT`) ist bedeutungslos - `paths` bleibt die Quelle der Menge.
  */
-export interface AlbumSelectionOut {
-  /** ALLE Nutzer, nach `user_id` sortiert - auch der, der noch nie etwas angefasst hat. */
-  participants: AlbumParticipantOut[]
-  /**
-   * „Mindestens eine Rangzeile des letzten erfolgreichen Laufs trägt `selection_position`."
-   * Trennt die beiden Leerzustände, die verschiedene Handlungen verlangen: „kein
-   * Auswahlvorschlag" (einen Lauf starten) gegen „keine Unterschiede offen" (nichts tun).
-   */
-  has_proposal: boolean
-  items: PhotoOut[]
-}
+export type ApiMethode<E extends Endpunkt> = {
+  [M in HttpMethode]: [NonNullable<paths[E][M]>] extends [never] ? never : M | Uppercase<M>
+}[HttpMethode]
+
+/** Endpunkte mit Pflicht-Pfadparametern - dort ist die Optionsangabe selbst Pflicht. */
+export type ApiPfadMitParametern<M extends HttpMethode> = {
+  [E in ApiPfad<M>]: [ParameterArt<E, M, 'path'>] extends [never] ? never : E
+}[ApiPfad<M>]
+
+/** Endpunkte ohne Pfadparameter - dort darf die Optionsangabe fehlen. */
+export type ApiPfadOhneParameter<M extends HttpMethode> = {
+  [E in ApiPfad<M>]: [ParameterArt<E, M, 'path'>] extends [never] ? E : never
+}[ApiPfad<M>]
+
+type PfadTeil<E extends Endpunkt, M extends HttpMethode> = [ParameterArt<E, M, 'path'>] extends [
+  never,
+]
+  ? { pathParams?: never }
+  : { pathParams: ParameterArt<E, M, 'path'> }
+
+type AbfrageTeil<E extends Endpunkt, M extends HttpMethode> = [
+  ParameterArt<E, M, 'query'>,
+] extends [never]
+  ? { query?: never }
+  : VorgangsParameter<E, M> extends { query: unknown }
+    ? { query: ParameterArt<E, M, 'query'> }
+    : { query?: ParameterArt<E, M, 'query'> }
+
+type KoerperTeil<E extends Endpunkt, M extends HttpMethode> = [AnfrageKoerper<E, M>] extends [never]
+  ? { body?: never }
+  : { body: AnfrageKoerper<E, M> }
 
 /**
- * Die Antwort von `PUT /photos/{id}/album-decision` - der PERSISTIERTE Zustand nach dem
- * Schreibvorgang, nie die Rückspiegelung des Bodys. `utils/albumSelection.ts::applyAlbumDecision`
- * schreibt genau diesen Wert fort, nie den lokal beabsichtigten.
+ * Die Optionen eines Aufrufs: Pfadparameter getrennt, Query und Anfragekörper typisiert. Ein
+ * konkreter Pfad trifft keinen Endpunkt; ein fehlender Pfadparameter und ein `body` an einem
+ * körperlosen Endpunkt sind Typfehler.
  */
-export interface AlbumDecisionOut {
-  photo_id: number
-  included: boolean
-  updated_at: string
-}
-
-/** Die fünfstufige Modellaussage über die Albumtauglichkeit eines Fotos samt Begründung.
- *
- * SICHERHEITSHINWEIS: `reason` ist freier, extern erzeugter LLM-Text - ausschliesslich als
- * regulärer React-Textknoten rendern (nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop,
- * nie als Markdown, nie in `href`/`src`/`style`). Das ist keine bloße Konvention, sondern die
- * tragende Voraussetzung dafür, dass das Session-Token in `localStorage` liegen darf. Er ist
- * erkennbar als Aussage des MODELLS auszuweisen, nicht als Aussage von PhotoSort: er stammt aus
- * einem Bild, das Text enthalten kann.
- *
- * `reason === null` heißt „keine Begründung" - die Zeile entfällt dann ersatzlos, kein
- * Platzhalter, kein „—". */
-export interface AlbumSuitabilityOut {
-  level: number
-  reason: string | null
-  // Die Herkunft der zaehlenden Stufe, serverseitig festgelegt (nie aus einer Anfrage): `eye`
-  // heisst, die Stufe kommt aus Eyes Auswertung, und `reason` ist dann `null`.
-  source: 'cloud' | 'eye'
-}
-
-export interface PhotoListOut {
-  items: PhotoOut[]
-  total: number
-}
-
-/**
- * Die Antwort des Alternativen-Endpunkts: `offset` ist der Beginn der
- * Seite in der vollen Reihe, `reference_index` die Stelle des Bezugsbildes darin (Zahl der
- * Alternativen davor) - ohne Bezugsbild `null`. `series_rest` ist die Zahl der Serienaufnahmen
- * jenseits des Bandfensters (nur mit `series`, sonst `0`). Das Frontend rechnet keine Zeit nach.
- */
-export interface DraftAlternativesOut {
-  items: PhotoOut[]
-  total: number
-  offset: number
-  reference_index: number | null
-  series_rest: number
-}
-
-/**
- * Der Album-Entwurf des anfragenden Nutzers: ALLE Events des letzten erfolgreichen Laufs nach
- * `position` (auch die ohne Foto im Entwurf) und die Fotos `Vorschlag ∪ eigene Aufnahmen ∪ eigene
- * Streichungen mit Rangzeile` in Serverreihenfolge. Innerhalb der Antwort gilt: im Album genau
- * dann, wenn der eigene Status nicht `rejected` ist. KEIN `total`, keine Seitenweise.
- */
-export interface AlbumDraftOut {
-  events: EventOut[]
-  items: PhotoOut[]
-  // Zahl AUSWAHLFÄHIGER Kandidaten des Laufs (Rangzeile mit Wert, kein ausgeschlossenes Dokument)
-  // - Grundlage des Hinweises „kleinerer Vorschlag".
-  eligible_candidate_count: number
-}
-
-// Ab hier: die Momentaufnahme eines Projekts (GET /projects/{id}/stats). Reine Anzeigedaten -
-// die Seite löst nichts aus und schreibt nichts.
-
-export interface ProjectStatsStorage {
-  opencloud_bytes: number
-  // null = nicht ermittelbar (keine PostgreSQL-Datenbank). Immer explizit `=== null` pruefen,
-  // nie truthy: 0 ist ein gueltiger, informativer Wert und heisst etwas anderes.
-  local_cache_bytes: number
-  local_database_bytes_estimate: number | null
-}
-
-/** Eine Zeile der Motivverteilung. Der Anzeigename kommt vom Server - es gibt bewusst KEINE
- * Übersetzungstabelle für Motivschlüssel im Frontend, sonst liefen beide Listen auseinander.
- *
- * Die drei Bandzahlen sind DISJUNKT und ERSCHÖPFEND: ihre Summe je Motiv ist die Zahl der
- * beurteilten Fotos. Über alle Motive summiert übersteigt sie die Fotoanzahl - ein Foto trägt
- * alle acht Motive mit unterschiedlicher Stärke und zählt in mehreren Zeilen. Genau das ist der
- * Grund für den dauerhaft sichtbaren Erklärsatz über der Tabelle.
- *
- * Es gibt bewusst KEIN `share`-Feld: ein Anteil setzte eine Grundmenge voraus, zu der die Zahlen
- * sich summieren. */
-export interface ProjectStatsMotifEntry {
-  motif_key: string
-  display_name: string
-  strong_photo_count: number
-  medium_photo_count: number
-  weak_photo_count: number
-  /** Arithmetisches Mittel der WIRKSAMEN Stärken, Bruchteil zwischen 0 und 1. `null` ohne ein
-   * einziges beurteiltes Foto - immer explizit `=== null` prüfen, nie truthy: `0` ist ein
-   * gültiger Mittelwert und eine völlig andere Aussage als „nicht erhoben". */
-  average_strength: number | null
-}
-
-/** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
-export type CloudVisionPurpose = 'landmark' | 'remote_category'
-
-/**
- * Die Kostenzwecke der Statistik (backend api/stats.py): die beiden Cloud-Zwecke plus `review`,
- * den Kostenposten der Klassifizierungspruefung. Eigener Typ, weil `review` kein Cloud-Aufruf
- * ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Laeufe unangetastet bleiben muss.
- */
-export type StatsCostPurpose = CloudVisionPurpose | 'review'
-
-export interface ProjectStatsCostByPurpose {
-  purpose: StatsCostPurpose
-  cost_usd: number
-  /** true = für mindestens einen Lauf dieses Zwecks fehlen Verbrauchsdaten. Es wird bewusst
-   * nichts geschätzt - der Betrag bleibt die Summe des tatsächlich Erfassten. */
-  has_unrecorded_runs: boolean
-}
-
-export interface ProjectStatsCost {
-  currency: string
-  /** Serverseitig UNGERUNDET - erst die Anzeige rundet, damit die Summe exakt der Summe der
-   * angezeigten Einzelposten entspricht. */
-  total_usd: number
-  by_purpose: ProjectStatsCostByPurpose[]
-}
-
-export interface ProjectStatsProgress {
-  scanned: number
-  thumbnails_ready: number
-  ausschuss_scored: number
-  ranked: number
-  remote_classified: number
-}
-
-/**
- * Ausschliesslich die Bewertungen des ANGEMELDETEN Nutzers.
- *
- * DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` steht NEBEN der Albumentscheidung -
- * dasselbe Foto zählt in `favorite` und in `album_worthy`. Erschöpfend und überschneidungsfrei
- * sind allein `album_worthy + rejected + unrated`. Die Anzeige darf keine
- * Aufteilung des Bestands über alle vier behaupten.
- */
-export interface ProjectStatsRatings {
-  favorite: number
-  album_worthy: number
-  rejected: number
-  unrated: number
-}
-
-/** Jeweils der Abschlusszeitpunkt des zuletzt ERFOLGREICHEN Laufs; null = noch nie gelaufen. */
-export interface ProjectStatsLastSuccessfulRuns {
-  scan: string | null
-  scoring: string | null
-  classification: string | null
-  remote_category_classification: string | null
-}
-
-export interface ProjectStatsRemoteFailure {
-  purpose: CloudVisionPurpose
-  photo_count: number
-}
-
-/** Ob die angemeldete Person die Ablaufübersicht dieses Projekts schon geschlossen hat - genau
- * dieses eine Feld, nie der Zustand der anderen Person. */
-export interface OverviewSeenOut {
-  seen: boolean
-}
-
-export interface ProjectStatsDiagnostics {
-  /** null = noch nie gescannt (ausdruecklich nicht 0). */
-  last_scan_files_skipped: number | null
-  duplicate_photo_count: number
-  /** Ist-Zustand, keine Historie: ein erfolgreicher Retry senkt den Wert wieder. */
-  remote_failures: ProjectStatsRemoteFailure[]
-}
-
-export interface ProjectStatsOut {
-  photo_count: number
-  storage: ProjectStatsStorage
-  /** null bei leerem Projekt; bei genau einem Foto ist Anfang gleich Ende. */
-  taken_at_earliest: string | null
-  taken_at_latest: string | null
-  /** Immer alle acht Motive in Registry-Anzeigereihenfolge, auch mit drei Nullen. */
-  motifs: ProjectStatsMotifEntry[]
-  /** Die Anzeigebänder der Tabelle - sie kommen vom Server, damit das Frontend sie nicht
-   * hinterlegt. Sie sind KEINE Zugehörigkeitsschwelle, und außerhalb dieser Tabelle erscheint
-   * kein Bandwort. */
-  strength_bands: MotifStrengthBandsOut
-  /** Fotos ganz ohne Kopfzeile. Sie fehlen in JEDER Zahl der Tabelle und stehen deshalb als
-   * eigene Kennzahl daneben, nicht als achtes Nullband. */
-  unassessed_photo_count: number
-  /** Als Dokument/Screenshot ausgeschlossene Fotos - projektweit, weil das die einzige Stelle
-   * ist, an der ein systematisch überschießendes Modell auffällt. */
-  excluded_photo_count: number
-  /** Korrektur-ZEILEN, nicht Fotos: ein Foto kann bis zu acht tragen. */
-  motif_correction_count: number
-  cost: ProjectStatsCost
-  progress: ProjectStatsProgress
-  ratings: ProjectStatsRatings
-  last_successful_runs: ProjectStatsLastSuccessfulRuns
-  diagnostics: ProjectStatsDiagnostics
-}
-
-/**
- * Die drei Arten, auf die das Modell bei einem Motiv danebenlag: zu schwach erkannt, gar nicht
- * erkannt, vom Modell genannt und von uns weggenommen.
- */
-export type MotifErrorCase = 'too_weak' | 'missing' | 'overcalled'
-
-/** Gleichstufig, über Modellstufen hinweg, oder mangels Stufe unbestimmt. */
-export type ExchangeKind = 'within_level' | 'across_level' | 'undetermined'
-
-/**
- * Die drei Fehlerfälle sind NICHT erschöpfend: Eine Korrektur ohne Modellfehler zählt in keinem
- * von ihnen. Ihre Bezugsgröße ist `correction_count`, nie ihre eigene Summe.
- */
-export interface FeedbackMotifError {
-  case: MotifErrorCase
-  count: number
-}
-
-/**
- * `quality_incomparable_count` hält die Austausche mit gleichem UND die mit fehlendem
- * eingefrorenem Qualitätswert. Sie gehen in `preferred_lower_rated_count` nicht ein und werden
- * auch seinem Gegenstück nicht zugeschlagen.
- */
-export interface FeedbackExchangeStats {
-  kind: ExchangeKind
-  count: number
-  preferred_lower_rated_count: number
-  quality_incomparable_count: number
-}
-
-/**
- * `case_count` ist die Zahl der tatsächlich auswertbaren Paare - beide Fotos tragen den Messwert.
- * Sie kann kleiner sein als die Zahl der gleichstufigen Austausche.
- */
-export interface FeedbackCriterionAgreement {
-  criterion_key: string
-  /** Aus der Backend-Registry, wie bei `CriterionScoreOut` - im Frontend wird dazu bewusst keine
-   * zweite Merkmalsliste gepflegt. */
-  display_name: string
-  case_count: number
-  /** In `[-1, 1]`; bei null Stimmen `0`. */
-  agreement: number
-}
-
-/** Das geltende Gewicht eines Kriteriums. */
-export interface FeedbackCurrentWeight {
-  criterion_key: string
-  weight: number
-}
-
-/**
- * Das abgeleitete Gewicht samt seiner Abweichung vom GELTENDEN - genau der Unterschied zwischen
- * den beiden nebeneinander dargestellten Spalten.
- */
-export interface FeedbackProposedWeight {
-  criterion_key: string
-  weight: number
-  delta: number
-}
-
-/**
- * Die Gewichts-Vorschau.
- *
- * `based_on_event_id` ist ein ZUSTIMMUNGS-TOKEN, kein Objektverweis: Es wird unverändert an die
- * Übernahme zurückgereicht und ist das Einzige, was „übernommen wurde, was angezeigt war" wahr
- * macht. Bei leerem Log ist es `0`.
- *
- * `current_set_id` ist die geltende Fassung (`null` = es gilt der Startwertsatz) und zugleich das,
- * was die Rücknahme nennen muss. `can_revert` ist serverseitig genau `current_set_id !== null` und
- * steht daneben, damit die Oberfläche die Bedingung nicht selbst formuliert.
- */
-export interface FeedbackWeightPreview {
-  current: FeedbackCurrentWeight[]
-  proposed: FeedbackProposedWeight[]
-  based_on_event_id: number
-  current_set_id: number | null
-  can_revert: boolean
-}
-
-/**
- * Die laufende Diagnose der Modellfehler.
- *
- * DIE ZAHLEN GELTEN PROJEKTÜBERGREIFEND UND ÜBER BEIDE NUTZER, obwohl der Abschnitt auf der
- * Projekt-Statistikseite steht - der Endpunkt nimmt keinen Projektparameter entgegen.
- *
- * `correction_count` ist die UNGEWICHTETE Zahl aller festgehaltenen Korrekturen und zugleich das
- * einzige Unterscheidungsmerkmal des Leerzustands: Die drei Fehlerfälle, die drei Tauschklassen
- * und die Kriterien stehen auch bei null Korrekturen vollständig in der Antwort.
- */
-export interface FeedbackDiagnosisOut {
-  correction_count: number
-  motif_errors: FeedbackMotifError[]
-  exchanges: FeedbackExchangeStats[]
-  criteria: FeedbackCriterionAgreement[]
-  weights: FeedbackWeightPreview
-}
-
-/*
- * Die Klassifizierungspruefung - Feld fuer Feld aus dem Backend-Schema
- * (`api/classification_reviews.py`) abgeleitet, nicht aus der Oberflaeche erraten.
- */
-
-/** Das Verfahren EINER Pruefseite - geschlossener Vorrat, nie Freitext. */
-export type ClassificationReviewSideKind = 'cloud' | 'eye' | 'local'
-
-/** Die vier Pruefzwecke; `motifs`, `excluded_document` und `album_level` zaehlen Fotos,
- * `motif_feature` zaehlt (Foto, Motiv)-Paare. */
-export type ClassificationReviewPurpose =
-  'motifs' | 'motif_feature' | 'excluded_document' | 'album_level'
-
-/** Der sichtbare Teilschritt eines Laufs; `null`, sobald er beendet ist. */
-export type ClassificationReviewPhase = 'side_a' | 'side_b' | 'cases'
-
-/** Genau eines von vier Urteilen je Fall, gemeinsam fuer beide Nutzer. */
-export type ClassificationVerdict = 'a_better' | 'b_better' | 'both_ok' | 'both_wrong'
-
-/** Die geschlossenen Sperrgruende einer Wahl; `no_consent` steht vor `no_api_key`. */
-export type ClassificationReviewUnavailableReason = 'no_consent' | 'no_api_key' | 'eye_disabled'
-
-/** Die Einheit einer Zaehlung, vom Server mitgeliefert. */
-export type ClassificationReviewUnit = 'photo' | 'pair'
-
-/** Ein Urteilswert wird geschrieben - die Antwort nennt danach den Schreiber. */
-export interface ClassificationReviewVerdictIn {
-  verdict: ClassificationVerdict
-}
-
-/** Der Nutzer als ausdrueckliche Projektion auf zwei Spalten. */
-export interface ClassificationReviewUserOut {
-  user_id: number
-  username: string
-}
-
-export interface ClassificationReviewSampleSizeOut {
-  default: number
-  min: number
-  max: number
-}
-
-export interface ClassificationReviewKindOptionOut {
-  kind: ClassificationReviewSideKind
-  /** Genau dann wahr, wenn `unavailable_reasons` leer ist. */
-  available: boolean
-  unavailable_reasons: ClassificationReviewUnavailableReason[]
-}
-
-export interface ClassificationReviewCloudModelOptionOut {
-  provider: string
-  model: string
-  available: boolean
-  unavailable_reasons: ClassificationReviewUnavailableReason[]
-}
-
-/** Eine waehlbare Eye-Fassung; Modellrevision und Fassung sind getrennt genannt. */
-export interface ClassificationReviewEyeMappingOptionOut {
-  eye_model_revision: string
-  eye_mapping_version: string
-  available: boolean
-  unavailable_reasons: ClassificationReviewUnavailableReason[]
-}
-
-/** Waehlbare Verfahren, Modelle und Eye-Fassungen samt Sperrgruenden (`GET …/options`). */
-export interface ClassificationReviewOptionsOut {
-  sample_size: ClassificationReviewSampleSizeOut
-  kinds: ClassificationReviewKindOptionOut[]
-  cloud_models: ClassificationReviewCloudModelOptionOut[]
-  eye_mappings: ClassificationReviewEyeMappingOptionOut[]
-}
-
-/**
- * Die Vorab-Schaetzung EINER Seite in DREI Zustaenden: `0.0` heisst kostenfrei (Eye, lokal),
- * `null` heisst "nicht schaetzbar" (kein Preis hinterlegt) - nie "kostenlos".
- */
-export interface ClassificationReviewSideEstimateOut {
-  kind: ClassificationReviewSideKind
-  provider: string | null
-  model: string | null
-  photo_count: number
-  price_per_image_usd: number | null
-  estimated_cost_usd: number | null
-}
-
-export interface ClassificationReviewEstimateOut {
-  photo_count: number
-  a: ClassificationReviewSideEstimateOut
-  b: ClassificationReviewSideEstimateOut
-}
-
-/** Die Verfahrenswahl EINER Seite - kein Anbieter-, Preis- oder Kostenfeld. */
-export interface ClassificationReviewSideIn {
-  kind: ClassificationReviewSideKind
-  /** Gilt nur fuer eine Cloud-Seite; der Anbieter folgt serverseitig aus dem Modell. */
-  model?: string | null
-  /** Gilt nur fuer eine Eye-Seite. */
-  eye_mapping_version?: string | null
-}
-
-/** Der Koerper des Anlegens; `sample_size` ist Pflicht und wird nicht still ersetzt. */
-export interface ClassificationReviewCreateBody {
-  a: ClassificationReviewSideIn
-  b: ClassificationReviewSideIn
-  sample_size: number
-}
-
-export interface ClassificationReviewCreatedOut {
-  id: number
-  status: ScanStatus
-}
-
-/** Herkunft UND Kosten einer Seite: `estimated_cost_usd` ist eingefroren, `cost_usd` die Ist-Kosten. */
-export interface ClassificationReviewSideOut {
-  kind: ClassificationReviewSideKind
-  provider: string | null
-  model: string | null
-  eye_model_revision: string | null
-  eye_mapping_version: string | null
-  estimated_cost_usd: number | null
-  cost_usd: number | null
-}
-
-export interface ClassificationReviewSidesOut {
-  a: ClassificationReviewSideOut
-  b: ClassificationReviewSideOut
-}
-
-/** Eine Zaehlung MIT ihrer Einheit; `presented` ist `min(Pruefgraesse, abweichend)`. */
-export interface ClassificationReviewPurposeCountsOut {
-  unit: ClassificationReviewUnit
-  compared: number
-  matching: number
-  deviating: number
-  presented: number
-}
-
-/** Die vier Urteile plus `open` - die Zahl der Faelle ohne Urteil. */
-export interface ClassificationReviewVerdictCountsOut {
-  a_better: number
-  b_better: number
-  both_ok: number
-  both_wrong: number
-  open: number
-}
-
-/** Eine Zeile der Liste; `case_count === 0` heisst "keine Abweichungen". */
-export interface ClassificationReviewListItemOut {
-  id: number
-  created_at: string
-  created_by: ClassificationReviewUserOut
-  status: ScanStatus
-  cancel_requested_at: string | null
-  phase: ClassificationReviewPhase | null
-  sides: ClassificationReviewSidesOut
-  /** Pruefmenge und die Fotos ohne Ergebnis auf beiden Seiten. Beide Zahlen traegt die Zeile,
-   * damit die Liste „keine Fotos verglichen" (beide gleich, Edge Case 4) von „stimmt ueberein"
-   * unterscheiden kann. */
-  photo_count: number
-  unclassifiable_photo_count: number
-  case_count: number
-  case_open: number
-}
-
-export interface ClassificationReviewDetailOut {
-  id: number
-  created_at: string
-  created_by: ClassificationReviewUserOut
-  status: ScanStatus
-  cancel_requested_at: string | null
-  phase: ClassificationReviewPhase | null
-  sample_size: number
-  seed: number
-  photo_count: number
-  photos_processed: number
-  unclassifiable_photo_count: number
-  finished_at: string | null
-  error_message: string | null
-  sides: ClassificationReviewSidesOut
-  counts_by_purpose: Record<ClassificationReviewPurpose, ClassificationReviewPurposeCountsOut>
-  verdict_counts: ClassificationReviewVerdictCountsOut
-  verdicts_by_purpose: Record<ClassificationReviewPurpose, ClassificationReviewVerdictCountsOut>
-}
-
-/**
- * Die Rohwerte EINER Seite in einem Fall - nur die seines Zwecks. `null` heisst "diese Seite
- * trifft dazu keine Aussage", nie `false` oder `0`.
- */
-export interface ClassificationReviewCaseSideOut {
-  motifs: string[] | null
-  present: boolean | null
-  strength: number | null
-  excluded_document: boolean | null
-  album_level: number | null
-}
-
-/** Ein vorgelegter Fall mit Urteil und dessen Schreiber. */
-export interface ClassificationReviewCaseOut {
-  id: number
-  /** Traegt die Fallansicht zum bestehenden Foto-Endpunkt; der Export nennt nur die Position. */
-  photo_id: number
-  photo_position: number
-  purpose: ClassificationReviewPurpose
-  /** Nur bei `motif_feature` gesetzt. */
-  motif_key: string | null
-  a: ClassificationReviewCaseSideOut
-  b: ClassificationReviewCaseSideOut
-  verdict: ClassificationVerdict | null
-  updated_by: ClassificationReviewUserOut | null
-  updated_at: string | null
-}
-
-export interface ClassificationReviewCasesOut {
-  cases: ClassificationReviewCaseOut[]
-}
-
-/** Das Urteil nach dem Schreiben. */
-export interface ClassificationReviewVerdictOut {
-  case_id: number
-  verdict: ClassificationVerdict
-  updated_by: ClassificationReviewUserOut
-  updated_at: string
-}
+export type ApiFetchOptions<E extends Endpunkt, M extends string> = PfadTeil<E, Normalisiert<M>> &
+  AbfrageTeil<E, Normalisiert<M>> &
+  KoerperTeil<E, Normalisiert<M>>

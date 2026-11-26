@@ -23,7 +23,7 @@ export const PERSON_REFUSALS = {
 } as const
 
 export function listPersons(): Promise<PersonOut[]> {
-  return apiFetch<PersonOut[]>('/persons')
+  return apiFetch('/persons')
 }
 
 export function createPerson(
@@ -31,7 +31,7 @@ export function createPerson(
   photoId: number,
   faceIndex: number,
 ): Promise<FaceAssignmentOut> {
-  return apiFetch<FaceAssignmentOut>('/persons', {
+  return apiFetch('/persons', {
     method: 'POST',
     body: { name, photo_id: photoId, face_index: faceIndex },
   })
@@ -42,24 +42,30 @@ export function addReference(
   photoId: number,
   faceIndex: number,
 ): Promise<FaceAssignmentOut> {
-  return apiFetch<FaceAssignmentOut>(`/persons/${personId}/references`, {
+  return apiFetch('/persons/{person_id}/references', {
     method: 'POST',
+    pathParams: { person_id: personId },
     body: { photo_id: photoId, face_index: faceIndex },
   })
 }
 
 export function deletePerson(personId: number): Promise<void> {
-  return apiFetch<void>(`/persons/${personId}`, { method: 'DELETE' })
+  return apiFetch('/persons/{person_id}', {
+    method: 'DELETE',
+    pathParams: { person_id: personId },
+  })
 }
 
 export function listFaces(photoId: number): Promise<FaceOut[]> {
-  return apiFetch<FaceOut[]>(`/photos/${photoId}/faces`)
+  return apiFetch('/photos/{photo_id}/faces', { pathParams: { photo_id: photoId } })
 }
 
 /** Der Ausschnitt eines Gesichts als Blob - der Aufrufer macht daraus eine Blob-URL und gibt sie
  * beim Zuklappen bzw. Fotowechsel wieder frei. */
 export function fetchFaceImage(photoId: number, index: number): Promise<Blob> {
-  return apiFetchBlob(`/photos/${photoId}/faces/${index}/image`)
+  return apiFetchBlob('/photos/{photo_id}/faces/{index}/image', {
+    pathParams: { photo_id: photoId, index },
+  })
 }
 
 /** Eine Seite "Ohne Namen" ab `afterId` (exklusiv). `maxPhotos = 1` ist die Einzelabfrage, mit der
@@ -69,11 +75,13 @@ export function listUnnamedFaces(
   afterId: number,
   maxPhotos?: number,
 ): Promise<UnnamedFacesPageOut> {
-  const params = new URLSearchParams({ after_id: String(afterId) })
-  if (maxPhotos !== undefined) {
-    params.set('max_photos', String(maxPhotos))
-  }
-  return apiFetch<UnnamedFacesPageOut>(`/projects/${projectId}/unnamed-faces?${params}`)
+  return apiFetch('/projects/{project_id}/unnamed-faces', {
+    pathParams: { project_id: projectId },
+    query: {
+      after_id: afterId,
+      ...(maxPhotos !== undefined ? { max_photos: maxPhotos } : {}),
+    },
+  })
 }
 
 export function setPhotoPerson(
@@ -81,8 +89,9 @@ export function setPhotoPerson(
   personId: number,
   applies: boolean,
 ): Promise<PhotoPersonOut[]> {
-  return apiFetch<PhotoPersonOut[]>(`/photos/${photoId}/persons/${personId}`, {
+  return apiFetch('/photos/{photo_id}/persons/{person_id}', {
     method: 'PUT',
+    pathParams: { photo_id: photoId, person_id: personId },
     body: { applies },
   })
 }

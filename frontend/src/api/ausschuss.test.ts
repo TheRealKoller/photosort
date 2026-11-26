@@ -16,7 +16,10 @@ describe('api/ausschuss', () => {
 
     const result = await listAusschuss(7, { limit: 60, offset: 0 })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/ausschuss?limit=60&offset=0')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/ausschuss', {
+      pathParams: { project_id: 7 },
+      query: { limit: 60, offset: 0 },
+    })
     expect(result).toEqual(STAND)
   })
 
@@ -28,21 +31,28 @@ describe('api/ausschuss', () => {
 
     await listAusschuss(7, { limit: 60, offset: 0, photoId: 42 })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/ausschuss?limit=60&offset=0&photo_id=42')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/ausschuss', {
+      pathParams: { project_id: 7 },
+      query: { limit: 60, offset: 0, photo_id: 42 },
+    })
   })
 
   it('setzt den Automatik-Filter nur bei true, dann als eigenes Feld', async () => {
     // Spec 0639: Der Filter ist eine Sicht auf denselben Bestand. `false` wirkt wie
-    // weggelassen - die Adresse nennt nur, was gilt.
+    // weggelassen - die Abfrage nennt nur, was gilt.
     vi.mocked(apiFetch).mockResolvedValue(STAND)
 
     await listAusschuss(7, { limit: 60, offset: 0, autoDecided: true })
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/7/ausschuss?limit=60&offset=0&auto_decided=true',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/ausschuss', {
+      pathParams: { project_id: 7 },
+      query: { limit: 60, offset: 0, auto_decided: true },
+    })
 
     await listAusschuss(7, { limit: 60, offset: 0, autoDecided: false })
-    expect(apiFetch).toHaveBeenLastCalledWith('/projects/7/ausschuss?limit=60&offset=0')
+    expect(apiFetch).toHaveBeenLastCalledWith('/projects/{project_id}/ausschuss', {
+      pathParams: { project_id: 7 },
+      query: { limit: 60, offset: 0 },
+    })
   })
 
   it('haengt ohne Parameter gar kein Fragezeichen an', async () => {
@@ -52,7 +62,10 @@ describe('api/ausschuss', () => {
 
     await listAusschuss(7)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/ausschuss')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/ausschuss', {
+      pathParams: { project_id: 7 },
+      query: {},
+    })
   })
 
   it('kennt keinen Schreibweg', async () => {

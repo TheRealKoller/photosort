@@ -6,8 +6,7 @@ import type { BrowseEntry, FolderCountOut } from './types'
  * die Wurzelebene ohne Query-Parameter.
  */
 export function browseFolder(path: string): Promise<BrowseEntry[]> {
-  const query = path ? `?path=${encodeURIComponent(path)}` : ''
-  return apiFetch<BrowseEntry[]>(`/opencloud/browse${query}`)
+  return apiFetch('/opencloud/browse', { query: path ? { path } : {} })
 }
 
 /**
@@ -15,6 +14,5 @@ export function browseFolder(path: string): Promise<BrowseEntry[]> {
  * uebergebenen Pfads - derselbe Pfad wie beim begleitenden browseFolder()-Aufruf.
  */
 export function fetchFolderCounts(path: string): Promise<FolderCountOut[]> {
-  const query = path ? `?path=${encodeURIComponent(path)}` : ''
-  return apiFetch<FolderCountOut[]>(`/opencloud/folder-counts${query}`)
+  return apiFetch('/opencloud/folder-counts', { query: path ? { path } : {} })
 }

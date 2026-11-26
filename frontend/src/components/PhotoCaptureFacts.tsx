@@ -64,7 +64,7 @@ export function PhotoCaptureFacts({
       )}
       {/* Ist keine Kamera bestimmbar, steht das als RUHIGER SATZ da und nicht als Fehlen. */}
       <p className={compact ? 'text-sm text-text' : 'text-xs text-text-muted'}>
-        {photo.camera === null
+        {photo.camera == null
           ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
           : photo.camera.label}
       </p>

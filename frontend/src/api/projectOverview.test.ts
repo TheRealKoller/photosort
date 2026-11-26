@@ -17,7 +17,9 @@ describe('api/projectOverview', () => {
     vi.mocked(apiFetch).mockResolvedValue({ seen: true })
 
     await expect(getOverviewSeen(5)).resolves.toEqual({ seen: true })
-    expect(apiFetch).toHaveBeenCalledWith('/projects/5/overview-seen')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/overview-seen', {
+      pathParams: { project_id: 5 },
+    })
   })
 
   it('merkt "gesehen" per PUT ohne Körper - die Person kommt allein aus dem Token', async () => {
@@ -25,6 +27,9 @@ describe('api/projectOverview', () => {
 
     await markOverviewSeen(5)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/5/overview-seen', { method: 'PUT' })
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/overview-seen', {
+      method: 'PUT',
+      pathParams: { project_id: 5 },
+    })
   })
 })

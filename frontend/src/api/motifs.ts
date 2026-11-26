@@ -13,5 +13,5 @@ import type { MotifSetOut } from './types'
  * laden zum Fehlklick ein, und ein Fehlklick schreibt hier einen Datenwert.
  */
 export function listMotifs(): Promise<MotifSetOut> {
-  return apiFetch<MotifSetOut>('/motifs')
+  return apiFetch('/motifs')
 }

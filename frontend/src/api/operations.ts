@@ -16,13 +16,11 @@ export function operationsQueryKey(projectId: number) {
   return ['operations', projectId] as const
 }
 
-function operationsPath(projectId: number): string {
-  return `/projects/${projectId}/operations`
-}
-
 /** Alle laufenden und wartenden Vorgaenge des Projekts - die Quelle der Projektleiste. */
 export function listOperations(projectId: number): Promise<OperationsOut> {
-  return apiFetch<OperationsOut>(operationsPath(projectId))
+  return apiFetch('/projects/{project_id}/operations', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /** Bittet um den Abbruch EINES Vorgangs; `already_finished` ist kein Fehler. */
@@ -31,14 +29,16 @@ export function cancelOperation(
   kind: OperationKind,
   runId: number,
 ): Promise<CancelOperationOut> {
-  return apiFetch<CancelOperationOut>(`${operationsPath(projectId)}/${kind}/${runId}/cancel`, {
+  return apiFetch('/projects/{project_id}/operations/{kind}/{run_id}/cancel', {
     method: 'POST',
+    pathParams: { project_id: projectId, kind, run_id: runId },
   })
 }
 
 /** Bittet um den Abbruch aller laufenden und wartenden Vorgaenge des Projekts. */
 export function cancelAllOperations(projectId: number): Promise<CancelAllOperationsOut> {
-  return apiFetch<CancelAllOperationsOut>(`${operationsPath(projectId)}/cancel-all`, {
+  return apiFetch('/projects/{project_id}/operations/cancel-all', {
     method: 'POST',
+    pathParams: { project_id: projectId },
   })
 }

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getToken, setToken } from '../auth/token'
 import * as authApi from '../api/auth'
+import type { TokenResponse } from '../api/types'
 import { LoginPage } from './LoginPage'
 import { makeQueryClient, queryWrapper } from '../test/render'
 
@@ -102,7 +103,7 @@ describe('LoginPage', () => {
   })
 
   it('shows the busy-button pattern while the login request is pending', async () => {
-    let resolveLogin: (value: authApi.TokenResponse) => void = () => {}
+    let resolveLogin: (value: TokenResponse) => void = () => {}
     vi.mocked(authApi.login).mockReturnValue(
       new Promise((resolve) => {
         resolveLogin = resolve

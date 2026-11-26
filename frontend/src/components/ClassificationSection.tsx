@@ -165,8 +165,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
     ? formatActivity(modelChoice.landmark_provider, modelChoice.landmark_model)
     : 'entfällt — keine Cloud-Einwilligung'
 
-  const scoringRun = project.last_scoring_run
-  const run = project.last_criterion_scoring_run
+  const scoringRun = project.last_scoring_run ?? null
+  const run = project.last_criterion_scoring_run ?? null
   const runStatus = run?.status ?? null
   // Der Abbruch adressiert GENAU diesen Lauf.
   const runId = run?.id ?? null

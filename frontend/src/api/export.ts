@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { ExportPreviewOut, ExportRunDetailOut } from './types'
+import type { ExportPreviewOut, ExportRunDetailOut, TriggerQueuedOut } from './types'
 
 /**
  * Die Anzahl der Endauswahl-Fotos vor dem Auslösen - server-autoritativ: exakt die Menge, die der
@@ -7,7 +7,9 @@ import type { ExportPreviewOut, ExportRunDetailOut } from './types'
  * Anzahl nie selbst aus der geladenen Endauswahl-Antwort.
  */
 export function getExportPreview(projectId: number): Promise<ExportPreviewOut> {
-  return apiFetch<ExportPreviewOut>(`/projects/${projectId}/export-preview`)
+  return apiFetch('/projects/{project_id}/export-preview', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
@@ -15,13 +17,18 @@ export function getExportPreview(projectId: number): Promise<ExportPreviewOut> {
  * `ProjectOut.last_export_run` gepollt wird. Kein Body: es wird immer die ganze Endauswahl
  * exportiert, nie eine Auswahl einzelner Fotos.
  */
-export function triggerExport(projectId: number): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>(`/projects/${projectId}/export`, { method: 'POST' })
+export function triggerExport(projectId: number): Promise<TriggerQueuedOut> {
+  return apiFetch('/projects/{project_id}/export', {
+    method: 'POST',
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
  * Der Lauf samt Fehlerliste je Foto - die Bestätigung DANACH (Anzahl, Zielpfad, Teilfehler).
  */
 export function getExportRun(projectId: number, runId: number): Promise<ExportRunDetailOut> {
-  return apiFetch<ExportRunDetailOut>(`/projects/${projectId}/exports/${runId}`)
+  return apiFetch('/projects/{project_id}/exports/{run_id}', {
+    pathParams: { project_id: projectId, run_id: runId },
+  })
 }

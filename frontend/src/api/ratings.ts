@@ -8,8 +8,9 @@ import type { RatingStatus, RatingWriteOut } from './types'
  * `deleteRating`.
  */
 export function setRating(photoId: number, status: RatingStatus): Promise<RatingWriteOut> {
-  return apiFetch<RatingWriteOut>(`/photos/${photoId}/rating`, {
+  return apiFetch('/photos/{photo_id}/rating', {
     method: 'PUT',
+    pathParams: { photo_id: photoId },
     body: { status },
   })
 }
@@ -17,7 +18,10 @@ export function setRating(photoId: number, status: RatingStatus): Promise<Rating
 /** Nimmt NUR die Albumentscheidung zurück; eine Zeile mit Favoriten-Kennzeichen bleibt stehen.
  * Die Antwort ist der eigene Zeilenzustand danach. */
 export function deleteRating(photoId: number): Promise<RatingWriteOut> {
-  return apiFetch<RatingWriteOut>(`/photos/${photoId}/rating`, { method: 'DELETE' })
+  return apiFetch('/photos/{photo_id}/rating', {
+    method: 'DELETE',
+    pathParams: { photo_id: photoId },
+  })
 }
 
 /**
@@ -28,8 +32,9 @@ export function deleteRating(photoId: number): Promise<RatingWriteOut> {
  * zurück.
  */
 export function setFavorite(photoId: number, favorite: boolean): Promise<RatingWriteOut> {
-  return apiFetch<RatingWriteOut>(`/photos/${photoId}/favorite`, {
+  return apiFetch('/photos/{photo_id}/favorite', {
     method: 'PUT',
+    pathParams: { photo_id: photoId },
     body: { favorite },
   })
 }

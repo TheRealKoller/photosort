@@ -1,22 +1,5 @@
 import { apiFetch } from './client'
-import type { AusschussOut } from './types'
-
-export interface ListAusschussParams {
-  /** Seitengröße. Der Server führt dieselbe Vorgabe (60) und dieselben Grenzen (`ge=1, le=200`). */
-  limit?: number
-  offset?: number
-  /**
-   * Der Filterzweig für die Detailansicht: `items` trägt dann genau den passenden Eintrag oder
-   * eine leere Liste, `total`/`open_count` bleiben projektweit. Damit ist ein Deep-Link auch auf
-   * eine Aufnahme außerhalb der geladenen Seite eine definierte Antwort statt einer Lücke.
-   */
-  photoId?: number
-  /**
-   * Nur automatisch entschiedene Stapel. `false` wirkt wie weggelassen; zusammen mit
-   * `photoId` antwortet der Server mit `422`.
-   */
-  autoDecided?: boolean
-}
+import type { AusschussOut, ListAusschussParams } from './types'
 
 /**
  * Der Ausschuss-BESTAND dieses Projekts: offene Vorschläge und getroffene Entscheidungen in einer
@@ -32,21 +15,13 @@ export function listAusschuss(
   projectId: number,
   params: ListAusschussParams = {},
 ): Promise<AusschussOut> {
-  const query = new URLSearchParams()
-  if (params.limit !== undefined) {
-    query.set('limit', String(params.limit))
-  }
-  if (params.offset !== undefined) {
-    query.set('offset', String(params.offset))
-  }
-  if (params.photoId !== undefined) {
-    query.set('photo_id', String(params.photoId))
-  }
-  if (params.autoDecided) {
-    query.set('auto_decided', 'true')
-  }
-  const queryString = query.toString()
-  return apiFetch<AusschussOut>(
-    `/projects/${projectId}/ausschuss${queryString ? `?${queryString}` : ''}`,
-  )
+  return apiFetch('/projects/{project_id}/ausschuss', {
+    pathParams: { project_id: projectId },
+    query: {
+      ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      ...(params.offset !== undefined ? { offset: params.offset } : {}),
+      ...(params.photoId !== undefined ? { photo_id: params.photoId } : {}),
+      ...(params.autoDecided ? { auto_decided: true } : {}),
+    },
+  })
 }

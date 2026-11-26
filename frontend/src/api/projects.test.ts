@@ -78,7 +78,9 @@ describe('api/projects', () => {
 
     const result = await getProject(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}', {
+      pathParams: { project_id: 1 },
+    })
     expect(result).toEqual(PROJECT)
   })
 
@@ -87,7 +89,10 @@ describe('api/projects', () => {
 
     const result = await triggerScan(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/scan', { method: 'POST' })
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/scan', {
+      method: 'POST',
+      pathParams: { project_id: 1 },
+    })
     expect(result).toEqual({ status: 'queued' })
   })
 
@@ -96,7 +101,10 @@ describe('api/projects', () => {
 
     const result = await triggerScore(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/score', { method: 'POST' })
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/score', {
+      method: 'POST',
+      pathParams: { project_id: 1 },
+    })
     expect(result).toEqual({ status: 'queued' })
   })
 
@@ -105,8 +113,9 @@ describe('api/projects', () => {
 
     const result = await confirmAusschussGate(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/confirm-ausschuss-gate', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/confirm-ausschuss-gate', {
       method: 'POST',
+      pathParams: { project_id: 1 },
     })
     expect(result).toEqual({ status: 'confirmed' })
   })
@@ -116,8 +125,9 @@ describe('api/projects', () => {
 
     const result = await triggerClassification(1, 5, 'project')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/classify', {
       method: 'POST',
+      pathParams: { project_id: 1 },
       body: { scoring_run_id: 5, mode: 'project' },
     })
     expect(result).toEqual({ status: 'queued' })
@@ -128,8 +138,9 @@ describe('api/projects', () => {
 
     await triggerClassification(1, 5, 'local')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/classify', {
       method: 'POST',
+      pathParams: { project_id: 1 },
       body: { scoring_run_id: 5, mode: 'local' },
     })
   })
@@ -145,8 +156,9 @@ describe('api/projects', () => {
 
     const result = await setCloudVisionConsent(1, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-vision-consent', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/cloud-vision-consent', {
       method: 'PUT',
+      pathParams: { project_id: 1 },
       body: { enabled: true },
     })
     expect(result).toEqual(response)
@@ -160,7 +172,9 @@ describe('api/projects', () => {
 
     const result = await getProjectStats(7)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/stats')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/stats', {
+      pathParams: { project_id: 7 },
+    })
     expect(result).toEqual(response)
   })
 
@@ -198,7 +212,10 @@ describe('api/projects', () => {
     const result = await getClassificationEstimate(1, 'project')
 
     // Die Wahl reist als Query-Parameter: dieselbe Ressource, zwei Antworten.
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate?mode=project')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/classify/estimate', {
+      pathParams: { project_id: 1 },
+      query: { mode: 'project' },
+    })
     expect(result).toEqual(response)
   })
 
@@ -208,7 +225,9 @@ describe('api/projects', () => {
 
     const result = await getModelChoice(3)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/3/model-choice')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/model-choice', {
+      pathParams: { project_id: 3 },
+    })
     expect(result).toEqual(response)
   })
 
@@ -221,8 +240,9 @@ describe('api/projects', () => {
       landmark_model: 'claude-haiku-4-5',
     })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/3/model-choice', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/model-choice', {
       method: 'PUT',
+      pathParams: { project_id: 3 },
       body: {
         category_method: 'eye',
         category_model: null,
@@ -236,8 +256,9 @@ describe('api/projects', () => {
 
     await deleteProject(7, 'Costa Rica')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}', {
       method: 'DELETE',
+      pathParams: { project_id: 7 },
       body: { confirm_name: 'Costa Rica' },
     })
   })

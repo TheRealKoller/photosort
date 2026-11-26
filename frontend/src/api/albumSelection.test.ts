@@ -31,7 +31,9 @@ describe('api/albumSelection', () => {
 
     const result = await getAlbumSelection(7)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/album-selection')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/album-selection', {
+      pathParams: { project_id: 7 },
+    })
     expect(result).toEqual(SELECTION)
   })
 
@@ -42,8 +44,9 @@ describe('api/albumSelection', () => {
 
     const result = await setAlbumDecision(42, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/42/album-decision', {
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/album-decision', {
       method: 'PUT',
+      pathParams: { photo_id: 42 },
       body: { included: true },
     })
     expect(result).toEqual(WRITTEN)
@@ -56,8 +59,9 @@ describe('api/albumSelection', () => {
 
     const result = await setAlbumDecision(42, false)
 
-    expect(apiFetch).toHaveBeenCalledWith('/photos/42/album-decision', {
+    expect(apiFetch).toHaveBeenCalledWith('/photos/{photo_id}/album-decision', {
       method: 'PUT',
+      pathParams: { photo_id: 42 },
       body: { included: false },
     })
     expect(result.included).toBe(false)

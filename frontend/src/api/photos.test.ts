@@ -32,6 +32,7 @@ const PHOTO_LIST: PhotoListOut = {
       fine_labels: [],
       // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
       cloud_vision_status: [],
+      motifs: [],
       final_selection_decision: null,
       in_final_selection: false,
       contested: false,
@@ -47,7 +48,10 @@ describe('api/photos', () => {
 
     const result = await listPhotos(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/photos', {
+      pathParams: { project_id: 1 },
+      query: {},
+    })
     expect(result).toEqual(PHOTO_LIST)
   })
 
@@ -56,9 +60,10 @@ describe('api/photos', () => {
 
     await listPhotos(1, { ratingStatus: 'unrated', limit: 30, offset: 60 })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/photos?rating_status=unrated&limit=30&offset=60',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/photos', {
+      pathParams: { project_id: 1 },
+      query: { rating_status: 'unrated', limit: 30, offset: 60 },
+    })
   })
 
   it('reads the album draft from its own endpoint', async () => {
@@ -71,7 +76,9 @@ describe('api/photos', () => {
 
     const result = await getAlbumDraft(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/album-draft')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/album-draft', {
+      pathParams: { project_id: 1 },
+    })
     expect(result).toEqual(draft)
   })
 
@@ -92,9 +99,10 @@ describe('api/photos', () => {
       offset: 60,
     })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/draft-alternatives?event_id=42&photo_id=7&limit=60&offset=60',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft-alternatives', {
+      pathParams: { project_id: 1 },
+      query: { event_id: 42, photo_id: 7, limit: 60, offset: 60 },
+    })
     expect(result).toEqual(answer)
   })
 
@@ -105,9 +113,10 @@ describe('api/photos', () => {
 
     await listDraftAlternatives(1, { eventId: 42, photoId: 7, series: true })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/draft-alternatives?event_id=42&photo_id=7&series=true',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft-alternatives', {
+      pathParams: { project_id: 1 },
+      query: { event_id: 42, photo_id: 7, series: true },
+    })
   })
 
   it('addresses event and reference by their ids alone, with no free key anywhere', async () => {
@@ -119,7 +128,10 @@ describe('api/photos', () => {
 
     await listDraftAlternatives(1, { eventId: 7, photoId: 3 })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/draft-alternatives?event_id=7&photo_id=3')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft-alternatives', {
+      pathParams: { project_id: 1 },
+      query: { event_id: 7, photo_id: 3 },
+    })
   })
 
   it('omits the reference photo entirely when the add field asks without one', async () => {
@@ -129,9 +141,10 @@ describe('api/photos', () => {
 
     await listDraftAlternatives(1, { eventId: 7, limit: 8, offset: 8 })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/draft-alternatives?event_id=7&limit=8&offset=8',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft-alternatives', {
+      pathParams: { project_id: 1 },
+      query: { event_id: 7, limit: 8, offset: 8 },
+    })
   })
 
   it('never calls the endpoint that was replaced', async () => {
@@ -156,12 +169,13 @@ describe('api/photos', () => {
 
     const result = await exchangeDraftPhoto(7, 2, 1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/draft/exchange', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft/exchange', {
       method: 'POST',
+      pathParams: { project_id: 7 },
       body: { photo_id: 2, replaced_photo_id: 1 },
     })
-    const body = vi.mocked(apiFetch).mock.calls.at(-1)?.[1]?.body as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(['photo_id', 'replaced_photo_id'])
+    /* Die GLEICHHEIT der Schlüsselmenge ist die Zusicherung oben: `toHaveBeenCalledWith`
+     * vergleicht den Body vollständig — ein zusätzliches Feld machte den Aufruf ungleich. */
     expect(result.taken.photo_id).toBe(2)
     expect(result.struck.photo_id).toBe(1)
   })
@@ -179,8 +193,9 @@ describe('api/photos', () => {
       replaced_previous_status: null,
     })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/7/draft/exchange/undo', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/{project_id}/draft/exchange/undo', {
       method: 'POST',
+      pathParams: { project_id: 7 },
       body: {
         photo_id: 2,
         replaced_photo_id: 1,
@@ -199,7 +214,10 @@ describe('api/photos', () => {
 
     const result = await fetchPhotoImageBlobUrl(1, 'thumbnail')
 
-    expect(apiFetchBlob).toHaveBeenCalledWith('/photos/1/image?variant=thumbnail')
+    expect(apiFetchBlob).toHaveBeenCalledWith('/photos/{photo_id}/image', {
+      pathParams: { photo_id: 1 },
+      query: { variant: 'thumbnail' },
+    })
     expect(createObjectURL).toHaveBeenCalledWith(blob)
     expect(result).toBe('blob:fake-url')
 

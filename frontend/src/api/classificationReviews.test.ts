@@ -27,7 +27,7 @@ beforeEach(() => {
  * Betrag, einen Anbieter oder eine Id-Liste - die kommen serverseitig.
  */
 
-const BASE = '/projects/7/classification-reviews'
+const BASE = '/projects/{project_id}/classification-reviews'
 
 describe('api/classificationReviews - Lesepfad', () => {
   it('liest die Liste der Pruefungen eines Projekts', async () => {
@@ -35,7 +35,7 @@ describe('api/classificationReviews - Lesepfad', () => {
 
     await expect(listClassificationReviews(7)).resolves.toEqual([])
 
-    expect(apiFetch).toHaveBeenCalledWith(BASE)
+    expect(apiFetch).toHaveBeenCalledWith(BASE, { pathParams: { project_id: 7 } })
   })
 
   it('liest die waehlbaren Verfahren samt Sperrgruenden', async () => {
@@ -49,7 +49,7 @@ describe('api/classificationReviews - Lesepfad', () => {
 
     await expect(getClassificationReviewOptions(7)).resolves.toEqual(options)
 
-    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/options`)
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/options`, { pathParams: { project_id: 7 } })
   })
 
   it('liest eine Pruefung samt Zaehlungen', async () => {
@@ -57,7 +57,9 @@ describe('api/classificationReviews - Lesepfad', () => {
 
     await getClassificationReview(7, 3)
 
-    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/3`)
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/{review_id}`, {
+      pathParams: { project_id: 7, review_id: 3 },
+    })
   })
 
   it('liest die vorgelegten Faelle einer Pruefung', async () => {
@@ -65,7 +67,9 @@ describe('api/classificationReviews - Lesepfad', () => {
 
     await expect(listClassificationReviewCases(7, 3)).resolves.toEqual({ cases: [] })
 
-    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/3/cases`)
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/{review_id}/cases`, {
+      pathParams: { project_id: 7, review_id: 3 },
+    })
   })
 })
 
@@ -78,13 +82,9 @@ describe('api/classificationReviews - Kostenvorschau', () => {
       b: { kind: 'eye' },
     })
 
-    const path = vi.mocked(apiFetch).mock.calls[0]![0]
-    const query = new URLSearchParams(path.split('?')[1])
-    expect(path.startsWith(`${BASE}/estimate?`)).toBe(true)
-    expect(Object.fromEntries(query)).toEqual({
-      a_kind: 'cloud',
-      a_model: 'gpt-4o-mini',
-      b_kind: 'eye',
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/estimate`, {
+      pathParams: { project_id: 7 },
+      query: { a_kind: 'cloud', a_model: 'gpt-4o-mini', b_kind: 'eye' },
     })
   })
 
@@ -97,10 +97,10 @@ describe('api/classificationReviews - Kostenvorschau', () => {
       b: { kind: 'eye', model: 'modell-der-falschen-seite' },
     })
 
-    const query = new URLSearchParams(vi.mocked(apiFetch).mock.calls[0]![0].split('?')[1])
-    expect(query.get('a_model')).toBeNull()
-    expect(query.get('b_model')).toBeNull()
-    expect(query.get('b_kind')).toBe('eye')
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/estimate`, {
+      pathParams: { project_id: 7 },
+      query: { a_kind: 'local', b_kind: 'eye' },
+    })
   })
 })
 
@@ -118,6 +118,7 @@ describe('api/classificationReviews - Anlegen und Urteil', () => {
 
     expect(apiFetch).toHaveBeenCalledWith(BASE, {
       method: 'POST',
+      pathParams: { project_id: 7 },
       body: {
         a: { kind: 'cloud', model: 'gpt-4o-mini' },
         b: { kind: 'eye', eye_mapping_version: 'eye-4.2.3/v1' },
@@ -136,9 +137,17 @@ describe('api/classificationReviews - Anlegen und Urteil', () => {
       sample_size: 12,
     })
 
-    const body = vi.mocked(apiFetch).mock.calls[0]![1]!.body as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(['a', 'b', 'sample_size'])
-    expect(body.a).toEqual({ kind: 'local' })
+    // GLEICHHEIT der Schluesselmenge: `toHaveBeenCalledWith` vergleicht den Body vollstaendig -
+    // ein zusaetzliches Feld machte den Aufruf ungleich.
+    expect(apiFetch).toHaveBeenCalledWith(BASE, {
+      method: 'POST',
+      pathParams: { project_id: 7 },
+      body: {
+        a: { kind: 'local' },
+        b: { kind: 'eye', eye_mapping_version: 'eye-4.2.3/v1' },
+        sample_size: 12,
+      },
+    })
   })
 
   it('schreibt ein Urteil als einziges Feld des Koerpers', async () => {
@@ -146,8 +155,9 @@ describe('api/classificationReviews - Anlegen und Urteil', () => {
 
     await setClassificationReviewVerdict(7, 3, 11, 'both_ok')
 
-    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/3/cases/11/verdict`, {
+    expect(apiFetch).toHaveBeenCalledWith(`${BASE}/{review_id}/cases/{case_id}/verdict`, {
       method: 'PUT',
+      pathParams: { project_id: 7, review_id: 3, case_id: 11 },
       body: { verdict: 'both_ok' },
     })
   })
@@ -160,6 +170,8 @@ describe('api/classificationReviews - Export', () => {
 
     await expect(exportClassificationReview(7, 3)).resolves.toBe(blob)
 
-    expect(apiFetchBlob).toHaveBeenCalledWith(`${BASE}/3/export`)
+    expect(apiFetchBlob).toHaveBeenCalledWith(`${BASE}/{review_id}/export`, {
+      pathParams: { project_id: 7, review_id: 3 },
+    })
   })
 })

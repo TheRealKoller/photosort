@@ -4,7 +4,7 @@ import type { CameraTimeOffsetSuggestionOut, ProjectCameraOut } from './types'
 /** Die Kameras eines Projekts, vom Server nach Hersteller/Modell sortiert - die Reihenfolge wird
  * hier NICHT nachsortiert. */
 export function listCameras(projectId: number): Promise<ProjectCameraOut[]> {
-  return apiFetch<ProjectCameraOut[]>(`/projects/${projectId}/cameras`)
+  return apiFetch('/projects/{project_id}/cameras', { pathParams: { project_id: projectId } })
 }
 
 /**
@@ -18,8 +18,9 @@ export function setCameraTimeOffset(
   cameraId: number,
   offsetMinutes: number,
 ): Promise<ProjectCameraOut> {
-  return apiFetch<ProjectCameraOut>(`/projects/${projectId}/cameras/${cameraId}/time-offset`, {
+  return apiFetch('/projects/{project_id}/cameras/{camera_id}/time-offset', {
     method: 'PUT',
+    pathParams: { project_id: projectId, camera_id: cameraId },
     body: { offset_minutes: offsetMinutes },
   })
 }
@@ -35,11 +36,8 @@ export function getCameraTimeOffsetSuggestion(
   photoId: number,
   referencePhotoId: number,
 ): Promise<CameraTimeOffsetSuggestionOut> {
-  const query = new URLSearchParams({
-    photo_id: String(photoId),
-    reference_photo_id: String(referencePhotoId),
+  return apiFetch('/projects/{project_id}/camera-time-offset-suggestion', {
+    pathParams: { project_id: projectId },
+    query: { photo_id: photoId, reference_photo_id: referencePhotoId },
   })
-  return apiFetch<CameraTimeOffsetSuggestionOut>(
-    `/projects/${projectId}/camera-time-offset-suggestion?${query.toString()}`,
-  )
 }

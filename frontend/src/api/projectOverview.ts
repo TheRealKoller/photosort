@@ -8,9 +8,14 @@ import type { OverviewSeenOut } from './types'
  */
 
 export function getOverviewSeen(projectId: number): Promise<OverviewSeenOut> {
-  return apiFetch<OverviewSeenOut>(`/projects/${projectId}/overview-seen`)
+  return apiFetch('/projects/{project_id}/overview-seen', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 export function markOverviewSeen(projectId: number): Promise<void> {
-  return apiFetch<void>(`/projects/${projectId}/overview-seen`, { method: 'PUT' })
+  return apiFetch('/projects/{project_id}/overview-seen', {
+    method: 'PUT',
+    pathParams: { project_id: projectId },
+  })
 }

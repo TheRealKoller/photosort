@@ -9,7 +9,9 @@ import type { AlbumDecisionOut, AlbumSelectionOut } from './types'
  * geladenen Antwort. Ein zweiter Abruf beim Umschalten ordnete die Ergebnissicht jedes Mal neu.
  */
 export function getAlbumSelection(projectId: number): Promise<AlbumSelectionOut> {
-  return apiFetch<AlbumSelectionOut>(`/projects/${projectId}/album-selection`)
+  return apiFetch('/projects/{project_id}/album-selection', {
+    pathParams: { project_id: projectId },
+  })
 }
 
 /**
@@ -25,8 +27,9 @@ export function getAlbumSelection(projectId: number): Promise<AlbumSelectionOut>
  * wird über `utils/albumSelection.ts::applyAlbumDecision` in den geladenen Stand fortgeschrieben.
  */
 export function setAlbumDecision(photoId: number, included: boolean): Promise<AlbumDecisionOut> {
-  return apiFetch<AlbumDecisionOut>(`/photos/${photoId}/album-decision`, {
+  return apiFetch('/photos/{photo_id}/album-decision', {
     method: 'PUT',
+    pathParams: { photo_id: photoId },
     body: { included },
   })
 }
