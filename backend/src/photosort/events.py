@@ -28,11 +28,11 @@ from photosort.places import (
 from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
 
-# Die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): Name -> Gazetteer-Fundorte, geschluesselt
+# Die Sehenswuerdigkeitsauskunft des Laufs: Name -> Gazetteer-Fundorte, geschluesselt
 # mit GENAU dem Namen, den `_name_of` liefert (also der bereits sanierte Rohname des Kandidaten) -
 # die Faltung liegt auf der Abfrage- und Ablageseite in `worker/_criterion/ranking.py`.
 # `None` als Ganzes heisst "keine Auskunft vorhanden"; ein Eintrag mit leerer Punktmenge heisst
-# "nachgeschlagen, ohne Fund" - die beiden duerfen nie zusammenfallen (ADR 0123 Punkt 2).
+# "nachgeschlagen, ohne Fund" - die beiden duerfen nie zusammenfallen.
 LandmarkPointsByName = Mapping[str, tuple[tuple[float, float], ...]]
 
 # --- Die SIEBEN eigenen Schwellen der Event-Bildung ----------------------------------------------
@@ -50,30 +50,27 @@ LandmarkPointsByName = Mapping[str, tuple[tuple[float, float], ...]]
 # `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`.
 
 # Zeitluecke zwischen zwei aufeinanderfolgenden Fotos, ab der ein neues Event beginnt.
-# UNKALIBRIERT: Von den Grenzen eines echten Projekts war sie zu 5,6 % alleinige Ursache, `schritt`
-# und `ausdehnung` zu 0,0 % - eine Kalibrierung dieser drei kann die Zerstueckelung nicht aufloesen.
+# UNKALIBRIERT.
 EVENT_TIME_GAP = timedelta(hours=1)
 
 # Schritt zwischen zwei aufeinanderfolgenden Fotos. UNKALIBRIERT, siehe oben.
 EVENT_STEP_MAX_METERS = 500.0
 
 # Raeumliche Ausdehnung des laufenden Events: die Diagonale der umschliessenden Box. UNKALIBRIERT.
-# Groessenordnung Stadtviertel: ueber der Streuung eines einzelnen Ortsbesuchs (100-300 m) und ueber
-# der Schrittschwelle.
+# Groessenordnung Stadtviertel: ueber der Streuung eines einzelnen Ortsbesuchs und ueber der
+# Schrittschwelle.
 EVENT_EXTENT_MAX_METERS = 1000.0
 
 # Dauer vom eroeffnenden bis zum betrachteten Foto, ab der ein neues Event beginnt.
 #
-# HERLEITUNG: Acht Stunden tragen einen ganzen Ausflugstag - Stadtbummel, Zoobesuch, Wanderung - und
-# ebenso Silvester oder einen Nachtflug ueber Mitternacht; zwei Reisetage passen nicht hinein. Der
-# Wert liegt weit ueber der laengsten an einem echten Projekt gemessenen Eventdauer (1 h 32 min),
-# zerschneidet also nichts, was heute zusammengehoert. Er MUSS unter 24 h bleiben: die
-# Ueberschriftenform `23:40-01:15 Uhr` ist sonst mehrdeutig.
+# Acht Stunden tragen einen ganzen Ausflugstag - Stadtbummel, Zoobesuch, Wanderung - und
+# ebenso Silvester oder einen Nachtflug ueber Mitternacht; zwei Reisetage passen nicht hinein.
+# Der Wert MUSS unter 24 h bleiben: die Ueberschriftenform `23:40-01:15 Uhr` ist sonst mehrdeutig.
 EVENT_MAX_SPAN = timedelta(hours=8)
 
 # Zeitluecke, die ein zu kleines Segment beim Zuschlagen ueberbruecken darf.
 #
-# HERLEITUNG: Groesser als `EVENT_TIME_GAP` MUSS der Wert sein, sonst ist die dritte Stufe
+# Groesser als `EVENT_TIME_GAP` MUSS der Wert sein, sonst ist die dritte Stufe
 # wirkungslos - ein Rest von ein, zwei Bildern traegt keinen eigenen Beleg dafuer, dass mit ihm ein
 # neuer Anlass begann. Bewusst nicht groesser als das Doppelte: Ueber eine Luecke von mehr als zwei
 # Stunden hinweg anzuhaengen hiesse, eine echte Pause zu ueberspringen, und `EVENT_MAX_SPAN` finge
@@ -82,10 +79,8 @@ MERGE_MAX_GAP = timedelta(hours=2)
 
 # Groesse, unter der ein Segment als zu klein gilt und einem Nachbarn zugeschlagen wird.
 #
-# HERLEITUNG: Zunaechst gilt nur ein EINZELNES Foto als zu klein - das traf am gemessenen Projekt
-# genau die 22 Faelle, um die es geht, und liess die 15 Zwei-Foto-Cluster unberuehrt. Ein Wert von 1
-# hiesse "kein Segment ist je zu klein"; `MIN_EVENT_PHOTOS >= 2` ist die einzige Aussage, die ein
-# Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
+# Ein Wert von 1 hiesse "kein Segment ist je zu klein"; `MIN_EVENT_PHOTOS >= 2` ist die einzige
+# Aussage, die ein Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
 MIN_EVENT_PHOTOS = 2
 
 # Raeumliche Ausdehnung, die das ERGEBNIS einer Zusammenlegung nicht ueberschreiten darf (Riegel
@@ -94,14 +89,6 @@ MIN_EVENT_PHOTOS = 2
 # Sie MUSS groesser sein als `EVENT_EXTENT_MAX_METERS`, sonst prueft Riegel (c) dieselbe Bedingung,
 # deren Ueberschreitung die Trennung ausgeloest hat - fuer ausdehnungsgetrennte Segmente waere die
 # Stufe damit strukturell unpassierbar.
-#
-# HERLEITUNG: die Trennschwelle plus EINEN Schritt (`EVENT_EXTENT_MAX_METERS` +
-# `EVENT_STEP_MAX_METERS`). Zugeschlagen wird ein Segment unter `MIN_EVENT_PHOTOS`, heute also ein
-# einzelnes Foto ohne eigene Ausdehnung; die Box waechst damit genau um dessen Abstand zur Box des
-# Nachbarn. Ein Schritt ueber `EVENT_STEP_MAX_METERS` ist im Massstab dieses Projekts bereits ein
-# Ortswechsel und trennt fuer sich - mehr als einen zuzulassen hiesse, eine Trennung aufzuloesen,
-# die das Projekt selbst so nennt; weniger hiesse, die Stufe weiter leerlaufen zu lassen.
-#
 # EIN LITERAL, KEINE GERECHNETE SUMME der beiden genannten Konstanten: Die Schwellen werden ueberall
 # als Modulattribut gelesen, damit ein Pruefsatz sie verschieben kann, und eine beim Import
 # gebundene Summe folgte dieser Verschiebung nicht - gruen, aber ohne Wirkung.
@@ -118,13 +105,9 @@ PLACE_KINDS = ("landmark", "coordinate", "multiple")
 # (`Traeger * denominator >= Mitglieder * numerator`) - ein Float-Vergleich entschiede ueber genau
 # diesen Anteil an der Rundungsgrenze. Der Wert ist der Nenner des Kriteriums selbst und wird NICHT
 # kalibriert.
-#
-# Wie jede andere Schwelle dieses Moduls wird sie ueberall als MODULATTRIBUT gelesen, nie als
-# Default-Parameterwert gebunden: sonst liefe `monkeypatch.setattr` ins Leere und ein Pruefsatz
-# koennte sie nicht verschieben.
 LANDMARK_MIN_SHARE = Fraction(1, 10)
 
-# --- Der geschlossene Vorrat der TRENNURSACHEN (ADR 0117 Punkt 4) -------------------------------
+# --- Der geschlossene Vorrat der TRENNURSACHEN ---------------------------------------------------
 #
 # Jede Grenze traegt die MENGE der Signale, die sie gemeldet haben, nie ein einzelnes: Der
 # Durchlauf wertet alle aus, mehrere duerfen gleichzeitig zutreffen, und ein Bericht mit einer
@@ -133,17 +116,13 @@ BOUNDARY_TIME_GAP = "zeitluecke"
 BOUNDARY_DURATION = "dauer"
 BOUNDARY_STEP = "schritt"
 BOUNDARY_EXTENT = "ausdehnung"
-# Kein Eintrag in `default_signals()` seit ADR 0118: Die Sehenswuerdigkeit trennt nicht mehr. Ihr
-# Name bleibt trotzdem im Vorrat - er ist ein BERICHTSWORTSCHATZ, und die Zeile mit 0 ist der
-# Nachweis, dass die Aenderung gewirkt hat. Ohne sie haette die Nachmessung eine Zeile weniger als
-# die Ausgangsmessung, und kein Leser koennte unterscheiden, ob die Ursache weggefallen oder nie
-# gemessen worden ist.
+# Kein Eintrag in `default_signals()`: Die Sehenswuerdigkeit trennt nicht mehr. Ihr Name bleibt
+# trotzdem im Vorrat - er ist ein BERICHTSWORTSCHATZ, und die Zeile mit 0 belegt, dass die Ursache
+# entfallen und nicht nur nie gemessen worden ist.
 BOUNDARY_LANDMARK = "sehenswuerdigkeit"
-# Kein Eintrag in `default_signals()`, und seit ADR 0119 eroeffnet er auch kein Event mehr: Der
-# Motivwechsel VERMERKT eine Grenze, die ein Signal ohnehin gemeldet hat. Sein Name bleibt im
-# Vorrat, weil "war beteiligt" eine bewegliche Zahl bleibt - genau die Groesse, an der eine
-# spaetere Aenderung dieser Entscheidung gemessen wuerde. In der Spalte "alleinige Ursache" steht
-# er dauerhaft auf 0.
+# Kein Eintrag in `default_signals()`, und er eroeffnet auch kein Event: Der Motivwechsel VERMERKT
+# eine Grenze, die ein Signal ohnehin gemeldet hat. Sein Name bleibt im Vorrat, weil "war beteiligt"
+# eine bewegliche Zahl bleibt. In der Spalte "alleinige Ursache" steht er dauerhaft auf 0.
 BOUNDARY_MOTIF_CHANGE = "motivwechsel"
 
 BOUNDARY_CAUSES = (
@@ -164,10 +143,10 @@ BOUNDARY_CAUSES = (
 # Nachbarn". Eine bloss fehlende SEITE eines Randsegments faellt nicht darunter - sie ist kein
 # Hindernis und keine Kante.
 #
-# `MERGE_BLOCK_UNBREAKABLE` wird seit ADR 0119 von KEINER Lage mehr geliefert und steht dauerhaft
-# auf 0: Die Unantastbarkeit ist mit ihrem Vorrat entfallen. Der Eintrag bleibt, weil dieser Vorrat
-# ein BERICHTSWORTSCHATZ ist und die Null der Nachweis - ohne die Zeile waere eine Riegel-Diagnose
-# nicht mehr gegen die frueheren zu halten, in denen `unantastbar` der groesste Blocker war.
+# `MERGE_BLOCK_UNBREAKABLE` wird von KEINER Lage mehr geliefert und steht dauerhaft auf 0: Die
+# Unantastbarkeit ist mit ihrem Vorrat entfallen. Der Eintrag bleibt, weil dieser Vorrat ein
+# BERICHTSWORTSCHATZ ist und die Null der Nachweis - ohne die Zeile waere eine Riegel-Diagnose nicht
+# mehr gegen fruehere zu halten.
 #
 # Riegel (d) - das Segment liegt selbst unter der Mindestgroesse - steht hier NICHT: Er haengt an
 # der Auswahl, nicht an einer Kante, und ein Segment, das nicht zu klein ist, wird gar nicht erst
@@ -190,8 +169,8 @@ MERGE_BLOCK_REASONS = (
 )
 
 # Wie viele aufeinanderfolgende mitredende Fotos einen Motivwechsel bestaetigen muessen, das erste
-# abweichende eingeschlossen. Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von
-# EVENT_EXTENT_MAX_METERS - aenderbar, durch keinen Test auf den Zahlwert gepinnt.
+# abweichende eingeschlossen. UNKALIBRIERTE Modulkonstante - aenderbar, durch keinen Test auf den
+# Zahlwert gepinnt.
 # Ein Wert von 1 widerspraeche der Zusage "ein einzelnes abweichendes Foto trennt nie".
 MOTIF_CHANGE_CONFIRMING_PHOTOS = 3
 
@@ -280,7 +259,7 @@ def _nearest_anchor(anchors: Sequence[LocationEntry], entry: LocationEntry) -> L
 
 @dataclass(frozen=True)
 class InheritedLocation:
-    """Was eine Ortsuebernahme ueber SICH SELBST aussagt - OHNE jede Koordinate (Block C1).
+    """Was eine Ortsuebernahme ueber SICH SELBST aussagt - OHNE jede Koordinate.
 
     `seconds_to_anchor` ist der Abstand zu dem Anker, den dieses Foto tatsaechlich geerbt hat.
     `anchor_span_meters` ist die Entfernung zwischen dem vorherigen und dem naechsten
@@ -299,12 +278,12 @@ class InheritedLocation:
 def inherited_locations(entries: Iterable[LocationEntry]) -> list[InheritedLocation]:
     """Je Foto OHNE eigene Koordinate, das tatsaechlich erbt, eine Auskunft ueber die Uebernahme.
 
-    OEFFENTLICH, weil das Messkommando Block C1 ueber genau diese Wahl zaehlt - dieselbe
+    OEFFENTLICH, weil das Messkommando ueber genau diese Wahl zaehlt - dieselbe
     Ankerwahl, die `infer_locations` trifft. Ein Foto ohne jeden Anker erbt nicht und erscheint
     hier nicht: es gibt nichts zu berichten, und eine Zeile mit Null-Abstand behauptete eine
     Uebernahme, die nicht stattfand.
 
-    SICHERHEIT (S5): Die Rueckgabe traegt Zahlen, keine Orte. Wer sie ausgibt, tut das in
+    SICHERHEIT: Die Rueckgabe traegt Zahlen, keine Orte. Wer sie ausgibt, tut das in
     Klassen - eine geordnete Folge von Spannen und Zeitlücken waere ein Streckenabdruck."""
     entry_list = list(entries)
     anchors = _anchors(entry_list)
@@ -424,7 +403,7 @@ def event_for_time(spans: Iterable[EventSpan], taken_at: datetime) -> int | None
 
     Aufrufer ist der Entwurfszweig von `api/photos/` fuer die vom Nutzer aufgenommenen Fotos
     ohne Rangzeile. Die Spannenliste wird dort EINMAL geladen und fuer alle Fotos wiederverwendet
-    (Auflage S14) - nie eine Abfrage je Foto."""
+    - nie eine Abfrage je Foto."""
     ordered = sorted(spans, key=_span_order)
     if not ordered:
         return None
@@ -541,7 +520,7 @@ class EventSpanSignal:
     """Die DAUER des laufenden Events: die Spanne vom EROEFFNENDEN bis zum gerade betrachteten
     Foto, geprueft EINSCHLIESSLICH dieses Fotos - sonst begaenne das neue Event ein Foto zu spaet.
 
-    Zustandsbehaftet im Muster von `ExtentSignal`, und der zeitliche Riegel gegen
+    Zustandsbehaftet, und der zeitliche Riegel gegen
     Ueberverschmelzung: Ein Anlass ueber Mitternacht (Silvester, langer Abend, Nachtflug) bleibt EIN
     Event, mehrere Reisetage werden es nicht. Die Grenze ist die Dauer, nicht das Datum.
 
@@ -654,7 +633,7 @@ def default_signals() -> list[BoundarySignal]:
     Die Liste ist der Erweiterungspunkt: ein weiteres Signal ist eine Klasse und ein Eintrag - kein
     Eingriff in den Durchlauf, das Datenmodell oder die API. Sie fuehrt AUSSCHLIESSLICH Signale,
     die trennen; ein nie meldender Eintrag machte aus ihr eine Liste mit zwei Bedeutungen. Deshalb
-    ist die Sehenswuerdigkeit hier seit ADR 0118 ersatzlos verschwunden statt stillgelegt.
+    ist die Sehenswuerdigkeit hier ersatzlos entfallen statt stillgelegt.
 
     Jeder Aufruf liefert FRISCHE Objekte: Signale sind zustandsbehaftet, eine geteilte Liste
     tarnte einen Lauf als Fortsetzung des vorherigen."""
@@ -683,8 +662,7 @@ def _motif_picture(
 
     `motif_presence_threshold` ist die DURCHGEREICHTE Grenze der Empfindlichkeitsmessung und
     stammt ausschliesslich aus dem injizierbaren Parameter von `motif_change_starts`. `None` heisst
-    "der Betriebswert gilt"; die Auswahl selbst gibt nie einen Wert mit (Auflage in
-    `selection.py::motif_is_present`)."""
+    "der Betriebswert gilt"; die Auswahl selbst gibt nie einen Wert mit."""
     if candidate.excluded_document or candidate.motif_strengths is None:
         return None
     return carried_motifs(candidate.motif_strengths, motif_presence_threshold)
@@ -699,8 +677,8 @@ def motif_change_starts(
     """Die Indizes der BEREITS SORTIERTEN Folge, an denen ein Motivwechsel BESTAETIGT ist - die
     erste Stufe der Event-Bildung, REIN und ohne Kenntnis der Signale.
 
-    WAS DER AUFRUFER DAMIT TUT, STEHT IN `explain_events`, nicht hier: Seit ADR 0119 eroeffnet ein
-    gelieferter Index kein Event mehr, er vermerkt eine ohnehin gezogene Grenze. Der Begriff des
+    WAS DER AUFRUFER DAMIT TUT, STEHT IN `explain_events`, nicht hier: Ein gelieferter Index
+    eroeffnet kein Event, er vermerkt eine ohnehin gezogene Grenze. Der Begriff des
     Wechsels unten ist davon unberuehrt.
 
     Der Motivwechsel ist kein Eintrag in `default_signals()`: Er ist keine paarweise Frage,
@@ -951,7 +929,7 @@ def landmark_name_is_plausible(
     entfaellt, statt falsch angezeigt zu werden; fehlt der Auszug, traegt deshalb kein Event des
     Laufs einen Sehenswuerdigkeitsnamen. Die Pruefung kann nur wegnehmen, nie einen Namen setzen.
 
-    Eine Entfernung wird nicht abgelegt und nicht geloggt (S1); sie ist ein reiner Zwischenwert.
+    Eine Entfernung wird nicht abgelegt und nicht geloggt; sie ist ein reiner Zwischenwert.
     Rein: sie liest nichts nach. Der Name kommt gefaltet von der Schreibseite
     (`landmark_place_lookups.folded_name`), hier steht nur der Schluesselvergleich."""
     if landmark_points_by_name is None or not cells:
@@ -974,7 +952,7 @@ def _built(
 ) -> BuiltEvent:
     """Ein Event aus seinen Mitgliedern.
 
-    Die Ortsplausibilitaet des Sehenswuerdigkeitsnamens (Spec 0529) sitzt NACH `_name_of` und VOR
+    Die Ortsplausibilitaet des Sehenswuerdigkeitsnamens sitzt NACH `_name_of` und VOR
     `_place_of`: erst steht der Gewinnername fest, dann faellt er gegebenenfalls, und erst danach
     entscheidet `_place_of` ueber den Ortsbezug. Faellt der Name, hat das Event exakt dieselben
     Werte wie eines, dessen Kandidaten von vornherein namenlos waren - die Zellen sind dieselben und
@@ -1024,8 +1002,7 @@ class Segment:
 
 @dataclass(frozen=True)
 class BlockedSegment:
-    """Ein zu kleines Segment, das NICHT zugeschlagen werden konnte, samt den Gruenden je Kante
-    (Block F).
+    """Ein zu kleines Segment, das NICHT zugeschlagen werden konnte, samt den Gruenden je Kante.
 
     `edges` traegt EINEN EINTRAG JE NACHBARN (also einen oder zwei), in der Reihenfolge frueherer,
     spaeterer; je Eintrag die MENGE der Gruende, die diese Kante sperren. Keine Menge ist leer -
@@ -1036,7 +1013,7 @@ class BlockedSegment:
     Eine MENGE je Kante, kein einzelner Grund: Mehrere Riegel duerfen gleichzeitig zutreffen, und
     ein Bericht mit einem Grund je Kante unterschluege die spaeter geprueften.
 
-    Daraus entstehen die beiden Zahlen von Block F - "war an einer Kante beteiligt" und "war an
+    Daraus entstehen die beiden Zahlen - "war an einer Kante beteiligt" und "war an
     allen Kanten der Grund"; nur die zweite ist handlungsleitend.
 
     REIN BEOBACHTET: Die Aufzeichnung aendert an der Gliederung nichts."""
@@ -1048,8 +1025,8 @@ class BlockedSegment:
 class MergeOutcome:
     """Das Ergebnis von Stufe 3 samt seiner GEGENANZEIGE.
 
-    `dissolved_boundaries` und `moved_photo_ids` sind nicht Beiwerk: Beide Abnahmezahlen dieser
-    Spec - der Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
+    `dissolved_boundaries` und `moved_photo_ids` sind nicht Beiwerk: Beide Abnahmezahlen - der
+    Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
     Verschmelzung BESSER erfuellt. Ohne diese beiden misst eine Nachmessung nur die
     Unter-Zerstueckelung.
 
@@ -1109,8 +1086,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     RUECKGABE: die MENGE der Gruende aus `MERGE_BLOCK_REASONS`, die diese Kante sperren - die LEERE
     Menge, wenn sie offen ist. `_neighbour_for` fragt nur, ob die Menge leer ist; die Gruende
     fallen damit dort an, wo die Pruefung ohnehin steht. Eine nachbildende zweite Pruefung im
-    Messkommando maesse etwas anderes, als die Stufe tut, waehrend beide fuer sich gruen blieben
-    (ADR 0117 Punkt 5).
+    Messkommando maesse etwas anderes, als die Stufe tut, waehrend beide fuer sich gruen blieben.
 
     EINE MENGE, NIE EIN EINZELNER GRUND, und die Auswertung ist AUSDRUECKLICH NICHT
     KURZGESCHLOSSEN - dieselbe Zusage wie fuer die Signale des Durchlaufs: Mehrere Riegel duerfen
@@ -1118,7 +1094,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     traefe zuerst `ausdehnung` als zuletzt geprueften. Der Preis ist, dass die Ausdehnung auch dann
     gerechnet wird, wenn schon die Zeitluecke sperrt.
 
-    RIEGEL (c) PRUEFT `MERGE_EXTENT_MAX_METERS`, NICHT `EVENT_EXTENT_MAX_METERS` (ADR 0118 Punkt 4)
+    RIEGEL (c) PRUEFT `MERGE_EXTENT_MAX_METERS`, NICHT `EVENT_EXTENT_MAX_METERS`
     - eine eigene, groessere Grenze. Praefte er die Trennschwelle, praefte er dieselbe Bedingung,
     deren Ueberschreitung die Trennung ausgeloest hat, und die Stufe waere fuer genau die Segmente
     unpassierbar, die die Ausdehnung getrennt hat.
@@ -1128,7 +1104,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     eine Kante fuer beide Richtungen gleichzeitig zulaessig oder gleichzeitig gesperrt: Daran haengt
     die Terminierung (siehe `round_limit`).
 
-    KEINE URSACHENMENGE WIRD GELESEN (ADR 0119): Die Unantastbarkeit ist ersatzlos entfallen, und
+    KEINE URSACHENMENGE WIRD GELESEN: Die Unantastbarkeit ist ersatzlos entfallen, und
     damit entscheidet ueber eine Kante allein, was an ihr gemessen wird. Eine Grenze mit
     `motivwechsel` wird aufgeloest wie jede andere, sobald die drei Riegel halten."""
     combined = earlier.members + later.members
@@ -1170,7 +1146,7 @@ def _blocking_edges(
     working: Sequence[Segment], index: int, *, merge_max_gap: timedelta
 ) -> tuple[frozenset[str], ...]:
     """Je KANTE die Menge ihrer Sperrgruende, in der Reihenfolge frueherer, spaeterer Nachbar - die
-    Beobachtung zu einem Segment, das nicht zugeschlagen werden konnte (Block F).
+    Beobachtung zu einem Segment, das nicht zugeschlagen werden konnte.
 
     EIN SEGMENT HAT SO VIELE KANTEN, WIE ES NACHBARN HAT. Eine nicht vorhandene Seite eines
     Randsegments ist KEINE Kante: Sie ist kein Hindernis, und sie mitzuzaehlen hiesse, dass an
@@ -1310,7 +1286,7 @@ class EventFormation:
     Daraus folgt die tragende Pruefform: Die Zahl der Grenzen MIT Ursache ist stets
     `Eventzahl - 1`.
 
-    Die Menge wird ausdruecklich NICHT persistiert (ADR 0117 Punkt 4): Stufe 3 liest sie im selben
+    Die Menge wird ausdruecklich NICHT persistiert: Stufe 3 liest sie im selben
     Durchlauf, das Messkommando bildet sie ohnehin neu, und eine Spalte waere nach jeder
     Schwellenaenderung veraltet, ohne dass es auffiele.
 
@@ -1319,11 +1295,11 @@ class EventFormation:
     Grenzen davor ist `len(events) - 1 + dissolved_boundaries`.
 
     `blocked_segments` ist die Gegenfrage dazu: woran es lag, dass das Uebrige NICHT zusammengelegt
-    wurde (Block F). Sie reicht die Beobachtung der Stufe durch, statt dass ein Aufrufer sie
+    wurde. Sie reicht die Beobachtung der Stufe durch, statt dass ein Aufrufer sie
     nachbildet.
 
     `excursion_photos` ist die Zahl der Fotos, die als Ausreisser (`location_excursions`) ohne Ort
-    in die Bildung eingingen - nur eine Anzahl, nie welche (Block B)."""
+    in die Bildung eingingen - nur eine Anzahl, nie welche."""
 
     events: tuple[BuiltEvent, ...]
     causes: tuple[frozenset[str], ...]
@@ -1379,7 +1355,7 @@ def explain_events(
     Zustandsfortschreibung eines Signals an seiner Listenposition, und die Ursachenmenge naehme
     nur das erste meldende Signal auf.
 
-    DIE ERSTE STUFE VERMERKT, SIE EROEFFNET NICHT (ADR 0119). Ein gelieferter Index oeffnet kein
+    DIE ERSTE STUFE VERMERKT, SIE EROEFFNET NICHT. Ein gelieferter Index oeffnet kein
     Segment; er fuegt `motivwechsel` der Ursachenmenge einer Grenze hinzu, die der Durchlauf an
     derselben Stelle ohnehin zieht. Faellt er auf keine, wird er VERWORFEN - nie auf die naechste
     Grenze uebertragen, sonst behauptete die Statistik eine Mitursache an einer Stelle, an der der
@@ -1401,12 +1377,12 @@ def explain_events(
     Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter variierten Werten,
     nicht die einer Nachbildung.
 
-    `landmark_points_by_name` ist die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): gefalteter
+    `landmark_points_by_name` ist die Sehenswuerdigkeitsauskunft des Laufs: gefalteter
     Name -> Gazetteer-Fundorte. `None` (die Vorgabe) heisst "keine Auskunft vorhanden"; die
     Pruefung ist fail-closed, ohne Auskunft traegt also kein Event einen Sehenswuerdigkeitsnamen -
     siehe `landmark_name_is_plausible`."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
-    # DIE EINE STELLE, an der ein Ausreisser seinen Ort verliert (ADR 0135 Punkt 2): fuer den
+    # DIE EINE STELLE, an der ein Ausreisser seinen Ort verliert: fuer den
     # Durchlauf, Stufe 3 und `_built` - er bleibt Mitglied, speist aber weder Schritt, Ausdehnung,
     # Zelle noch Namenspruefung. An den Fotos selbst wird nichts geschrieben.
     excursions = location_excursions(ordered)
@@ -1429,7 +1405,7 @@ def explain_events(
         # Die Liste wird VOLLSTAENDIG gebaut, bevor `any` sie liest - und sie traegt zugleich, WER
         # gemeldet hat. Ein `any` ueber einen Generator schnitte beides gleichzeitig ab.
         reporting = [signal.name for signal in active if signal.is_boundary(candidate)]
-        # DER VERMERK, NICHT DER ERZWUNGENE START (ADR 0119): `noted` steht NICHT in der Bedingung
+        # DER VERMERK, NICHT DER ERZWUNGENE START: `noted` steht NICHT in der Bedingung
         # darunter. Er faellt mit einer Grenze zusammen oder er ist wirkungslos; auf die naechste
         # Grenze uebertragen wird er nie.
         noted = index in noted_starts
@@ -1539,8 +1515,8 @@ def assign_place_names(
     """Der Ortsname JE EVENT eines Laufs, POSITIONSTREU zur uebergebenen Liste.
 
     Zwei Durchgaenge, und der zweite ist der Grund, warum diese Vergabe hier und nicht in
-    `places.py` steht (ADR 0102 Punkt 4): Ob ein Event "Berlin" oder "Berlin, Kreuzberg" heisst,
-    haengt davon ab, was sonst im selben Lauf liegt - das ist keine Eigenschaft des Ortes.
+    `places.py` steht: Ob ein Event "Berlin" oder "Berlin, Kreuzberg" heisst, haengt davon ab, was
+    sonst im selben Lauf liegt - das ist keine Eigenschaft des Ortes.
 
     1. Je Event der eine Ortsname seiner Zellen (`None` bei null oder mehreren).
     2. Ueber den ganzen Lauf: Fuer jeden MEHRFACH vergebenen Namen bekommt GENAU JEDES dieser

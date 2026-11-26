@@ -28,7 +28,7 @@ JPEG_QUALITY_DISPLAY = 88
 
 Variant = Literal["thumbnail", "display"]
 
-# Gueltigkeitsband des Seitenverhaeltnisses (ADR 0110 Punkt 2). Ein Wert ausserhalb wird NICHT
+# Gueltigkeitsband des Seitenverhaeltnisses. Ein Wert ausserhalb wird NICHT
 # gespeichert: Die Zeilenhoehe des justierten Rasters entsteht aus der SUMME der Verhaeltnisse
 # einer Zeile, ein entartetes Verhaeltnis zoege deshalb die ganze Zeile auf eine unbrauchbare
 # Hoehe, nicht nur sein eigenes Bild.
@@ -39,7 +39,7 @@ ASPECT_RATIO_MAX = 20.0
 def _ratio_within_band(width: int, height: int) -> float | None:
     """Breite geteilt durch Hoehe, sofern das Ergebnis im Gueltigkeitsband liegt - sonst `None`.
 
-    SICHERHEIT (Auflage S5): Die Bereichspruefung ist als EINSCHLUSS geschrieben
+    SICHERHEIT: Die Bereichspruefung ist als EINSCHLUSS geschrieben
     (`ASPECT_RATIO_MIN <= r <= ASPECT_RATIO_MAX`), nie als verneinte Ausschlussform. `NaN` und
     `inf` sind gegen jeden Vergleich falsch und passierten die Umkehrform. Ein `NaN` in der Spalte
     waere kein Fehler EINES Fotos, sondern der ANTWORT: `json.dumps` schreibt das Literal `NaN`,
@@ -61,7 +61,7 @@ def aspect_ratio_of(image: Image.Image) -> float | None:
     wahr ist. Fuer ein bereits gedrehtes Bild kostet das nichts: `exif_transpose` entfernt den
     Orientierungs-Tag, findet also beim zweiten Aufruf keinen mehr und liefert `None`.
 
-    `None` heisst "nicht bekannt" und ist ein regulaerer Zustand (ADR 0110 Punkt 1) - hier der
+    `None` heisst "nicht bekannt" und ist ein regulaerer Zustand - hier der
     Fall eines Verhaeltnisses ausserhalb des Gueltigkeitsbands oder einer entarteten Groesse.
 
     Die entartete Groesse wird VOR der Drehung abgewiesen: Entartung ist gegen das Vertauschen der
@@ -76,24 +76,24 @@ def aspect_ratio_of(image: Image.Image) -> float | None:
 
 def aspect_ratio_of_cached_thumbnail(path: Path) -> float | None:
     """Das Seitenverhaeltnis aus einer bereits geschriebenen Cache-Variante - ohne Netz und ohne
-    das Original. Zweiter Schreibweg der Spalte (ADR 0110 Punkt 3, Nachhol-Runde).
+    das Original. Zweiter Schreibweg der Spalte.
 
     Der so gelesene Wert ist wegen der Ganzzahl-Skalierung beim Erzeugen der Vorschau NICHT exakt
     das Verhaeltnis des Originals; zugesichert ist er nur innerhalb einer Toleranz.
 
-    SICHERHEIT (Auflage S3): Gelesen wird der KOPF der Datei, nicht ihr Bildinhalt - `.size`
+    SICHERHEIT: Gelesen wird der KOPF der Datei, nicht ihr Bildinhalt - `.size`
     innerhalb eines `with`-Blocks, ohne `load()` und ohne `exif_transpose`. Die Cache-Variante ist
     beim Schreiben bereits gedreht worden und traegt keinen Orientierungs-Tag. Bei Verletzung zoege
     das Dekodieren die volle Pixelflaeche in den Speicher, und ein offen gelassener Dateizeiger
     erschoepfte ueber zehntausende Bestandsfotos die Dateizeiger des Worker-Prozesses.
 
-    SICHERHEIT (Auflage S2): Bewusst breites `except Exception`, nie eine engere Liste -
+    SICHERHEIT: Bewusst breites `except Exception`, nie eine engere Liste -
     `PIL.Image.DecompressionBombError` erbt NICHT von `OSError` und liefe durch. Eine fehlende,
     beschaedigte oder nicht dekodierbare Datei laesst den Wert `None` und die Nachhol-Runde
     weiterlaufen; bei Verletzung risse ein einzelnes Foto den gesamten Projekt-Scan, und zwar vor
     jeder anderen Arbeit, also bei jedem Versuch erneut.
 
-    SICHERHEIT (Auflage S4): Der `path` wird vom Aufrufer ausschliesslich ueber
+    SICHERHEIT: Der `path` wird vom Aufrufer ausschliesslich ueber
     `thumbnail_path`/`variant_path` gebildet - der `etag` kommt vom WebDAV-Server, ist damit
     Fremdtext und geht nur als SHA-256-Eingabe in `cache_key` ein, nie in einen Dateinamen."""
     try:
@@ -133,7 +133,7 @@ def variant_path(cache_dir: Path, photo_id: int, etag: str, variant: Variant) ->
 class VariantResult:
     """Was EINE Dekodierung ueber das Bild aussagt: gezeigtes Seitenverhaeltnis und Aufloesung.
 
-    Beide Werte entstehen an derselben Stelle und reisen zusammen (ADR 0146 Punkt 2): Der
+    Beide Werte entstehen an derselben Stelle und reisen zusammen: Der
     Aufrufer kann nicht versehentlich den einen schreiben und den anderen vergessen, und es gibt
     keine zweite Erfolgsmeldung, die zu `None` passen muesste.
 
@@ -158,8 +158,8 @@ def generate_variants(
 
     Returns `VariantResult` mit dem Seitenverhaeltnis des GEZEIGTEN Bildes und seiner Aufloesung,
     wenn beide Varianten geschrieben wurden - sonst `None`. Der Rueckgabewert ist damit zugleich
-    die Erfolgsmeldung UND der erste Schreibweg der Spalten `Photo.aspect_ratio` (ADR 0110
-    Punkt 3) und `Photo.pixel_count` (ADR 0146 Punkt 2): Das Bild liegt nach `exif_transpose`
+    die Erfolgsmeldung UND der erste Schreibweg der Spalten `Photo.aspect_ratio` und
+    `Photo.pixel_count`: Das Bild liegt nach `exif_transpose`
     ohnehin dekodiert vor, es entsteht also kein zusaetzlicher Abruf und kein zweites Dekodieren.
     `None` heisst "nicht erzeugt"; ein erfolgreich geschriebenes Bild mit entartetem Verhaeltnis
     traegt dagegen `aspect_ratio=None` IM Ergebnis - fuer den Aufrufer bleiben das zwei
@@ -276,7 +276,7 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
     `OSError` wird mit dem Pfad GELOGGT und bricht den Cleanup der uebrigen Dateien nicht ab. Ein
     Dateifehler darf die bereits committete Datenloeschung nicht nachtraeglich zum Fehler machen;
     der absolute Cache-Pfad enthaelt interne Deployment-Struktur und gehoert deshalb ins Log, nie
-    in eine HTTP-Antwort (dasselbe Muster wie bei `measure_cache_usage`).
+    in eine HTTP-Antwort.
     """
     for photo_id, etag in photos:
         for path in (
@@ -414,7 +414,7 @@ def delete_orphaned_entries(
     entwerten. Ausnahme ist `FileNotFoundError` beim `lstat`: die Datei ist inzwischen anderweitig
     verschwunden, das ist der erwartete Ausgang der harmlosen Wettlaufsituation und KEIN Fehlschlag
     - er wird still uebersprungen, weder gezaehlt noch geloggt. Absolute Cache-Pfade gehoeren ins
-    Log, nie in eine HTTP-Antwort (dasselbe Muster wie `delete_cached_variants`)."""
+    Log, nie in eine HTTP-Antwort."""
     if entries and not valid_keys:
         logger.warning(
             "Bereinigung des Bild-Caches uebersprungen: %d gemusterte Datei(en) vorhanden, aber "

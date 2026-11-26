@@ -3,7 +3,7 @@
 Dieses Modul beantwortet ausschliesslich "was liegt an dieser Zelle" und kennt die
 UNSPEZIFISCHE Stufe (`locality`). Die Gleichnamigkeitspruefung ueber die Events eines Laufs und
 das Anhaengen des Viertels liegen in `events.py` - die zusammengesetzte Form "Ort, Viertel"
-entsteht dort und ist von hier aus strukturell nicht erreichbar (ADR 0102 Punkt 4).
+entsteht dort und ist von hier aus strukturell nicht erreichbar.
 
 LOGGING-AUFLAGE fuer jede kuenftige Logzeile dieses Moduls: weder eine Koordinate noch ein
 Ortsname gehoert je in ein Log - kein angenommener und kein verworfener Wert. Ein Log ist eine
@@ -29,18 +29,17 @@ PLACE_CELL_DIGITS = 2
 
 # Die Koernung, mit der eine Koordinate das System VERLAESST: eine Nachkommastelle sind rund 11 km
 # in der Breite, weniger in der Laenge. Sie gilt fuer die Ortsangabe an die
-# Sehenswuerdigkeits-Erkennung (ADR 0106 Punkt 3) und ist damit eine Groessenordnung groeber als
+# Sehenswuerdigkeits-Erkennung und ist damit eine Groessenordnung groeber als
 # die oben abgelegte und in der Oberflaeche gezeigte Zelle.
 #
 # SICHERHEITSENTSCHEIDUNG, keine Genauigkeit: Die Stufe greift genau dort, wo sich kein Ortsname
 # aufloesen liess - in duenn besiedelter Gegend, wo eine Koordinate mehr ueber die Familie verraet
 # als in einer Stadt. Wer diesen Wert VERFEINERT, gibt mehr ueber jedes Foto ohne aufloesbaren
-# Ortsnamen preis; das braucht eine eigene ADR, keine stillschweigende Anpassung.
+# Ortsnamen preis.
 LANDMARK_PLACE_CELL_DIGITS = 1
 
 # Der geschlossene Vorrat von `matched_level`, von der feinsten zur groebsten Ebene. Ein Wert
 # ausserhalb heisst "kein Name aufgeloest" - Mitgliedschaftspruefung statt Cast, nie eine 500
-# (Muster `events.py::PLACE_KINDS`).
 PLACE_LEVELS = ("neighbourhood", "locality", "region", "country")
 
 # Die beiden Ebenen, auf denen ein Treffer einen ORTSNAMEN traegt - abgeleitet aus der
@@ -50,7 +49,7 @@ PLACE_LEVELS = ("neighbourhood", "locality", "region", "country")
 NAME_BEARING_LEVELS = PLACE_LEVELS[:2]
 
 # Obergrenze eines verwendbaren Ortsnamens, gleichauf mit `landmark.MAX_LANDMARK_NAME_LENGTH`.
-# Wie dort wird VERWORFEN statt abgeschnitten, und das ist hier Korrektheit statt Hygiene:
+# VERWORFEN statt abgeschnitten, und das ist hier Korrektheit statt Hygiene:
 # `assign_place_names` VERGLEICHT Ortsnamen ueber die Events eines Laufs - zwei verschiedene, auf
 # dieselbe Laenge gekappte Namen waeren ein Name, und die Viertel-Regel griffe dann fuer Events
 # an verschiedenen Orten.
@@ -67,7 +66,7 @@ def place_cell(lat: float, lon: float) -> tuple[float, float]:
 
 
 def landmark_place_cell(lat: float, lon: float) -> tuple[float, float]:
-    """Die EINE Vergroeberung dessen, was als Koordinate hinausgeht (S1).
+    """Die EINE Vergroeberung dessen, was als Koordinate hinausgeht.
 
     Getrennt von `place_cell` darueber, weil die Fragen verschieden sind: dort die Koernung, mit
     der gefragt und abgelegt wird, hier die Grenze dessen, was dieses System an Ortsdaten der
@@ -81,9 +80,8 @@ def landmark_place_cell(lat: float, lon: float) -> tuple[float, float]:
     `-0.0` wird auf `0.0` normalisiert, aus demselben Grund wie oben.
 
     Die TEXTFORM entsteht bewusst nicht hier, sondern in `landmark.py` unmittelbar am Prompt: Ein
-    Modul, das zwei Ortswerte zu einer Zeichenkette zusammensetzt, waere genau die Form, die ADR
-    0102 Punkt 4 diesem Modul untersagt (Waechter in
-    tests/test_places.py::TestTheModuleBoundaryFromAdr0102)."""
+    Modul, das zwei Ortswerte zu einer Zeichenkette zusammensetzt, ist diesem Modul untersagt
+    (Waechter `tests/test_places.py::TestTheModuleBoundaryFromAdr0102`)."""
     return (
         round(lat, LANDMARK_PLACE_CELL_DIGITS) + 0.0,
         round(lon, LANDMARK_PLACE_CELL_DIGITS) + 0.0,
@@ -142,9 +140,9 @@ class PlaceInfo:
 
 
 class PlaceResolver(Protocol):
-    """Die eine Schnittstelle, hinter der die Wegwahl steht (ADR 0102 Punkt 6).
+    """Die eine Schnittstelle, hinter der die Wegwahl steht.
 
-    SICHERHEIT (S2): Die Signatur nimmt ausschliesslich die bereits vergroeberte Zelle entgegen -
+    SICHERHEIT: Die Signatur nimmt ausschliesslich die bereits vergroeberte Zelle entgegen -
     weder ein Foto noch ein Event noch eine ungerundete Koordinate ist darueber erreichbar.
     `None` heisst "keine Antwort" (Netzfehler, Zeitueberschreitung, Dienst unerreichbar) und ist
     ausdruecklich etwas anderes als eine Antwort ohne brauchbare Ebene: die eine hinterlaesst

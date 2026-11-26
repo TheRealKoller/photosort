@@ -1,11 +1,11 @@
 """Das projektgebundene Namensregister der Sehenswuerdigkeiten - REIN und DB-FREI.
 
 Dieses Modul beantwortet ausschliesslich "welcher Registereintrag meint diesen Rohnamen" und kennt
-weder Sitzung noch Tabelle; der Datenbankzugriff liegt in `photosort.worker` (Muster `places.py`).
+weder Sitzung noch Tabelle; der Datenbankzugriff liegt in `photosort.worker`.
 
 LOGGING-AUFLAGE fuer jede kuenftige Logzeile dieses Moduls: weder ein Ortsname noch ein
 Sehenswuerdigkeitsname noch ein Einbettungsvektor gehoert je in ein Log. Der Vektor ist eine
-verlustbehaftete Kodierung genau des Namens in derselben Zeile und erbt dessen Einstufung (S8).
+verlustbehaftete Kodierung genau des Namens in derselben Zeile und erbt dessen Einstufung.
 """
 
 from __future__ import annotations
@@ -14,14 +14,10 @@ from dataclasses import dataclass
 
 from photosort.label_embedding import LabelEmbedderLike, cosine_similarity, normalize_label_text
 
-# Die Aehnlichkeitsschwelle des Namensregisters - eine EIGENE Konstante, nicht die der Feinlabels
-# (ADR 0107 Punkt 4). Eigennamen verlangen einen strengeren Massstab als Sachbegriffe: "Hund" und
-# "Hunde" duerfen zusammenfallen, "Kölner Dom" und "Ulmer Dom" nicht. Beide muessen sich unabhaengig
-# bewegen koennen.
-#
-# Dokumentiert-unkalibriert, gleiche Klasse wie ihr Vorbild: Es gibt keinen Namenskorpus im
-# Repository, gegen den sie kalibriert werden koennte. Erkennungsweg ist die Abnahme an einer
-# echten Reise.
+# Die Aehnlichkeitsschwelle des Namensregisters - eine EIGENE Konstante, nicht die der Feinlabels.
+# Eigennamen verlangen einen strengeren Massstab als Sachbegriffe: "Hund" und "Hunde" duerfen
+# zusammenfallen, "Kölner Dom" und "Ulmer Dom" nicht. Beide muessen sich unabhaengig bewegen
+# koennen.
 LANDMARK_NAME_SIMILARITY_THRESHOLD = 0.88
 
 
@@ -29,9 +25,9 @@ LANDMARK_NAME_SIMILARITY_THRESHOLD = 0.88
 class LandmarkNameEntry:
     """Ein Eintrag des In-Memory-Schnappschusses der `landmark_names`-Tabelle.
 
-    Bewusst NICHT frozen (Muster `FineLabelSnapshotEntry`): `photosort.worker` setzt nach dem
-    Datenbank-Einfuegen die echte `id` auf genau dieser Instanz nach. `id is None` heisst "in
-    diesem Lauf neu entstanden, noch nicht geschrieben".
+    Bewusst NICHT frozen: `photosort.worker` setzt nach dem Datenbank-Einfuegen die echte `id` auf
+    genau dieser Instanz nach. `id is None` heisst "in diesem Lauf neu entstanden, noch nicht
+    geschrieben".
 
     `locality` ist der aufgeloeste Ortsname, unter dem der Eintrag zuerst gesehen wurde, oder
     `None` - er wirkt als SPERRE und nie als Schluessel."""
@@ -48,7 +44,7 @@ def _localities_are_known_and_different(a: str | None, b: str | None) -> bool:
     ist, gelten sie als verschiedene Sehenswuerdigkeiten.
 
     Traegt eine Seite keinen, entscheidet die Aehnlichkeit allein - das bewusst getragene
-    Restrisiko dieser Entscheidung (siehe "Bekannte Luecken" der Spec)."""
+    Restrisiko dieser Entscheidung."""
     return a is not None and b is not None and a != b
 
 
@@ -60,7 +56,7 @@ def resolve_canonical_landmark(
 ) -> LandmarkNameEntry:
     """Loest einen Rohnamen auf den Registereintrag auf, den er meint - rein und DB-frei.
 
-    DREI SCHRITTE (ADR 0107 Punkt 4, Muster `remote_classification.py::resolve_canonical_label`):
+    DREI SCHRITTE:
 
     1. **Gleicher normalisierter Name** - trifft IMMER, ohne Ortspruefung und ohne Modellaufruf.
        Zwei zeichengleiche Namen gelten schon vor dieser Entscheidung als dieselbe
@@ -74,7 +70,7 @@ def resolve_canonical_landmark(
        zweite koennte am projektweiten Eindeutigkeits-Constraint scheitern.
 
     `entries` ist der Schnappschuss EINES Projekts - die Projektbindung liegt in der Abfrage, die
-    ihn laedt (S8). Dieses Modul sieht nie mehr als ein Projekt."""
+    ihn laedt. Dieses Modul sieht nie mehr als ein Projekt."""
     normalized = normalize_label_text(raw_name)
 
     for entry in entries:
