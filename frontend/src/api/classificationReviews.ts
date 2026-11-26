@@ -13,7 +13,7 @@ import type {
 } from './types'
 
 /*
- * Der Client der Klassifizierungspruefung (Spec 0616). Basis ist der ENGLISCHE Kebab-Pfad wie bei
+ * Der Client der Klassifizierungspruefung. Basis ist der ENGLISCHE Kebab-Pfad wie bei
  * `album-draft` und `duplicate-groups`; der deutsche Pfad gilt ausschliesslich der Oberflaeche.
  *
  * KEIN Betrag, kein Anbieter und keine Id-Liste im Koerper: Kosten entstehen serverseitig, der

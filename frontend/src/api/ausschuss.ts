@@ -12,7 +12,7 @@ export interface ListAusschussParams {
    */
   photoId?: number
   /**
-   * Nur automatisch entschiedene Stapel (Spec 0639). `false` wirkt wie weggelassen; zusammen mit
+   * Nur automatisch entschiedene Stapel. `false` wirkt wie weggelassen; zusammen mit
    * `photoId` antwortet der Server mit `422`.
    */
   autoDecided?: boolean
@@ -20,7 +20,7 @@ export interface ListAusschussParams {
 
 /**
  * Der Ausschuss-BESTAND dieses Projekts: offene Vorschläge und getroffene Entscheidungen in einer
- * Ansicht (Spec 0525).
+ * Ansicht.
  *
  * Die Reihenfolge kommt vom Server (`Photo.taken_at, Photo.id`) und wird hier nie nachsortiert —
  * eine zweite Sortierung im Client wäre eine zweite Fassung derselben Zusage.

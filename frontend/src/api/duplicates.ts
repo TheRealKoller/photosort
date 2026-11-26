@@ -18,7 +18,7 @@ export function getDuplicateGroupIndex(projectId: number): Promise<DuplicateGrou
 /**
  * Eine Duplikat-Gruppe, erreichbar über IRGENDEIN Mitglied.
  *
- * Die Gruppe ist abgeleitet und hat keine eigene Id (ADR 0104 Punkt 1): Der Server bildet sie zur
+ * Die Gruppe ist abgeleitet und hat keine eigene Id: Der Server bildet sie zur
  * Lesezeit als Stern über `duplicate_of`. Jedes Mitglied — der Gewinner eingeschlossen — führt
  * deshalb zur selben Antwort.
  *

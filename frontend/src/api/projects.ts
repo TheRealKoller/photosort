@@ -69,7 +69,7 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
  * der Aufrufer kennt ihre Reihenfolge nicht.
  *
  * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
- * ScoringRunSummary.id). `mode` waehlt seit Spec 0383 nur noch "wie im Projekt eingestellt"
+ * ScoringRunSummary.id). `mode` waehlt "wie im Projekt eingestellt"
  * (`project`) oder "nur lokal" (`local`) und hat KEINEN Vorgabewert. Den wirksamen Weg, die
  * Modelle und die Einwilligung entscheidet der Server aus der Projektwahl: ohne Einwilligung
  * wird der wirksame Cloud-Weg mit 403 abgewiesen, ein abgeschaltetes Eye ebenso, ein nicht
@@ -118,7 +118,7 @@ export function setSelectionTarget(id: number, target: number | null): Promise<P
 // deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
 
 /**
- * Katalog und gespeicherte Wahl des Projekts (Spec 0383) - die Quelle fuer den Abschnitt
+ * Katalog und gespeicherte Wahl des Projekts - die Quelle fuer den Abschnitt
  * "Modellwahl" in den Einstellungen und fuer die Kurzfassung an der Laufwahl.
  */
 export function getModelChoice(id: number): Promise<ModelChoiceOut> {

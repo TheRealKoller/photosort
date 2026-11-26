@@ -1,4 +1,4 @@
-// `queued` = angenommen, aber noch nicht begonnen (Spec 0641) - die Oberflaeche nennt ihn
+// `queued` = angenommen, aber noch nicht begonnen - die Oberflaeche nennt ihn
 // "wartet". `cancelled` = ohne Ergebnis beendet: weder Teilerfolg noch Fehler, nie ein Alert.
 export type ScanStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
 
@@ -39,7 +39,7 @@ export interface ScoringRunSummary {
 
 // Die Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
 //
-// 'eye' ist die Eye-Auswertung auf diesem Server (Spec 0609) und läuft VOR der Kriterien-Phase,
+// 'eye' ist die Eye-Auswertung auf diesem Server und läuft VOR der Kriterien-Phase,
 // damit Rangfolge, Events und Auswahlvorschlag desselben Laufs schon den wirksamen Vektor lesen -
 // obwohl sie in der Anzeige hinter 'remote_categories' steht. 'landmark' ist die
 // Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge) gehört fachlich zur
@@ -48,7 +48,7 @@ export type ClassificationPhase =
   'remote_categories' | 'eye' | 'criteria' | 'landmark' | 'ranking' | 'persons'
 
 /**
- * Die Wahl des Nutzers beim Auslösen (Spec 0383): "wie im Projekt eingestellt" oder "nur lokal".
+ * Die Wahl des Nutzers beim Auslösen: "wie im Projekt eingestellt" oder "nur lokal".
  * Der Name ist derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare
  * fuehren. Cloud und Eye sind seit 0383 keine Anfragewege mehr, sondern Ergebnisse der im Projekt
  * gespeicherten Wahl (`ClassificationPath`).
@@ -274,7 +274,7 @@ export interface ProjectOut {
 }
 
 /**
- * Ein Anteil der Kostenschätzung (Spec 0383): je Tätigkeit einer. `null` im umgebenden Typ heißt
+ * Ein Anteil der Kostenschätzung: je Tätigkeit einer. `null` im umgebenden Typ heißt
  * "dieser Anteil findet nicht statt" - unterscheidbar von "Betrag unbekannt" (`estimated_cost_usd:
  * null`). Eye-Kategorisierung ist `kind: 'eye'` mit `provider`/`model` `null` und Betrag `0.0`
  * ("kostenfrei", nicht "kein Preis hinterlegt").
@@ -306,7 +306,7 @@ export interface ClassificationEstimateOut {
 }
 
 /**
- * Die wirksame Wahl eines Projekts im Projekt-Datensatz (Spec 0383). Ohne `*_is_default`: die
+ * Die wirksame Wahl eines Projekts im Projekt-Datensatz. Ohne `*_is_default`: die
  * Herkunft ("Installationsvorgabe" vs. ausdrücklich gespeichert) braucht nur die
  * Einstellungsseite, und die liest `GET …/model-choice`.
  */
@@ -318,7 +318,7 @@ export interface ProjectModelChoiceOut {
   landmark_model: string
 }
 
-/** Ein wählbarer Katalogeintrag der Registry (Spec 0383). Fehlender Preis ist `null`, nie `0`. */
+/** Ein wählbarer Katalogeintrag der Registry. Fehlender Preis ist `null`, nie `0`. */
 export interface CloudModelOut {
   provider: string
   model: string
@@ -427,7 +427,7 @@ export interface SuggestionOut {
 }
 
 /**
- * Die Entscheidung des PROJEKTS über EINE Aufnahme des Ausschusses (ADR 0104).
+ * Die Entscheidung des PROJEKTS über EINE Aufnahme des Ausschusses.
  *
  * AUSDRÜCKLICH KEIN `RatingStatus`: Jenes ist die Albumentscheidung eines Nutzers. Hier steht die
  * andere Frage — ob die Aufnahme den Ausschuss-Schritt überlebt. Ein geteilter Wertevorrat machte
@@ -522,7 +522,7 @@ export interface DuplicateGroupIndexOut {
  * verschiedene Aussagen ueber dieselbe Aufnahme.
  *
  * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
- * die Auswertung des Überlebens-Prädikats (ADR 0111 Punkt 1): Diese Übersicht zeigt den
+ * die Auswertung des Überlebens-Prädikats: Diese Übersicht zeigt den
  * Sichtungsfortschritt, und ein unwirksames `keep` (Unschärfe-Ablehnung ohne Gruppe) bleibt als
  * gespeicherte Handlung sichtbar. `null` heißt „noch nicht entschieden" — der einzige der drei
  * Zustände, in dem es keinen Rückweg gibt, weil er noch nie verlassen wurde.
@@ -531,7 +531,7 @@ export interface DuplicateGroupIndexOut {
  * `null`. Die Detailansicht verweist darüber in die Vergleichsansicht.
  *
  * `keep_possible` ist die WIRKSAMKEIT des angebotenen „behalten" und kommt vom Server
- * (`duplicates.py::keep_possible_for`, Auflage S7). Aus `reason` ist sie **nicht** ableitbar: Ein
+ * (`duplicates.py::keep_possible_for`). Aus `reason` ist sie **nicht** ableitbar: Ein
  * Eintrag, dessen Entscheidungszeile einen Lauf überlebt hat, in dem `suggested_status` und
  * `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und trotzdem `true`. Eine zweite
  * Ableitung hier nähme dem Nutzer dort die einzige Handlung, die die Aufnahme zurückholt.
@@ -595,7 +595,7 @@ export interface AusschussOut {
   auto_decided_group_count: number
 }
 
-// Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich
+// Das Motivset. Die Menge ist fachlich
 // GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
 // aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier
 // gespiegelte Union wäre eine dauerhaft driftende zweite Liste. Ein unbekannter Schlüssel wird
@@ -641,7 +641,7 @@ export interface MotifAssessmentOut {
 }
 
 /**
- * Die Eye-Auswertung eines Fotos (Spec 0609). Gesetzt GENAU dann, wenn die Motiv-Kopfzeile
+ * Die Eye-Auswertung eines Fotos. Gesetzt GENAU dann, wenn die Motiv-Kopfzeile
  * `source === 'eye'` traegt - ein Schattensatz neben einer Cloud-Kopfzeile ist Vergleichsmaterial
  * fuer das CLI und wird hier NICHT angezeigt.
  *
@@ -683,7 +683,7 @@ export interface MotifCorrectionOut {
 }
 
 /**
- * Der geschriebene Zustand BEIDER Bewertungszeilen eines Austauschs (Spec 0432).
+ * Der geschriebene Zustand BEIDER Bewertungszeilen eines Austauschs.
  *
  * Beide, damit die Entwurfsansicht wie bisher in ihre bereits geladene Liste fortschreibt statt
  * neu zu laden — ein Neuladen risse die gerade getauschte Kachel aus der Liste.
@@ -1044,7 +1044,7 @@ export interface FaceOut {
  *
  * SICHERHEIT: `username` ist fremdbestimmter Text und wird ausschließlich als regulärer
  * React-Textknoten gerendert - nie über `dangerouslySetInnerHTML`, nie in `href`, `src` oder
- * `style`, nie in eine URL (Auflage S10).
+ * `style`, nie in eine URL.
  */
 export interface AlbumParticipantOut {
   user_id: number
@@ -1368,7 +1368,7 @@ export interface FeedbackDiagnosisOut {
 }
 
 /*
- * Die Klassifizierungspruefung (Spec 0616) - Feld fuer Feld aus dem Backend-Schema
+ * Die Klassifizierungspruefung - Feld fuer Feld aus dem Backend-Schema
  * (`api/classification_reviews.py`) abgeleitet, nicht aus der Oberflaeche erraten.
  */
 
