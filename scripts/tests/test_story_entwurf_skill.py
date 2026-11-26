@@ -778,7 +778,8 @@ def test_jeder_der_drei_katalogeintraege_nennt_den_skill_in_seiner_aufrufer_zeil
     Ohne diese Zeilen bliebe 'genau drei Operationen' eine Aussage, die nur der Skill selbst
     macht - und eine Erlaubnisstufe ohne benannte Aufrufer ist eine Gebrauchserlaubnis.
     """
-    block = katalogeintrag(dateitext(KATALOG_PFAD), f"### `{operation}`")
+    pfad = f".claude/skills/github-access/operationen/{operation}.md"
+    block = katalogeintrag(dateitext(pfad), f"## `{operation}`")
 
     assert KATALOGEINTRAG_MINDESTLAENGE <= len(block) <= KATALOGEINTRAG_HOECHSTLAENGE, (
         f"Der Eintrag `{operation}` wurde mit {len(block)} Zeichen gelesen. Entweder ist die "

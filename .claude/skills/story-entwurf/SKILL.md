@@ -22,10 +22,10 @@ den er zuletzt selbst geschrieben hat; dieser Body tritt an die Stelle der Lesun
 und ist der Vergleichsstand jeder Drift-Prüfung dieses Laufs (M-S12). Beim eigenständigen Aufruf
 läuft der Ablauf unverändert ab Schritt 0.
 
-**Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade ihn einmal über
-das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (das ist Schritt 0), und arbeite danach
-mit dem geladenen Katalog. Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik
-drumherum.
+**Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade an deinem
+ersten GitHub-Berührungspunkt (das ist Schritt 0) seine `SKILL.md` über das Skill-Werkzeug und vor
+jeder Operation deren Datei `operationen/<ID>.md` — nur die Operationen, die dein Lauf ausführt.
+Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 
 **Dieser Ablauf beginnt keine Umsetzung.** Die Story behält ihren Status `Ready`; es wird kein
 Board-Wert geschrieben, kein Titel geändert und kein Issue geschlossen.

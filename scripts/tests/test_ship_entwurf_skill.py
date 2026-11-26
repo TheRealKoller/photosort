@@ -276,9 +276,9 @@ _CODEBLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 # Ausnahme - die Vorlage kennt sie ausdruecklich. Zwei normative Texte, die einander
 # widersprechen, sind schlimmer als einer, der schweigt: Zur Laufzeit waehlt der Ablauf sonst
 # selbst, welchem er folgt.
-KATALOG_PFAD = ".claude/skills/github-access/SKILL.md"
+KATALOG_PFAD = ".claude/skills/github-access/operationen/pr-erstellen.md"
 PR_VORLAGE_PFAD = ".github/pull_request_template.md"
-PR_ERSTELLEN_KOPF = "### `pr-erstellen`"
+PR_ERSTELLEN_KOPF = "## `pr-erstellen`"
 
 # Woertlich die Formulierung der Vorlage - abgeschrieben wird sie in den Katalog, nicht
 # umgekehrt: Die Vorlage ist der Text, den GitHub tatsaechlich in den Body legt.

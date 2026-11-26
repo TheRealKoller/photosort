@@ -82,7 +82,7 @@ ENTFALLENE_LABEL = frozenset({"idee", "feature", "needs-spec"})
 # Der Name ohne jede legitime Nennung im Suchraum - als einziger frei suchbar.
 FREIES_WORT = "needs-spec"
 
-KATALOG = ".claude/skills/github-access/SKILL.md"
+KATALOG = ".claude/skills/github-access/operationen/issue-anlegen.md"
 CAPTURE = ".claude/skills/capture/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 BUG_VORLAGE = ".github/ISSUE_TEMPLATE/bug_report.yml"
@@ -131,7 +131,7 @@ _TRENNER = re.compile(r"[|,]")
 # Wert - `"feature"`, `` `idee` ``, `<bug>` und `["bug"]` meinen alle den blanken Namen.
 _RANDZEICHEN = "\"'`<>[] \t"
 
-_EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
+_EINTRAG_KOPF = re.compile(r"^#{2,6} `(?P<id>[^`\n]+)`", re.MULTILINE)
 _ABSCHNITT = re.compile(r"^## ", re.MULTILINE)
 
 

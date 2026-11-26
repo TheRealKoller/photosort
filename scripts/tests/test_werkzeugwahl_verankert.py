@@ -68,8 +68,8 @@ zwei Absaetze zerrissenen Satz weiterhin als vorhanden. Am Bestand ergeben beide
 dieselben Treffer (nachgerechnet) - die absatzweise ist also gratis strenger.
 
 **Blockgebunden statt dateiweit, und das ist sicherheitsrelevant.**
-`mit dem Schreib-Werkzeug angelegt` kommt in `github-access/SKILL.md` **zweimal** vor: einmal in
-4.1 und einmal in der Operation `issue-body-schreiben`. Ueber die ganze Datei gesucht bliebe die
+`mit dem Schreib-Werkzeug angelegt` kommt im Katalog **zweimal** vor: einmal in 4.1 dieser Datei
+und einmal in der Operationsdatei `issue-body-schreiben`. Ueber die ganze Datei gesucht bliebe die
 Zusicherung gruen, **wenn der gesamte 4.1-Block geloescht wuerde** - ein Waechter, der die
 Loeschung der Regel, die er bewacht, nicht bemerkt, ist ein Scheintest. Gesucht wird deshalb
 ausschliesslich ueber dem Block zwischen den Zeilenanfaengen `**4.1 ` und `**4.2 `.

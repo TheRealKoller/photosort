@@ -12,7 +12,8 @@ import re
 
 from waechter import Befund, Bestand, Invariante, befund, codebloecke
 
-KATALOG = ".claude/skills/github-access/SKILL.md"
+WARTEN_PFAD = ".claude/skills/github-access/operationen/pr-pruefstand-abwarten.md"
+LESEN_PFAD = ".claude/skills/github-access/operationen/pr-pruefstand-lesen.md"
 WARTEN = "pr-pruefstand-abwarten"
 LESEN = "pr-pruefstand-lesen"
 FELDAUSWAHL = "bucket,name,state,workflow"
@@ -47,12 +48,12 @@ def _zeile(text: str, ausschnitt: str) -> int:
 
 
 def _abschnitt(text: str, kennung: str) -> str:
-    """Der Katalogabschnitt `### \\`<kennung>\\`` bis zur naechsten Ueberschrift derselben Ebene."""
-    beginn = text.find(f"### `{kennung}`")
+    """Der Abschnitt `## \\`<kennung>\\`` bis zur naechsten Ueberschrift derselben Ebene."""
+    beginn = text.find(f"## `{kennung}`")
     if beginn == -1:
         return ""
     rest = text[beginn:]
-    ende = rest.find("\n### ", 1)
+    ende = rest.find("\n## ", 1)
     return rest if ende == -1 else rest[:ende]
 
 
@@ -66,33 +67,35 @@ def _befehle(abschnitt: str) -> list[str]:
 
 
 def _warten(bestand: Bestand) -> list[Befund]:
-    if KATALOG not in bestand:
+    fehlend = [pfad for pfad in (WARTEN_PFAD, LESEN_PFAD) if pfad not in bestand]
+    if fehlend:
         return [
             Befund(
                 ort="Bestand",
                 invariante="pruefstand-blockierend",
-                text=f"{KATALOG} fehlt - der Wartepunkt waere nicht pruefbar.",
+                text=f"{', '.join(fehlend)} fehlt - der Wartepunkt waere nicht pruefbar.",
             )
         ]
-    text = bestand[KATALOG]
+    warten_text = bestand[WARTEN_PFAD]
+    lese_text = bestand[LESEN_PFAD]
     befunde: list[Befund] = []
-    block = _abschnitt(text, WARTEN)
+    block = _abschnitt(warten_text, WARTEN)
     zeilen = [zeile for zeile in _befehle(block) if "--watch" in zeile]
     if len(zeilen) != 1:
         return [
             befund(
-                KATALOG,
-                _zeile(text, block),
+                WARTEN_PFAD,
+                _zeile(warten_text, block),
                 "pruefstand-blockierend",
                 f"{len(zeilen)} blockierende Wartebefehle in `{WARTEN}` - erwartet genau einer.",
             )
         ]
     wartezeile = zeilen[0]
-    ort = _zeile(text, wartezeile)
+    ort = _zeile(warten_text, wartezeile)
     if not _ENDLICH.match(wartezeile):
         befunde.append(
             befund(
-                KATALOG,
+                WARTEN_PFAD,
                 ort,
                 "pruefstand-blockierend",
                 f"kein endliches `timeout` vor dem Wartebefehl: {wartezeile!r}.",
@@ -101,7 +104,7 @@ def _warten(bestand: Bestand) -> list[Befund]:
     if "--required" in wartezeile:
         befunde.append(
             befund(
-                KATALOG,
+                WARTEN_PFAD,
                 ort,
                 "pruefstand-blockierend",
                 "`--required` filtert auf erforderliche Checks, solange keine eingetragen sind.",
@@ -110,31 +113,31 @@ def _warten(bestand: Bestand) -> list[Befund]:
     if "|" in wartezeile:
         befunde.append(
             befund(
-                KATALOG,
+                WARTEN_PFAD,
                 ort,
                 "pruefstand-blockierend",
                 f"der Wartebefehl laeuft durch eine Pipe: {wartezeile!r}.",
             )
         )
 
-    lesezeilen = _befehle(_abschnitt(text, LESEN))
+    lesezeilen = _befehle(_abschnitt(lese_text, LESEN))
     if len(lesezeilen) != 1:
         befunde.append(
             befund(
-                KATALOG,
-                _zeile(text, f"### `{LESEN}`"),
+                LESEN_PFAD,
+                _zeile(lese_text, f"## `{LESEN}`"),
                 "pruefstand-blockierend",
                 f"{len(lesezeilen)} lesende Befehle in `{LESEN}` - erwartet genau einer.",
             )
         )
         return befunde
-    leseort = _zeile(text, lesezeilen[0])
+    leseort = _zeile(lese_text, lesezeilen[0])
     treffer = _JSON.search(lesezeilen[0])
     wert = treffer.group("wert") if treffer else ""
     if wert != FELDAUSWAHL:
         befunde.append(
             befund(
-                KATALOG,
+                LESEN_PFAD,
                 leseort,
                 "pruefstand-blockierend",
                 f"die Feldauswahl der Lesezeile ist {wert!r} statt {FELDAUSWAHL!r}.",
@@ -143,7 +146,7 @@ def _warten(bestand: Bestand) -> list[Befund]:
     if "|" in lesezeilen[0]:
         befunde.append(
             befund(
-                KATALOG,
+                LESEN_PFAD,
                 leseort,
                 "pruefstand-blockierend",
                 f"der lesende Befehl laeuft durch eine Pipe: {lesezeilen[0]!r}.",
