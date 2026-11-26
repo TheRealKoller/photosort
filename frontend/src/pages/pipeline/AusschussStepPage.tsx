@@ -46,7 +46,7 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
 // dieselbe Annaeherung wie in der Fotoliste, keine harte Vorgabe.
 const SKELETON_TILE_COUNT = 6
 
-/** Der leere Bestand - dauerhaft sichtbar statt als fluechtiger Hinweis (AK14). Er deckt beide
+/** Der leere Bestand - dauerhaft sichtbar statt als fluechtiger Hinweis. Er deckt beide
  * Faelle ab, in denen nichts zu sichten ist: Der Lauf hat keinen Ausschuss gefunden, oder es gibt
  * noch gar keinen erfolgreichen Lauf mit Vorschlaegen. */
 export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit nichts zu sichten.'
@@ -54,7 +54,7 @@ export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit
 /** Der benannte Zustand der Detailansicht, wenn die Aufnahme nicht (mehr) im Bestand liegt: Die
  * Antwort des `photo_id`-Filters ist leer, weil ein neuer Lauf die Entscheidung aufgeloest hat -
  * kein Fehler, sondern ein definierter Zustand mit Rueckweg. */
-/** Der eigene Leertext der gefilterten Ansicht (Spec 0639): Der allgemeine Leertext erscheint
+/** Der eigene Leertext der gefilterten Ansicht: Der allgemeine Leertext erscheint
  * dann NICHT zusätzlich — zwei getrennte Leerzustände, nie zugleich. */
 export const AUSSCHUSS_AUTO_EMPTY_TEXT = 'Keine automatisch entschiedenen Gruppen.'
 
@@ -65,7 +65,7 @@ const AUSSCHUSS_AUTO_FILTER_TEXT = 'Nur automatisch entschiedene Gruppen'
 export const AUSSCHUSS_MISSING_ENTRY_TEXT =
   'Diese Aufnahme gehört nicht mehr zum Ausschuss. Möglicherweise hat ein neuer Lauf sie aufgelöst.'
 
-/** Die Entscheidungszeile eines noch offenen Eintrags (AK14/AK4): Die Zeile trennt den GRUND der
+/** Die Entscheidungszeile eines noch offenen Eintrags: Die Zeile trennt den GRUND der
  * Markierung von der getroffenen ENTSCHEIDUNG. */
 export const AUSSCHUSS_OPEN_LABEL = 'Vorgeschlagen'
 
@@ -78,7 +78,7 @@ const ENTSCHEIDUNG_SCHRIFT: Record<DuplicateDecision | 'offen', string> = {
 }
 
 /** Der gespeicherte Zeilenwert als Wort. `null` heisst "noch nicht entschieden" - es gibt keine
- * Ruecknahme, und die Ansicht bietet deshalb auch keine an (ADR 0111). */
+ * Ruecknahme, und die Ansicht bietet deshalb auch keine an. */
 function entscheidungswort(decision: DuplicateDecision | null): string {
   return decision === null ? AUSSCHUSS_OPEN_LABEL : DUPLICATE_ZUSTAENDE[decision].text
 }
@@ -118,20 +118,17 @@ function parsePhotoParam(raw: string | null): number | null {
 }
 
 /**
- * Der Ausschuss-Schritt: Erkennung, Uebersicht und Abschluss an EINER Stelle (Spec 0525).
+ * Der Ausschuss-Schritt: Erkennung, Uebersicht und Abschluss an EINER Stelle.
  *
- * ZWEI EINSTIEGE WAREN GESTERN, EINER IST HEUTE: Der Schritt stoesst das Aussortieren an und
- * fuehrt danach unmittelbar in die Uebersicht seiner eigenen Bilder (AK2) - die Uebersicht ist
- * eine eigene Ansicht und kein Filter der Fotoliste (AK3). Der frueher eigene Ausschuss-Gate-
- * Schritt ist mit der Zusammenlegung entfallen: Erkennung und Sichtung sind eine Einheit, und die
- * Bestaetigung gibt den naechsten Schritt frei (AK13).
+ * EIN EINSTIEG: Der Schritt stoesst das Aussortieren an und fuehrt danach unmittelbar in die
+ * Uebersicht seiner eigenen Bilder - die Uebersicht ist eine eigene Ansicht und kein Filter der
+ * Fotoliste. Die Bestaetigung gibt den naechsten Schritt frei.
  *
- * DIE DETAILANSICHT IST DIESELBE SEITE, kein Dialog und keine zweite Route (AK5/AK8): Sie haengt
+ * DIE DETAILANSICHT IST DIESELBE SEITE, kein Dialog und keine zweite Route: Sie haengt
  * am `?photo=<id>`-Parameter der Schritt-Route, damit ein Deep-Link auf eine Aufnahme teilbar und
  * der Browser-Zurueck-Knopf der Weg zurueck in die Uebersicht ist.
  *
- * DER TRIGGER BLEIBT BEWUSST UNGEGATET: Er war nie an `last_scan.status` gekoppelt, und die
- * Zusammenlegung fuehrt hier kein neues Gate ein.
+ * DER TRIGGER IST NICHT AN `last_scan.status` GEKOPPELT.
  */
 export function AusschussStepPage() {
   const { project, refetchProject } = useOutletContext<PipelineOutletContext>()
@@ -143,7 +140,7 @@ export function AusschussStepPage() {
 
   const scoringRun = project.last_scoring_run ?? null
   const scoringStatus = scoringRun?.status ?? null
-  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
+  // Der Abbruch adressiert GENAU diesen Lauf.
   const scoringRunId = scoringRun?.id ?? null
   const isCancelRequested = scoringRun?.cancel_requested_at != null
   const scoringStartedAt = scoringRun?.started_at ?? null
@@ -174,7 +171,7 @@ export function AusschussStepPage() {
   const total = ausschussQuery.data?.pages[0]?.total ?? 0
   // `null`, solange der Bestand nicht geladen ist - die Abschluss-Aktion steht dann ohne Anzahl.
   const openCount = ausschussQuery.data?.pages[0]?.open_count ?? null
-  // Projektweit und damit auch in der gefilterten Ansicht dieselbe Zahl (Architektur).
+  // Projektweit und damit auch in der gefilterten Ansicht dieselbe Zahl.
   const autoDecidedGroupCount = ausschussQuery.data?.pages[0]?.auto_decided_group_count ?? null
 
   const tiles = useMemo(() => {
@@ -522,7 +519,7 @@ export function AusschussStepPage() {
         action={action}
         status={
           <>
-            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+            {/* „wartet" traegt keinen Statuspunkt - es laeuft noch nichts. Nach dem
                 Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
             <StatusDot
               status={
@@ -549,7 +546,7 @@ export function AusschussStepPage() {
               )}
             </div>
           ) : scoringStatus === 'cancelled' && photosTotal > 0 ? (
-            // Eingefrorener Stand, keine Restdauer (Spec 0641).
+            // Eingefrorener Stand, keine Restdauer.
             <div className="flex w-full max-w-sm flex-col gap-2">
               <p className="text-sm text-text">
                 {cancelledAtText(photosProcessed, photosTotal, 'Fotos')}
@@ -572,7 +569,7 @@ export function AusschussStepPage() {
 
 /**
  * Die Detailansicht: Grossbild und Entscheidungszeile, beim Gruppenmitglied dazu der Weg in die
- * Vergleichsansicht (A10). Die Gruppe selbst wird hier nicht geladen - sie wird dort entschieden.
+ * Vergleichsansicht. Die Gruppe selbst wird hier nicht geladen - sie wird dort entschieden.
  *
  * `Esc` schliesst nur, solange diese Ansicht ueberhaupt offen ist - das erledigt die Komponente
  * selbst statt der Seite, weil sie genau dann montiert ist.
@@ -635,13 +632,13 @@ function AusschussDetail({
   }
 
   /* „Aufheben" gibt es nur, wo es etwas bewirkt: Bei einer Ablehnung wegen geringer Bildqualitaet
-     gibt es keine Gruppe, und kein Wert der Entscheidungszeile aendert den Zustand dieser
-     Aufnahme. Die Anzeige bietet den Wert deshalb nicht an - der Server weist ihn trotzdem NICHT
-     ab (Auflage S4 der Spec 0486 bleibt unveraendert in Kraft). Die Bedingung ist der SERVERWERT
-     `keep_possible` (`duplicates.py::keep_possible_for`, Auflage S7) - NICHT eine Ableitung aus
-     `reason`: Traegt der Eintrag eine Entscheidungszeile, die einen Lauf ueberlebt hat, in dem
-     `suggested_status` und `duplicate_of` zurueckgesetzt wurden, ist der Grund `low_quality` und
-     "behalten" wirkt trotzdem. */
+    gibt es keine Gruppe, und kein Wert der Entscheidungszeile aendert den Zustand dieser
+    Aufnahme. Die Anzeige bietet den Wert deshalb nicht an - der Server weist ihn trotzdem NICHT
+    ab. Die Bedingung ist der SERVERWERT
+    `keep_possible` (`duplicates.py::keep_possible_for`) - NICHT eine Ableitung aus
+    `reason`: Traegt der Eintrag eine Entscheidungszeile, die einen Lauf ueberlebt hat, in dem
+    `suggested_status` und `duplicate_of` zurueckgesetzt wurden, ist der Grund `low_quality` und
+    "behalten" wirkt trotzdem. */
   const keepPossible = eintrag.keep_possible
 
   return (

@@ -11,7 +11,7 @@ import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
 
-/** Spec 0641: Der Abbruch VOR dem ersten Foto hat keinen Zielpfad - und nichts zu benennen. */
+/** Der Abbruch VOR dem ersten Foto hat keinen Zielpfad - und nichts zu benennen. */
 export const EXPORT_CANCELLED_BEFORE_START_TEXT =
   'Export abgebrochen, bevor ein Foto kopiert wurde.'
 
@@ -23,9 +23,8 @@ export const EXPORT_FOLDER_STAYS_TEXT =
   'Der Ordner bleibt bestehen — PhotoSort löscht ihn nicht. Bei Bedarf in OpenCloud von Hand entfernen.'
 
 /**
- * Der Auslöser des Exports in der Ergebnissicht der Endauswahl - die drei Antworten der Story an
- * derselben Stelle: Anzahl vorher, Laufzustand währenddessen, Bestätigung danach (Spec 0263,
- * Abschnitt UI/UX).
+ * Der Auslöser des Exports in der Ergebnissicht der Endauswahl: Anzahl vorher, Laufzustand
+ * währenddessen, Bestätigung danach.
  *
  * Kein haftender Balken, kein Bestätigungsdialog: Der Export ist nicht destruktiv und jederzeit
  * wiederholbar; die sichtbare Anzahl ist der Schutz. Der Auslöser bleibt im Lauf DEAKTIVIERT, nicht
@@ -41,7 +40,7 @@ export function ExportSection({ projectId }: { projectId: number }) {
   const runStatus = lastRun?.status ?? null
   const isTriggerPending = trigger.isPending || awaiting
   const isBusy = isTriggerPending || runStatus === 'running' || runStatus === 'queued'
-  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
+  // Der Abbruch adressiert GENAU diesen Lauf.
   const isCancelRequested = lastRun?.cancel_requested_at != null
   const isCancelled = runStatus === 'cancelled'
   const statusRef = useCancelRequestFocus<HTMLDivElement>(cancelMutation.data ?? null)

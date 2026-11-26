@@ -1,12 +1,12 @@
 /**
- * Die Namensnennung des Eye-Modells (Spec 0609, S12) - an der VERWENDUNGSSTELLE, nicht in einer
- * Fußzeile: unter der Eye-Zeile der Laufwahl, unter der Grundlagenzeile bei `source === 'eye'`
- * und unter dem Eye-Band der Fotoansicht.
+ * Die Namensnennung des Eye-Modells - an der VERWENDUNGSSTELLE, nicht in einer Fußzeile: unter der
+ * Eye-Zeile der Laufwahl, unter der Grundlagenzeile bei `source === 'eye'` und unter dem Eye-Band
+ * der Fotoansicht.
  *
- * Form der GeoNames-Nennung (`ProjectListPage`): `text-xs text-text-muted`, fremder Link mit
- * fester `https`-Adresse, `rel="noopener noreferrer"` und `target="_blank"`. Nicht aufklappbar,
- * nicht ausblendbar, kein `localStorage`-Flag - die Lizenz des Modells verlangt die sichtbare
- * Nennung, und ein "schon gesehen"-Speicher wäre genau ihr Abschalten.
+ * Form: `text-xs text-text-muted`, fremder Link mit fester `https`-Adresse,
+ * `rel="noopener noreferrer"` und `target="_blank"`. Nicht aufklappbar, nicht ausblendbar, kein
+ * `localStorage`-Flag - die Lizenz des Modells verlangt die sichtbare Nennung, und ein "schon
+ * gesehen"-Speicher wäre genau ihr Abschalten.
  */
 export function EyeAttribution() {
   return (

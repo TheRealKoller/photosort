@@ -63,7 +63,7 @@ function firstOpenPosition(cases: readonly ClassificationReviewCaseOut[]): numbe
 }
 
 /**
- * Seite 2 der Klassifizierungspruefung (Spec 0616, UI/UX): Kopf mit beiden Herkuenften, die
+ * Seite 2 der Klassifizierungspruefung: Kopf mit beiden Herkuenften, die
  * Fallansicht EINES Fotos, die Uebersicht und der Export.
  *
  * Das Foto der Fallansicht steht in `?foto=<Position>` - die laufende Nummer der Pruefmenge, die
@@ -81,7 +81,7 @@ export function ClassificationReviewDetailPage() {
   const review = reviewQuery.data
   // Waehrend des Laufs gibt es noch keine Faelle; eine fehlgeschlagene Pruefung zeigt die bis
   // dahin geschriebenen (gesperrt).
-  // Ein WARTENDER Lauf (queued) hat ebenfalls noch keine Faelle (Spec 0641).
+  // Ein WARTENDER Lauf (queued) hat ebenfalls noch keine Faelle.
   const casesQuery = useClassificationReviewCasesQuery(
     projectId,
     reviewId,
@@ -92,7 +92,7 @@ export function ClassificationReviewDetailPage() {
   const exportMutation = useExportClassificationReviewMutation(projectId, reviewId)
   const cancelMutation = useCancelOperation(projectId)
 
-  // Spec 0641: Der Abbruch adressiert GENAU diese Pruefung.
+  // Der Abbruch adressiert GENAU diese Pruefung.
   function handleCancelReview(): void {
     cancelMutation.mutate({ kind: 'review', runId: reviewId })
   }
@@ -436,8 +436,8 @@ function ReviewStand({
 }) {
   const open = review.verdict_counts.open
   // "stimmen auf allen Fotos ueberein" ist eine Aussage UEBER verglichene Fotos. Ohne ein einziges
-  // verglichenes Foto ist sie falsch, auch wenn kein Fall vorgelegt wurde (Edge Case 4) - dann
-  // nennt der Kopf stattdessen die Zahl der fehlgeschlagenen Fotos (AK 9).
+  // verglichenes Foto ist sie falsch, auch wenn kein Fall vorgelegt wurde - dann
+  // nennt der Kopf stattdessen die Zahl der fehlgeschlagenen Fotos.
   const compared = Object.values(review.counts_by_purpose).reduce(
     (sum, counts) => sum + counts.compared,
     0,

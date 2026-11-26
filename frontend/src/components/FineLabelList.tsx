@@ -4,7 +4,7 @@ import { Badge } from './ui/badge'
 interface FineLabelListProps {
   /** Bis zu zwei frei formulierte Feinlabels - reine Zusatzinformation am Foto, kein Motiv.
    *
-   * SICHERHEIT (S1/S5): `display_name` und `raw_label` sind freier, extern erzeugter LLM-Text.
+   * SICHERHEIT: `display_name` und `raw_label` sind freier, extern erzeugter LLM-Text.
    * Ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als
    * HTML-String-Prop, nie in `href`/`src`/`style`, nie in einem `url()`-Kontext, nie als
    * React-`key`. Das Session-Token liegt in `localStorage`; ein eingeschleustes Skript liest es
@@ -20,7 +20,7 @@ interface FineLabelListProps {
  * OHNE FEINLABELS ENTFÄLLT DER BEREICH ERSATZLOS: kein Platzhalter, keine leere Liste, keine
  * Überschrift. Die Überschrift trägt die jeweilige Aufrufstelle, nicht dieser Baustein.
  *
- * S3 — DER SCHLÜSSEL KOMMT AUS `canonical_key`, nie aus dem Anzeigenamen. Gleichnamigkeit ist der
+ * DER SCHLÜSSEL KOMMT AUS `canonical_key`, nie aus dem Anzeigenamen. Gleichnamigkeit ist der
  * Normalfall; ein aus dem Text gebildeter Schlüssel brächte die Listenabgleichung von React
  * durcheinander.
  */

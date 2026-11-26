@@ -68,11 +68,10 @@ export function PhotoCaptureFacts({
           ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
           : photo.camera.label}
       </p>
-      {/* DER ORT - Name und Ortsname, OHNE Zeitspanne: die Aufnahmezeit steht direkt darueber,
-          und eine zweite Zeitangabe daneben waere eine Wiederholung. Ohne Ortsangabe steht der
-          Satz statt einer Luecke.
+      {/* DER ORT - Name und Ortsname; die Aufnahmezeit steht direkt darueber, eine zweite
+          Zeitangabe waere eine Wiederholung. Ohne Ortsangabe steht der Satz statt einer Luecke.
 
-          S2 - RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
+          RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
           `place_name` (Ortsdatensatz Dritter), in EINEM Wert, den `eventPlaceName` bildet. Reiner
           React-Textknoten, nie `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`. Bricht in
           `PhotoDetailPage.completeness.test.tsx > rendert einen feindlich belegten Ortsnamen aus $name als

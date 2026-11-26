@@ -94,7 +94,7 @@ function ValidProjectOverviewHost({
 
   return (
     <ProjectOverviewContext.Provider value={controls}>
-      {/* Spec 0641: Die Leiste steht auf JEDER Projektseite oben - Pipeline, Kuratierung,
+      {/* Die Leiste steht auf JEDER Projektseite oben - Pipeline, Kuratierung,
           Endauswahl und Pruefungen. Sie rendert sich selbst weg, solange nichts laeuft oder
           wartet. */}
       <ProjectOperationsBar projectId={projectId} />

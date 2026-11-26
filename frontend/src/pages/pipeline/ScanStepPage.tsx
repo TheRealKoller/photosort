@@ -30,7 +30,7 @@ export function ScanStepPage() {
   const cancelMutation = useCancelOperation(project.id)
 
   const scanStatus = project.last_scan?.status ?? null
-  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf - die id kommt aus der Zusammenfassung.
+  // Der Abbruch adressiert GENAU diesen Lauf - die id kommt aus der Zusammenfassung.
   const scanRunId = project.last_scan?.id ?? null
   const isCancelRequested = project.last_scan?.cancel_requested_at != null
   const scanStartedAt = project.last_scan?.started_at ?? null
@@ -102,7 +102,7 @@ export function ScanStepPage() {
       statusText = 'Erfolgreich'
   }
 
-  // „abgebrochen" friert den Fortschritt ein (Spec 0641): letzter Stand, kein Ruecksetzen auf 0,
+  // „abgebrochen" friert den Fortschritt ein: letzter Stand, kein Ruecksetzen auf 0,
   // keine Restdauer. Beim Warten gibt es noch nichts zu zeigen.
   let detail: ReactNode = null
   if (isScanEnumerating || isScanProcessing) {
@@ -205,7 +205,7 @@ export function ScanStepPage() {
         action={action}
         status={
           <>
-            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+            {/* „wartet" traegt keinen Statuspunkt - es laeuft noch nichts. Nach dem
                 Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
             <StatusDot
               status={

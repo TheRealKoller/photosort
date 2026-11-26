@@ -15,24 +15,23 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 /*
  * Vollstaendig ausgeschriebene Klassennamen je Ton/Variante (kein Zusammenbauen per
- * Template-String) - Tailwind erkennt Utility-Klassen nur als statische, vollstaendige Strings im
- * Quellcode; dynamisch zusammengesetzte Klassennamen wie `bg-${color}` wuerden vom Production-
- * Build-Scan uebersehen und fielen im gebauten CSS ganz weg. Statisch erzwungen in
- * src/designSystem.*.contract.test.ts.
+ * Template-String): Tailwind erkennt Utility-Klassen nur als statische, vollstaendige Strings im
+ * Quellcode; `bg-${color}` uebersaehe der Production-Build-Scan und die Klasse fiele im gebauten
+ * CSS weg. Statisch erzwungen in src/designSystem.*.contract.test.ts.
  *
  * SOLID: Board-Bewertungs-Badge - voll gefuellte Flaeche mit DUNKLER TINTE. Jeder Bewertungston
- * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen zwar alle denselben
- * Wert, bleiben aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt,
- * ist eine Eigenschaft dieser konkreten Palette und keine Regel - ein Ton-Wechsel wuerde die
- * Kopplung sonst still brechen.
+ * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); die drei bleiben getrennte
+ * Tokens, obwohl sie denselben Wert tragen: dass eine gemeinsame Tinte auf allen drei Toenen
+ * haelt, ist eine Eigenschaft dieser Palette und keine Regel - ein Ton-Wechsel braeche die
+ * Kopplung sonst still.
  *
  * SUGGESTED: die TOAST-KONSTRUKTION des Boards (Flaeche `--elevated`, farbiger 1px-Rand, farbige
- * Beschriftung). KEINE Deckkraft-Flaeche wie `bg-rating-<ton>` mit 10 % plus `text-text-h`: ueber
- * einer Deckkraft-Tinte ist Kontrast statisch nicht rechenbar und bliebe dauerhaft ungeprueft.
- * Auf `--elevated` faellt jedes Paar in die Kontrastmatrix.
+ * Beschriftung). KEINE Deckkraft-Flaeche wie `bg-rating-<ton>` mit 10 % plus `text-text-h`:
+ * ueber einer Deckkraft-Tinte ist Kontrast statisch nicht rechenbar und bliebe dauerhaft
+ * ungeprueft; auf `--elevated` faellt jedes Paar in die Kontrastmatrix.
  *
  * `rejected` traegt als Beschriftung `--danger-text` statt `--rating-rejected`: der Board-Ton
- * erreicht auf der erhoehten Flaeche nur 4.46:1 und haelt als Fliesstext kein AA.
+ * haelt auf der erhoehten Flaeche als Fliesstext kein AA.
  */
 const TONE_CLASSES: Record<Exclude<BadgeTone, 'neutral'>, { solid: string; suggested: string }> = {
   favorite: {
@@ -74,8 +73,8 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
       data-badge-tone={tone}
       data-badge-variant={variant}
       // Radius 6px, keine Pillenform (Board-Formsprache: die einzige Pillenform ist der
-      // Kategorie-Chip mit 16px). Der Formunterschied 6px <-> 16px ist eine der drei
-      // Gegenmassnahmen zur Farbnaehe zwischen Bewertungs- und Kategoriefarben.
+      // Kategorie-Chip mit 16px). Der Formunterschied 6px <-> 16px haelt Bewertungs- und
+      // Kategoriefarben zusaetzlich auseinander.
       className={cn(
         'inline-flex h-6 min-w-6 items-center justify-center gap-1 rounded-sm px-2 text-xs font-semibold',
         TONE_CLASSES[tone][variant],

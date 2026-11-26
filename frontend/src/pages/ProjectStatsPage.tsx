@@ -29,7 +29,7 @@ import {
  * Ist-Kosten der Remote-Berechnungen, Bearbeitungs- und Bewertungsstand, Kategorienverteilung,
  * Diagnose.
  *
- * Reine Anzeige (Akzeptanzkriterium A3): keine Foto-Vorschauen, keine Bewertungs- oder
+ * Reine Anzeige: keine Foto-Vorschauen, keine Bewertungs- oder
  * Kategorie-Bedienelemente, keine Ausloeser fuer Verarbeitungslaeufe, keine Filter-, Sortier- oder
  * Export-Bedienelemente. Die Daten werden einmal beim Oeffnen geladen und aktualisieren sich nicht
  * selbsttaetig (siehe `useProjectStatsQuery`: kein Polling).
@@ -39,12 +39,12 @@ import {
  * einer Kachelwand ("Chrome tritt zurueck", Design-System).
  *
  * Bewusst OHNE `useProjectQuery` fuer den Projektnamen: dieser Hook pollt, solange irgendein Lauf
- * aktiv ist - er wuerde der Seite genau die selbsttaetige Aktualisierung geben, die
- * Akzeptanzkriterium A3 ausschliesst. Den Projektkontext liefert der Sticky-Header.
+ * aktiv ist - er wuerde der Seite genau die selbsttaetige Aktualisierung geben, die diese Seite
+ * ausschliesst. Den Projektkontext liefert der Sticky-Header.
  */
 
 /**
- * Erlaeuterung unmittelbar bei der Kennzahl (Akzeptanzkriterium A2) - das im Projekt etablierte
+ * Erlaeuterung unmittelbar bei der Kennzahl - das im Projekt etablierte
  * Info-Popover-Muster (Radix, Klick-Ausloeser, 44x44px Trefferflaeche). Bewusst KEIN
  * `title`-Attribut: auf Touchgeraeten unzuverlaessig ausloesbar.
  */
@@ -82,7 +82,7 @@ const PURPOSE_LABELS: Record<CloudVisionPurpose, string> = {
 }
 
 /**
- * Die Beschriftung der KOSTENPOSTEN (Spec 0616): die beiden Cloud-Zwecke plus der Posten der
+ * Die Beschriftung der KOSTENPOSTEN: die beiden Cloud-Zwecke plus der Posten der
  * Klassifizierungspruefung. `PURPOSE_LABELS` bleibt auf die beiden Cloud-Zwecke verengt - es
  * beschriftet auch die Fehlschlag-Zeilen je Cloud-Zweck, wo `review` nie vorkommt.
  */
@@ -92,14 +92,14 @@ const COST_PURPOSE_LABELS: Record<StatsCostPurpose, string> = {
 }
 
 /**
- * Hinweis samt Erlaeuterung, beides im Wortlaut des UI/UX-Abschnitts der Spec. Bewusst dezent und
+ * Hinweis samt Erlaeuterung. Bewusst dezent und
  * ohne Fehler-Rot: eine unvollstaendig erfasste Summe ist kein Fehler, sondern eine Einschraenkung
  * der Aussage.
  *
- * Die Erlaeuterung steht als Beschreibungstext direkt darunter statt in einem Info-Popover
- * (Akzeptanzkriterium A2 laesst beides zu): sie erscheint ohnehin nur im Ausnahmefall, und auf
- * einer Seite zur Kostenkontrolle soll der Vorbehalt nicht erst auf Klick sichtbar werden. Ein
- * Popover je Zweck brauchte zudem zwei Ausloeser mit identischem Text.
+ * Die Erlaeuterung steht als Beschreibungstext direkt darunter statt in einem Info-Popover:
+ * sie erscheint ohnehin nur im Ausnahmefall, und auf einer Seite zur Kostenkontrolle soll der
+ * Vorbehalt nicht erst auf Klick sichtbar werden. Ein Popover je Zweck braeuchte zudem zwei
+ * Ausloeser mit identischem Text.
  */
 function IncompleteHint() {
   return (
@@ -148,7 +148,7 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
     diagnostics,
   } = stats
   const total = stats.photo_count
-  // "x von y" mit ueberall derselben Bezugsgroesse (Akzeptanzkriterium F1) - bei 0 Fotos steht
+  // "x von y" mit ueberall derselben Bezugsgroesse - bei 0 Fotos steht
   // ueberall "0 von 0".
   const outOf = (value: number) => `${formatCount(value)} von ${formatCount(total)}`
   // Der lokale Gesamtwert ist die Summe des BEKANNTEN: ist der Datenbank-Anteil nicht ermittelbar,
@@ -226,9 +226,8 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
           <DetailRow term="Thumbnails erzeugt">{outOf(progress.thumbnails_ready)}</DetailRow>
           <DetailRow term="Lokal bewertet">{outOf(progress.ausschuss_scored)}</DetailRow>
           <DetailRow term="Eingeordnet">{outOf(progress.ranked)}</DetailRow>
-          {/* "Cloud-klassifiziert" statt des frueheren "Remote klassifiziert": gezaehlt werden
-              Fotos mit einer Motiv-Kopfzeile aus der Cloud. Die lokale Kopfzeile des
-              Kriterien-Laufs zaehlt hier ausdruecklich nicht mit. */}
+          {/* "Cloud-klassifiziert": gezaehlt werden Fotos mit einer Motiv-Kopfzeile aus der Cloud.
+              Die lokale Kopfzeile des Kriterien-Laufs zaehlt hier ausdruecklich nicht mit. */}
           <DetailRow term="Cloud-klassifiziert">{outOf(progress.remote_classified)}</DetailRow>
         </dl>
         <p className="text-sm text-text">Deine Bewertungen (nur deine eigenen)</p>
@@ -241,7 +240,7 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
         {/* DAUERHAFT SICHTBAR, nicht hinter einem Info-Auslöser - dieselbe Begründung wie bei der
             Motivverteilung unten: eine Summe, die nicht aufgeht, wird sonst als Fehler gelesen,
             und dieser Effekt tritt beim ersten Blick ein.
-            Seit ADR 0098 steht der Favorit NEBEN der Albumentscheidung: dasselbe Foto zählt in
+            Der Favorit steht NEBEN der Albumentscheidung: dasselbe Foto zählt in
             "Favorit" und in "Albumwürdig". Die Anzeige darf keine Aufteilung des Bestands über
             alle vier Zahlen behaupten - deshalb steht "Favorit" hinter den drei Zahlen der
             Albumentscheidung, nicht zwischen ihnen. */}
@@ -252,7 +251,7 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
         </p>
       </Section>
 
-      {/* EIN Abschnitt statt der beiden Kategorie-Bloecke (Spec 0427, PR 3). */}
+      {/* EIN Abschnitt statt der beiden Kategorie-Bloecke. */}
       <Section id="stats-motifs" title="Motivverteilung">
         {/* DAUERHAFT SICHTBAR, nicht hinter einem Info-Auslöser: eine Summe, die nicht aufgeht,
             wird sonst als Fehler gelesen - und dieser Effekt tritt beim ersten Blick ein. */}

@@ -100,25 +100,14 @@ function scopeText(
 }
 
 /**
- * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx. Ersetzt die frueher getrennten
- * Bedienelemente "Kriterien-Bewertung" (inline auf der Seite) und "Remote-Kategorisierung"
- * (RemoteCategoryClassificationSection.tsx, geloescht) vollstaendig - ein Auslöser, eine
- * Statusanzeige, ein Fortschritt.
+ * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx: ein Auslöser, eine Statusanzeige,
+ * ein Fortschritt.
  *
- * Drei Aenderungen gegenueber dem abgeloesten Stand, die leicht als Versehen gelesen werden
- * koennten und es nicht sind:
- *
- * 1. KEIN Bestaetigungsdialog mehr vor der kostenpflichtigen Aktion. Das Design-System-Muster ist
- *    mit dieser Spec ausdruecklich zurueckgenommen und durch die dauerhaft am Auslöser
- *    sichtbare Kostenschaetzung ersetzt - ein Dialog zeigte die Kosten erst NACH einem Klick und
- *    verschwand wieder. Bewusst in Kauf genommenes Restrisiko: bei vorausgewaehlter Checkbox
- *    loest ein einzelner Klick Cloud-Kosten aus.
- * 2. Der Hinweis "Diese Ergebnisse fliessen erst durch einen (ggf. erneuten) Kriterien-
- *    Bewertungs-Lauf ein" ist ersatzlos entfallen - die Verkettung im Backend macht
- *    ihn gegenstandslos.
- * 3. Die Aussage "laeuft vollstaendig lokal auf diesem Server" haengt jetzt am Checkbox-Zustand
- *    statt absolut dazustehen. Sie war zuvor schlicht unwahr, sobald die Cloud-Bilderkennung
- *    freigegeben war (die Sehenswuerdigkeits-Erkennung lief innerhalb der Bewertung mit).
+ * KEIN Bestaetigungsdialog vor der kostenpflichtigen Aktion: Die dauerhaft am Auslöser sichtbare
+ * Kostenschaetzung ersetzt ihn - ein Dialog zeigte die Kosten erst NACH einem Klick und verschwand
+ * wieder. Bewusst in Kauf genommenes Restrisiko: bei vorausgewaehlter Checkbox loest ein einzelner
+ * Klick Cloud-Kosten aus. Die Aussage "laeuft vollstaendig lokal auf diesem Server" haengt am
+ * Checkbox-Zustand, nicht absolut.
  *
  * `useTriggerConfirmation` (etabliert fuer Scan/Score) ueberbrueckt unveraendert das Zeitfenster
  * zwischen der 202-Antwort und dem ersten Poll, der `status="running"` bestaetigt.
@@ -127,19 +116,17 @@ function scopeText(
  * drei Detailbloecke (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind
  * eigene Komponenten.
  *
- * DIE LAUFWAHL (Spec 0383): zwei Wege, genau einer, ohne Vorbelegung - "wie im Projekt
- * eingestellt" oder "nur lokal". Cloud und Eye sind keine Anfragewege mehr: welcher Weg
- * tatsaechlich laeuft, entscheidet `project.model_choice.category_method`, und die Kurzfassung
- * nennt beide Taetigkeiten mit Modell und Anbieter. Nach dem Start faellt die Wahl zurueck auf
- * "nichts gewaehlt".
+ * DIE LAUFWAHL: zwei Wege, genau einer, ohne Vorbelegung - "wie im Projekt eingestellt" oder "nur
+ * lokal". Cloud und Eye sind keine Anfragewege: welcher Weg tatsaechlich laeuft, entscheidet
+ * `project.model_choice.category_method`, und die Kurzfassung nennt beide Taetigkeiten mit Modell
+ * und Anbieter. Nach dem Start faellt die Wahl zurueck auf "nichts gewaehlt".
  *
  * Ob der Eye-DIENST gerade antwortet, wird hier NICHT geprueft: das machte das Laden der
  * Projektseite von einem Sidecar abhaengig, und die Antwort auf einen toten Dienst gibt es erst
  * beim Ausloesen (503, mit "Erneut versuchen").
  *
  * Im Inhalt steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke - Fortschrittsliste
- * ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums "ueberfrachtet die
- * Seite nicht". Auslöser und Laufstatus stehen in der Aktionsleiste am Ende, „Erneut
+ * ODER Bilanz, nie beide. Auslöser und Laufstatus stehen in der Aktionsleiste am Ende, „Erneut
  * klassifizieren" im Kopf; `isTriggerDisabled` sperrt alle drei Auslöser gleich.
  */
 export function ClassificationSection({ project, refetchProject }: ClassificationSectionProps) {
@@ -181,7 +168,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   const scoringRun = project.last_scoring_run
   const run = project.last_criterion_scoring_run
   const runStatus = run?.status ?? null
-  // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
+  // Der Abbruch adressiert GENAU diesen Lauf.
   const runId = run?.id ?? null
   const isCancelRequested = run?.cancel_requested_at != null
   const runStartedAt = run?.started_at ?? null
@@ -268,12 +255,11 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   // nur am Ende gekuerzt - die seltensten Eintraege fallen weg, nicht die haeufigsten.
   const shownFineLabels = (fineLabelsQuery.data ?? []).slice(0, MAX_FINE_LABELS_SHOWN)
 
-  /* Die Schaetzung ersetzt den frueheren Bestaetigungsdialog (Kosten sichtbar vor dem Start) und
-     steht am jeweiligen Auslöser: beim ersten Lauf und bei einer Wiederholung direkt über der
-     Leiste, beim erneuten Lauf im Erneut-Block. Sie erscheint fuer JEDEN gewaehlten Weg - auch
-     fuer die kostenfreien, dort mit der Zeile "Dieser Durchlauf ist kostenfrei." statt eines
-     Betrags. Vor der Wahl steht sie gar nicht: es gibt dann keinen Durchlauf, dessen Kosten sie
-     beschriebe. */
+  /* Die Schaetzung steht am jeweiligen Auslöser: beim ersten Lauf und bei einer Wiederholung
+    direkt über der Leiste, beim erneuten Lauf im Erneut-Block. Sie erscheint fuer JEDEN
+    gewaehlten Weg - auch fuer die kostenfreien, dort mit der Zeile "Dieser Durchlauf ist
+    kostenfrei." statt eines Betrags. Vor der Wahl steht sie gar nicht: es gibt dann keinen
+    Durchlauf, dessen Kosten sie beschriebe. */
   const estimateBlock = way !== null && (
     <>
       {estimateQuery.isSuccess && estimate && <ClassificationEstimate estimate={estimate} />}
@@ -328,14 +314,12 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           {estimateBlock}
         </RerunBlock>
       )}
-      {/* Zustandsabhaengige Datenschutz-Aussage: die frueher absolute Formulierung "laeuft
-          vollstaendig lokal auf diesem Server" war unwahr, sobald die Cloud-Bilderkennung
-          freigegeben war. Seit Spec 0383 nennt sie die Anbieter JE TAETIGKEIT aus
+      {/* Zustandsabhaengige Datenschutz-Aussage: Sie nennt die Anbieter JE TAETIGKEIT aus
           `project.model_choice` - bei demselben Anbieter einmal, mit beiden Taetigkeiten.
 
-          An DIESEM Text haengt die Einwilligung (Spec 0469, S7). Seit ADR 0106 geht mit dem Foto
-          eine grobe Ortsangabe hinaus, und der Satz muss sie nennen - beide Stufen, und dass Fotos
-          ohne Standortdaten nicht betroffen sind. */}
+          An DIESEM Text haengt die Einwilligung: Mit dem Foto geht eine grobe Ortsangabe hinaus,
+          und der Satz muss sie nennen - beide Stufen, und dass Fotos ohne Standortdaten nicht
+          betroffen sind. */}
       <p className="text-sm text-text" data-testid="classification-scope-text">
         {scopeText(way, effectivePath, modelChoice, consentEnabled)}
       </p>
@@ -343,7 +327,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       {/* DIE LAUFWAHL. Ein echtes `fieldset` mit `legend`, weil die Gruppe eine Frage stellt
           ("Weg für diesen Durchlauf") und die Zeilen nur gemeinsam Sinn ergeben. GENAU ZWEI
           Zeilen: "wie im Projekt eingestellt" und "nur lokal" - Cloud und Eye sind Ergebnisse
-          der Projektwahl, keine Anfragewege mehr (Spec 0383).
+          der Projektwahl, keine Anfragewege.
 
           Ganze Zeile anklickbar (`<label>`), Mindesthoehe 44 px (`min-h-11`). Der Link in die
           Einstellungen steht AUSSERHALB des `<label>`: innerhalb setzte ein Klick zusaetzlich
@@ -434,8 +418,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       {/* GENAU EINER der beiden Zustandsblöcke, nie beide: läuft der Durchlauf, steht hier die
           Teilschrittliste, danach die Bilanz dieses einen Laufs. Beide gleichzeitig zu zeigen
           hieße, denselben Lauf zweimal zu beschreiben - und ließe die Sektion über ihre bisherige
-          Höhe hinauswachsen (Akzeptanzkriterium "überfrachtet die Seite nicht"). */}
-      {/* Spec 0641: Auch ein abgebrochener oder wartender Lauf zeigt die Teilschrittliste - sie
+          Höhe hinauswachsen. */}
+      {/* Auch ein abgebrochener oder wartender Lauf zeigt die Teilschrittliste - sie
           friert bei „abgebrochen" auf dem letzten Stand ein. Die Bilanz tritt erst nach einem
           beendeten Lauf MIT Ergebnis an ihre Stelle, nie als Ersatz fuer den Abbruch. */}
       {run !== null &&
@@ -449,9 +433,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       {runStatus === 'failed' && <Alert>{run?.error_message}</Alert>}
 
       {/* Cloud-Anteil gescheitert: der Fehler wird sichtbar gemeldet UND das Ergebnis als nicht
-          (vollstaendig) angereichert gekennzeichnet - beide Akzeptanzkriterien des Abschnitts
-          "Fehlerverhalten" an einer Stelle. Der Lauf selbst ist dabei erfolgreich: der lokale
-          Bewertungsanteil ist vollstaendig durchgelaufen. */}
+          (vollstaendig) angereichert gekennzeichnet - beide an einer Stelle. Der Lauf selbst ist
+          dabei erfolgreich: der lokale Bewertungsanteil ist vollstaendig durchgelaufen. */}
       {run?.cloud_error_message != null && (
         <Alert>
           {run.cloud_error_message} Das Ergebnis ist ohne (vollständige) Cloud-Anreicherung
@@ -511,7 +494,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         action={action}
         status={
           <>
-            {/* „wartet" traegt keinen Statuspunkt (Spec 0641) - es laeuft noch nichts. Nach dem
+            {/* „wartet" traegt keinen Statuspunkt - es laeuft noch nichts. Nach dem
                 Ausloesen zeigt der Punkt sofort den laufenden Zustand, nicht den alten. */}
             <StatusDot
               status={

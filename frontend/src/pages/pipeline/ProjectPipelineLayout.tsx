@@ -15,7 +15,7 @@ import {
   isStepId,
 } from '../../utils/pipelineSteps'
 
-// Kontext, den jede der fuenf Detailseiten ueber useOutletContext liest (Akzeptanzkriterium 7) -
+// Kontext, den jede der fuenf Detailseiten ueber useOutletContext liest -
 // kein eigener useProjectQuery-Aufruf je Detailseite. `refetchProject` ist bewusst als
 // ReturnType<typeof useProjectQuery>['refetch'] typisiert statt eines eigenen, redundanten Typs -
 // bleibt automatisch synchron mit der tatsaechlichen TanStack-Query-Signatur.
@@ -25,14 +25,12 @@ export interface PipelineOutletContext {
 }
 
 /**
- * Uebernimmt die frueher in ProjectDetailPage.tsx liegende Verantwortung: Laden/404/Fehlerzustand,
- * Projekt-Header, Sekundaernavigation, Stepper-Leiste, Redirect-Guards - EINE zentrale Stelle statt
- * fuenffacher Duplikation je Detailseite.
+ * Laden/404/Fehlerzustand, Projekt-Header, Sekundaernavigation, Stepper-Leiste, Redirect-Guards -
+ * EINE zentrale Stelle statt fuenfacher Duplikation je Detailseite.
  *
- * "Zurueck zur Projektliste"-Link bewusst NICHT erneut ergaenzt: die Sekundaernavigation dieses
- * Links wurde bereits entfernt, ersetzt durch den Sticky-Header-Wordmark-Link "PhotoSort". Ein
- * erneutes Hinzufuegen waere ein stiller Widerspruch zu dieser weiterhin gueltigen Entscheidung.
- * Kein Test erzwingt die Abwesenheit hier; die Auflage steht deshalb in voller Aussage am Code.
+ * "Zurueck zur Projektliste" bleibt bewusst draussen: der Sticky-Header-Wordmark-Link "PhotoSort"
+ * trägt den Weg zurueck, und ein zweiter Einstieg waere ein stiller Widerspruch dazu. Kein Test
+ * erzwingt die Abwesenheit; die Auflage steht deshalb in voller Aussage am Code.
  */
 export function ProjectPipelineLayout() {
   const { projectId, step } = useParams()
@@ -69,10 +67,10 @@ export function ProjectPipelineLayout() {
   const project = query.data
   const states = computeStepStates(project)
 
-  // Redirect-Guard (Akzeptanzkriterien 10-11): bei JEDEM Render neu aus den aktuellen (gepollten)
-  // Projektdaten abgeleitet, kein zwischengespeicherter Navigationszustand - ein waehrend des
-  // Betrachtens per Poll nicht mehr erreichbarer Schritt wird dadurch automatisch beim naechsten
-  // Poll-Tick verlassen, ohne Nutzerinteraktion (AK11).
+  // Redirect-Guard: bei JEDEM Render neu aus den aktuellen (gepollten) Projektdaten abgeleitet,
+  // kein zwischengespeicherter Navigationszustand - ein waehrend des Betrachtens per Poll nicht
+  // mehr erreichbarer Schritt wird dadurch automatisch beim naechsten Poll-Tick verlassen, ohne
+  // Nutzerinteraktion.
   if (step === undefined) {
     return <Navigate to={`/projects/${project.id}/pipeline/${getDefaultStepId(states)}`} replace />
   }
@@ -132,12 +130,9 @@ export function ProjectPipelineLayout() {
         <Outlet context={outletContext} />
       </div>
 
-      {/* Hier stand zuletzt noch ein "Statistik"-Button - der letzte Rest der frueheren
-          Sekundaernavigation am Seitenende.
-          Er ist ersatzlos entfallen, weil die Statistikseite jetzt ein Nebenziel der
-          Kopfzeilengruppe ist und damit von JEDER Projektseite aus erreichbar; ein zweiter
-          Einstiegspunkt nur hier waere eine Dopplung. Die Seite endet damit mit ihrem
-          Schrittinhalt. */}
+      {/* KEIN eigener "Statistik"-Button am Seitenende: die Statistikseite ist ein Nebenziel der
+          Kopfzeilengruppe und damit von JEDER Projektseite aus erreichbar; ein zweiter
+          Einstiegspunkt nur hier waere eine Dopplung. Die Seite endet mit ihrem Schrittinhalt. */}
     </div>
   )
 }

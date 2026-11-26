@@ -2,14 +2,12 @@ import type { ClassificationEstimateOut, ClassificationEstimatePartOut } from '.
 import { formatProviderLabel, formatUsd, formatUsdPerImage } from '../utils/formatStats'
 
 /**
- * Die Kostenvorschau vor dem Start - JE ANTEIL, nicht mehr je Weg (Spec 0383, ADR 0143).
+ * Die Kostenvorschau vor dem Start - JE ANTEIL.
  *
  * Jeder Anteil nennt seine Tätigkeit, die Menge, den Betrag und darunter die GRUNDLAGE (Anbieter
  * und Modell bzw. „Eye, auf diesem Server"). Ein `null`-Anteil heißt „findet nicht statt" und wird
- * als Satz gezeigt, nie als Zeile mit `0`. Damit ist „angezeigt = aufgerufen = abgerechnet" auch
- * dann lesbar, wenn die beiden Tätigkeiten verschiedene Modelle tragen - der frühere Satz „Beide
- * Cloud-Anteile werden mit demselben Preis je Bild gerechnet" wäre genau dann falsch und entfällt
- * deshalb ersatzlos.
+ * als Satz gezeigt, nie als Zeile mit `0`. Damit bleibt „angezeigt = aufgerufen = abgerechnet"
+ * auch dann lesbar, wenn die beiden Tätigkeiten verschiedene Modelle tragen.
  *
  * DREI Zustände, die auseinandergehalten werden müssen:
  *  - `candidate_count` bekannt und `estimated_cost_usd === 0` → das Wort „kostenfrei",

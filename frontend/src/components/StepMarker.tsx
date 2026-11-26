@@ -20,10 +20,9 @@ export const STEP_MARKER_AUSPRAEGUNGEN: readonly StepMarkerAuspraegung[] = [
 /*
  * DER MARKER IST NICHT DAS BEDIENELEMENT. Ueberfahren und Gedruecktwerden passieren am
  * umschliessenden `<Link>` bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker
- * drueckt sie als `group-hover:`/`group-active:` aus. Der Zustandstraeger ist damit ueber zwei
- * Dateien verteilt - genau deshalb zeigt die `quellen`-Angabe des Bausteins auf DIESE Datei: der
- * Zustandsscanner der Penpot-Nutzlast liest sie, und er verlangt jeden hier getragenen Zustand
- * als gefuehrte Achse.
+ * drueckt sie als `group-hover:`/`group-active:` aus. Genau deshalb zeigt die `quellen`-Angabe des
+ * Bausteins auf DIESE Datei: der Zustandsscanner der Penpot-Nutzlast verlangt jeden hier
+ * getragenen Zustand als gefuehrte Achse.
  *
  * NICHT ZULAESSIG sind hier `aria-disabled:`-Varianten als Stilquelle: der Scanner verlangte dann
  * eine Achse `aria-disabled`, die der Entwurf nicht fuehrt. Die Sperrung ist eine Auspraegung.
@@ -39,15 +38,15 @@ const AKTIV_RECIPE = 'border-accent bg-overlay font-bold text-accent'
 /**
  * Dieselbe Vorlage in ihrer RUHENDEN Auspraegung, nur mit `group-`-praefixierten Zustaenden: die
  * Zustaende kommen vom umschliessenden Bedienelement, nicht vom Marker selbst. Der Design-Vertrag
- * leitet diese Fassung aus der Fassung in ProjectNav.tsx ab, statt sie ein zweites Mal zu tippen.
+ * leitet diese Fassung aus der Fassung in ProjectNav.tsx ab.
  */
 // prettier-ignore
 const RUHEND_RECIPE = 'border-border-control bg-surface text-text group-hover:bg-overlay group-hover:text-text-h group-active:bg-border group-active:text-text'
 
 /*
  * Groesse: schmal ueber die volle Spaltenbreite gedehnt (`h-8 w-full`), ab `sm:` quadratisch
- * (`sm:size-8 sm:shrink-0`) mit der Beschriftung DANEBEN statt darin. Die Umrandung fasst damit
- * nur noch das Zeichen des Schritts, wie im Entwurf.
+ * (`sm:size-8 sm:shrink-0`) mit der Beschriftung DANEBEN statt darin; die Umrandung fasst damit
+ * nur noch das Zeichen des Schritts.
  *
  * `border` statt der 1.5px des Boards: 1.5px liegt auf keiner Tailwind-Stufe, und willkuerliche
  * Werte sind statisch verboten. Radius 8px (`rounded-md`) und Schriftstufe `text-xs` wie im
@@ -65,8 +64,7 @@ const AUSPRAEGUNG_CLASSES: Record<StepMarkerAuspraegung, string> = {
   ausstehend: RUHEND_RECIPE,
   // Aktiv: anliegender Akzentrand, Akzentschrift, fetter Schnitt - nie ueber Farbe allein, das
   // `aria-current="step"` am Bedienelement traegt mit. Die Flaeche steht bereits auf `--overlay`;
-  // die Rueckmeldung beim Ueberfahren/Druecken geht deshalb eine Stufe weiter auf `--border`,
-  // statt auf der Stelle zu treten.
+  // die Rueckmeldung beim Ueberfahren/Druecken geht deshalb eine Stufe weiter auf `--border`.
   aktuell: cn(AKTIV_RECIPE, 'group-hover:bg-border group-active:bg-border'),
   // Blockiert: gedaempfter Umriss und gedaempfte Schrift, Schloss als Glyphe. Kein pauschales
   // `opacity` auf dem ganzen Element - so bleibt das Schloss selbst lesbar. Die Rueckmeldung beim
@@ -102,8 +100,8 @@ interface StepMarkerProps {
    * Ob der Schritt erledigt ist. Wird normalerweise aus der Auspraegung abgeleitet und nur dort
    * gesetzt, wo beide Aussagen auseinanderfallen: ein erledigter Schritt, der inzwischen wieder
    * gesperrt ist, HEISST "blockiert" und zeigt trotzdem den Haken. Zustandsbenennung und
-   * Glyphenwahl folgen zwei verschiedenen, je unveraenderten Rangfolgen: blockiert ▸ aktuell ▸
-   * erledigt fuer den Namen, Haken vor Schloss fuer die Glyphe.
+   * Glyphenwahl folgen zwei verschiedenen Rangfolgen: blockiert ▸ aktuell ▸ erledigt fuer den
+   * Namen, Haken vor Schloss fuer die Glyphe.
    */
   istErledigt?: boolean
 }

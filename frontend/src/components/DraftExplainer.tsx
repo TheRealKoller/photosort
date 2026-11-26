@@ -4,7 +4,7 @@ import { Button } from './ui/button'
 import { Icon } from './ui/icon'
 
 /**
- * SICHERHEIT (S12): Der Erklärtext merkt sich EINEN Wahrheitswert, nie Inhalt. Schlüssel ist ein
+ * SICHERHEIT: Der Erklärtext merkt sich EINEN Wahrheitswert, nie Inhalt. Schlüssel ist ein
  * festes Präfix plus der Anmeldename (nur zur Unterscheidung je Nutzer, keine Zugriffsentscheidung),
  * Wert ein einziges festes Literal für „zugeklappt". Alles andere - fehlend, fremd, beschädigt -
  * gilt als aufgeklappt; jeder Zugriff steht in `try/catch` und fällt nach „aufgeklappt" aus.

@@ -41,8 +41,8 @@ interface ClassificationReviewCaseProps {
 }
 
 /**
- * EIN Fall der Fallansicht (Spec 0616, UI/UX): Zweck als Ueberschrift, beide Rohwerte mit
- * Seitenmarke, darunter die vier Urteile als Gruppe in fester Reihenfolge.
+ * EIN Fall der Fallansicht: Zweck als Ueberschrift, beide Rohwerte mit Seitenmarke, darunter die
+ * vier Urteile als Gruppe in fester Reihenfolge.
  *
  * Die Urteile sind Umschaltflaechen mit `aria-pressed` in einer benannten Gruppe statt echter
  * Radio-Eingaben: ein Urteil wird beim Druck sofort geschrieben, und ein Radio, das schon beim

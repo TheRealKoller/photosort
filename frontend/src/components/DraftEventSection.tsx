@@ -17,7 +17,7 @@ const ADD_CELL_RATIO = 2 / 3
 
 export interface DraftEventSectionProps {
   event: EventOut
-  /** Der Eventname aus `formatEventHeading` - Textknoten, nie Schlüssel oder DOM-Id (S11). */
+  /** Der Eventname aus `formatEventHeading` - Textknoten, nie Schlüssel oder DOM-Id. */
   heading: string
   /** Die sichtbaren Fotos im Album (Personenfilter angewandt), in Serverreihenfolge. */
   albumPhotos: PhotoOut[]

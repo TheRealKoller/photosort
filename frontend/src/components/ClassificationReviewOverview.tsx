@@ -30,8 +30,8 @@ const NUMBER_CELL = 'py-2 pl-1 text-right tabular-nums text-text-h sm:pl-2'
 const PURPOSE_COLUMN = 'w-1/3'
 
 /**
- * Die Uebersicht einer abgeschlossenen Pruefung (Spec 0616, UI/UX): zwei schmale Tabellen statt
- * einer breiten, damit bei 360 px nichts waagerecht scrollt.
+ * Die Uebersicht einer abgeschlossenen Pruefung: zwei schmale Tabellen statt einer breiten, damit
+ * bei 360 px nichts waagerecht scrollt.
  *
  * "Abweichungen" gliedert sich nach EINHEIT: die fotozaehlenden Zwecke in einer Zeilengruppe, die
  * Merkmale (Foto × Motiv) als Paare in einer eigenen - eine Zeile "12" ohne Einheit liesse offen,

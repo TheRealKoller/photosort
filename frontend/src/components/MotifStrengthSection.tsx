@@ -74,10 +74,9 @@ const DETAIL_PROMPT_TEXT = 'Symbol antippen für Details'
  * Reihe aus acht Platzhaltern NEBENEINANDER, Detailzeile, Glossar - je einer fuer jeden Bereich,
  * den der geladene Baustein traegt.
  *
- * Die Form ist keine Kosmetik. Acht Platzhalter UNTEREINANDER (die Form der abgeloesten
- * Balkenliste) beanspruchen rund 340 px gegen die rund 160 px des geladenen Bausteins; der
- * Bereich zoege beim Eintrudeln der Antwort alles darunter um rund 180 px hoch - die "Bewegung
- * von Layout oder Position", die das Design-System ausschliesst.
+ * Die Form ist keine Kosmetik: Acht Platzhalter UNTEREINANDER beanspruchen ein Vielfaches der
+ * Hoehe des geladenen Bausteins; der Bereich zoege beim Eintrudeln der Antwort alles darunter
+ * hoch - die "Bewegung von Layout oder Position", die das Design-System ausschliesst.
  *
  * PIXELGENAUE DECKUNG IST NICHT DAS ZIEL und waere nicht erreichbar: Die Grundlagenzeile traegt
  * Fremdtext (Anbietername, Zeitstempel) und bricht je nach Breite auf eine oder zwei Zeilen um.
@@ -105,12 +104,12 @@ function SkeletonRows() {
 }
 
 /**
- * Die drei Grundlagen-Zweige (Spec 0609) - Cloud und lokal wortgleich zu vorher, Eye neu.
+ * Die drei Grundlagen-Zweige.
  *
- * `data-motif-source` macht die Grundlage zusaetzlich maschinenlesbar (AK "Herkunft"): der Text
- * allein waere fuer eine Pruefung nur per Zeichenkette greifbar. Die Namensnennung des Modells
- * steht bei Eye DARUNTER, an der Verwendungsstelle - nicht in einer Fusszeile und in keinem
- * aufklappbaren Element.
+ * `data-motif-source` macht die Grundlage zusaetzlich maschinenlesbar: der Text allein waere fuer
+ * eine Pruefung nur per Zeichenkette greifbar. Die Namensnennung des Modells steht bei Eye
+ * DARUNTER, an der Verwendungsstelle - nicht in einer Fusszeile und in keinem aufklappbaren
+ * Element.
  */
 function BasisLine({ assessment }: { assessment: MotifAssessmentOut }) {
   // `text-xs text-text`, KEIN `Alert`: die Grundlage ist eine Auskunft, kein Fehler.
@@ -136,10 +135,10 @@ function BasisLine({ assessment }: { assessment: MotifAssessmentOut }) {
  * Popover - der Baustein wird seinerseits in einem Popover gerendert, und ein zweites Panel darin
  * ist nicht zulaessig.
  *
- * SICHERHEIT (S19): Registry-Text ausschliesslich als React-TEXTKNOTEN - nie ueber
+ * SICHERHEIT: Registry-Text ausschliesslich als React-TEXTKNOTEN - nie ueber
  * `dangerouslySetInnerHTML`, nie als HTML-String-Prop, und er fliesst in kein `href`, `src`,
  * `style` und keinen `url()`-Kontext. Dasselbe gilt fuer die Detailzeile und fuer den
- * zugaenglichen Namen der Symbole, in die derselbe Text seit dem Umbau ebenfalls austritt.
+ * zugaenglichen Namen der Symbole, in die derselbe Text ebenfalls austritt.
  */
 function Glossary({ motifSet }: { motifSet: MotifSetOut }) {
   return (
@@ -175,7 +174,7 @@ interface DetailRowProps {
 }
 
 /**
- * Der RESERVIERTE PLATZ der Detailzeile (Spec 0497, AK6/AK7).
+ * Der RESERVIERTE PLATZ der Detailzeile.
  *
  * WAS GILT: Die Oberkante von allem, was unterhalb des Motivbereichs steht, bewegt sich um
  * höchstens 1 px, wenn ein Motiv an- und wieder abgeheftet wird - gleich welches, gleich ob per
@@ -222,7 +221,7 @@ function DetailRow({
   onCorrect,
   onWithdraw,
 }: DetailRowProps) {
-  // EIN Container fuer BEIDE Zustaende (AK7): Die Reservierung ist nur moeglich, weil der
+  // EIN Container fuer BEIDE Zustaende: Die Reservierung ist nur moeglich, weil der
   // Aufforderungssatz und die aufgeklappte Zeile dasselbe Element tragen. Zwei Container koennten
   // nie dieselbe Hoehe halten, und `aria-controls` zeigte beim Zuklappen ins Leere.
   const reserved = editable ? DETAIL_ROW_RESERVED_CLASS : ''
@@ -256,9 +255,9 @@ function DetailRow({
         /* `gap-x-3` ist die Pflichtgrenze zwischen aufgespannten Trefferflaechen; `size="sm"`
            statt `h-11`, weil die Korrektur nicht der heisse Pfad ist.
 
-           QUER GROESSER ALS LAENGS (`gap-y-4`): Seit die Zeile in der Urteilsflaeche der
-           Bilddetailansicht steht, bricht die dritte Schaltflaeche auf Telefonbreite in eine
-           ZWEITE REIHE um. Die Aufspannung ragt bis zu 6px je Seite ueber das Sichtbare hinaus -
+          QUER GROESSER ALS LAENGS (`gap-y-4`): In der Urteilsflaeche der Bilddetailansicht
+          bricht die dritte Schaltflaeche auf Telefonbreite in eine ZWEITE REIHE um. Die
+          Aufspannung ragt bis zu 6px je Seite ueber das Sichtbare hinaus -
            bei 12px Reihenabstand stossen die beiden 44px-Flaechen genau aneinander, und die
            Subpixel-Rundung entscheidet, wer den Randpunkt bekommt. In einer Ueberlappung gewinnt
            das obenliegende Element, und hier waere das ein falsch geschriebener Datenwert.
@@ -357,9 +356,9 @@ export function MotifStrengthSection({
             <button
               type="button"
               // `tap-target` spannt NUR die kurze (senkrechte) Achse auf: acht waagerechte
-              // 44px-Flaechen brauchten 352px und vertrugen sich nicht mit der Zusage "alle
-              // acht in einer Zeile ohne waagerechtes Scrollen". WCAG 2.5.8 (24x24px) bleibt
-              // auf beiden Achsen deutlich ueberschritten (ADR 0113 Punkt 5).
+              // 44px-Flaechen passten nicht in eine Zeile ohne waagerechtes Scrollen und
+              // vertrugen sich nicht mit der Zusage "alle acht in einer Zeile". WCAG 2.5.8
+              // (24x24px) bleibt auf beiden Achsen deutlich ueberschritten.
               //
               // Das ANGEHEFTETE Symbol traegt zusaetzlich die Board-Flaeche `bg-overlay`: ohne
               // ein sichtbares Merkmal ist am Bildschirm nicht zu sehen, welches der acht

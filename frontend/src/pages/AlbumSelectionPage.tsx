@@ -56,7 +56,7 @@ function SelectionEventGroup({
  * Die Arbeitssicht („Unterschiede") zeigt ausschließlich, worüber die beiden uneins sind; die
  * Ergebnissicht („Endauswahl") die Menge, die als Album gilt, plus die ausdrücklich
  * herausgenommenen Bilder als Anzeigezustand. Beide filtern dieselbe geladene Antwort — DER
- * UMSCHALTER LÄDT NICHTS NACH (ADR 0099 Punkt 6). Ein zweiter Abruf ordnete die Ergebnissicht bei
+ * UMSCHALTER LÄDT NICHTS NACH. Ein zweiter Abruf ordnete die Ergebnissicht bei
  * jedem Wechsel neu, und eine Entscheidung risse die gerade gedrückte Kachel unter dem Finger
  * weg.
  *
@@ -96,7 +96,7 @@ export function AlbumSelectionPage() {
 
   // Die beiden Filter. Die Ergebnissicht führt die ausdrücklich Herausgenommenen mit: Ein
   // herausgenommenes Bild verschwände sonst aus beiden Sichten, und die Entscheidung ließe sich
-  // nicht mehr ändern (ADR 0099 Punkt 5).
+  // nicht mehr ändern.
   const visible = items.filter((photo) =>
     view === 'contested'
       ? photo.contested
@@ -184,7 +184,7 @@ export function AlbumSelectionPage() {
       </header>
 
       {/* Der Export nimmt die ganze Endauswahl - dieselbe Menge, die die Ergebnissicht zeigt. Er
-          steht deshalb AUSSCHLIESSLICH dort, zwischen Umschalter und Liste (Spec 0263, UI/UX). */}
+          steht deshalb AUSSCHLIESSLICH dort, zwischen Umschalter und Liste. */}
       {view === 'all' && <ExportSection projectId={id} />}
 
       {query.isLoading && <CurationSkeletonList count={SKELETON_TILE_COUNT} />}

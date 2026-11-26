@@ -31,8 +31,8 @@ interface PhotoDetailStageProps {
 
 /** Der Hinweis auf die Tastenbelegung. Er steht IN der Bühne und nicht darüber: Über der Bühne
  *  schöbe jedes Element sie um seine eigene Höhe nach unten, und ihre Unterkante fiele um genau
- *  diesen Betrag unter den Sichtrand - AK2 wäre damit verfehlt. Unter der Bühne stünde er im
- *  Informationsteil („was das System über dieses Foto weiß"), und über das Foto sagt er nichts. */
+ *  diesen Betrag unter den Sichtrand. Unter der Bühne stünde er im Informationsteil („was das
+ *  System über dieses Foto weiß"), und über das Foto sagt er nichts. */
 const SHORTCUT_TEXT = 'Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren'
 
 /**
@@ -42,11 +42,11 @@ const SHORTCUT_TEXT = 'Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/�
  * aber auf 360 px mehrzeilig um und nimmt der Fotofläche genau diese Höhe. Das Ziel der Ansicht ist
  * "das Foto so groß wie möglich"; jede Zeile, die nichts trägt, geht direkt davon ab.
  *
- * KEIN VERSTOSS GEGEN AK9a: Ausgeblendet wird ein Hinweis, nicht ein Abschnitt. Die
- * Abschnittsfolge bleibt auf beiden Prüfbreiten dieselbe, es entsteht keine breitengebundene
- * `order-*`-Utility, kein `*-reverse` und keine viewport-abhängige Verzweigung im Rendering - das
- * Element steht in beiden Breiten im Dokument, nur seine Sichtbarkeit folgt der Breite.
- * `e2e/tests/bilddetail-buehne.spec.ts` misst beide Breiten gegen dieselbe Schwelle.
+ * AUSGEBLENDET WIRD EIN HINWEIS, NICHT EIN ABSCHNITT: Die Abschnittsfolge bleibt auf beiden
+ * Prüfbreiten dieselbe, es entsteht keine breitengebundene `order-*`-Utility, kein `*-reverse` und
+ * keine viewport-abhängige Verzweigung im Rendering - das Element steht in beiden Breiten im
+ * Dokument, nur seine Sichtbarkeit folgt der Breite. `e2e/tests/bilddetail-buehne.spec.ts` misst
+ * beide Breiten gegen dieselbe Schwelle.
  */
 const SHORTCUT_VISIBILITY = 'hidden sm:block'
 
@@ -56,7 +56,7 @@ const SHORTCUT_VISIBILITY = 'hidden sm:block'
  * SIE ENTSCHEIDET NICHTS SELBST. Datenzugriff, Navigation (Pfeiltasten, Wischen, Auto-Advance) und
  * Bewertungs-Mutationen bleiben ausschließlich in `pages/PhotoDetailPage.tsx`.
  *
- * DIE HÖHE HÄNGT AM SICHTFENSTER, NIE AM BILD (AK2/AK10). Die Bühne ist ein Flex-Spalten-Behälter
+ * DIE HÖHE HÄNGT AM SICHTFENSTER, NIE AM BILD. Die Bühne ist ein Flex-Spalten-Behälter
  * mit `h-[calc(100dvh-var(--spacing-header)-var(--spacing)*6)]`: sichtbare Höhe abzüglich
  * Kopfzeile und des oberen Innenabstands der Inhaltsspalte (`py-6` an `main` in `App.tsx`). Die
  * Kopfzeilenhöhe kommt aus demselben `--spacing-header`, aus dem `h-header`/`top-header`
@@ -72,7 +72,7 @@ const SHORTCUT_VISIBILITY = 'hidden sm:block'
  *
  * KEINE IN JAVASCRIPT GEMESSENE HÖHE und kein gerechneter Wert in einem Inline-Stil: Beide
  * Auswege - der Inline-Stil wie die CSS-Custom-Property als Träger eines gerechneten Wertes - sind
- * im Sicherheitskonzept untersagt. Der willkürliche Klassenwert ist stattdessen im Design-Vertrag
+ * untersagt. Der willkürliche Klassenwert ist stattdessen im Design-Vertrag
  * (`designSystem.*.contract.test.ts`) fundstellengenau freigegeben.
  *
  * ALLE DREI ZUSTÄNDE TRAGEN DENSELBEN RAHMEN. `ladend` zeigt einen Platzhalter in der Fotofläche
@@ -117,7 +117,7 @@ export function PhotoDetailStage({
 
       {/* `min-h-0` ist nicht optional: Ohne es bekaeme das Flex-Kind seine Inhaltsgroesse als
           Mindesthoehe und schoebe Bewertungsleiste und Navigation aus dem Sichtfenster - genau der
-          Fehlermodus, den AK2 ausschliesst. */}
+          Fehlermodus, den die feste Buehnenhoehe ausschliesst. */}
       <div
         data-testid="photo-detail-stage-photo"
         onTouchStart={onTouchStart}

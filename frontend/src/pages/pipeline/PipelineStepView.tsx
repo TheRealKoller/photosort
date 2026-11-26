@@ -10,11 +10,7 @@ import { ScanStepPage } from './ScanStepPage'
 // Feste Zuordnung Schritt -> Detailseiten-Komponente. Bewusst HIER co-lokalisiert statt in
 // utils/pipelineSteps.ts: diese Datei ist dort selbst als reine, seiteneffekt-/fetch-freie
 // Logik-Datei dokumentiert (analog utils/timeOfDay.ts) - eine Komponenten-/JSX-Zuordnung dort würde
-// diese Eigenschaft aufweichen und pipelineSteps.test.ts unnötig an React koppeln. Technische
-// Detailentscheidung innerhalb der akzeptierten Spec.
-//
-// Der frühere eigene `gate`-Eintrag ist mit Spec 0525 entfallen: Erkennung und Sichtung liegen
-// beide in `AusschussStepPage`.
+// diese Eigenschaft aufweichen und pipelineSteps.test.ts unnötig an React koppeln.
 const STEP_COMPONENTS: Record<StepId, ComponentType> = {
   scan: ScanStepPage,
   ausschuss: AusschussStepPage,
@@ -34,9 +30,7 @@ export function PipelineStepView() {
   const StepComponent = step ? STEP_COMPONENTS[step] : undefined
 
   if (!StepComponent) {
-    // Defensiver Fallback, durch den Guard in ProjectPipelineLayout praktisch unerreichbar - kein
-    // bekannter Testfall, keine eigene Wiring-Testfall-Pflicht (analog zur bestehenden Praxis bei
-    // anderen rein defensiven Fallbacks im Projekt).
+    // Defensiver Fallback, durch den Guard in ProjectPipelineLayout praktisch unerreichbar.
     return null
   }
 

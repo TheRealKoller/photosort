@@ -28,7 +28,7 @@ export interface DuplicateEnlargedViewProps {
 }
 
 /**
- * Die Großansicht der Vergleichsansicht (A11): Bühne, Seitenspalte und Streifen aller Mitglieder.
+ * Die Großansicht der Vergleichsansicht: Bühne, Seitenspalte und Streifen aller Mitglieder.
  *
  * KEIN DIALOG: Sie ersetzt das Raster an derselben Stelle, und Kopf, Hinweise, Gruppenaktionen
  * und Abschluss der Seite bleiben stehen. Ein Dialog finge den Fokus und nähme genau das aus dem
@@ -172,10 +172,10 @@ export function DuplicateEnlargedView({
       {/* Der Streifen bricht um und scrollt nie waagerecht. Die aktuelle Aufnahme trägt `--text-h`
           statt Akzent: Akzent heißt in dieser Ansicht „Behalten".
 
-          KEIN BESCHNITT (Spec 0638): feste Höhe, die Breite folgt dem Verhältnis über
-          `aspect-ratio`, begrenzt durch 44 px und die Streifenbreite; das Bild ist eingepasst,
-          der Rand eines schmalen Hochformats ist `bg-surface` wie an der Bühne. Das Verhältnis
-          erreicht den Stil nur als bereinigte Zahl über `planningRatio`. */}
+          KEIN BESCHNITT: feste Höhe, die Breite folgt dem Verhältnis über `aspect-ratio`, begrenzt
+          durch 44 px und die Streifenbreite; das Bild ist eingepasst, der Rand eines schmalen
+          Hochformats ist `bg-surface` wie an der Bühne. Das Verhältnis erreicht den Stil nur als
+          bereinigte Zahl über `planningRatio`. */}
       <ul aria-label="Alle Aufnahmen der Gruppe" className="flex flex-wrap gap-3">
         {items.map((item, position) => {
           const zustand = DUPLICATE_ZUSTAENDE[item.effective_decision]

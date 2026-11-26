@@ -22,10 +22,10 @@ import { Icon } from './ui/icon'
  * Foto-Link oder ein anderes Wurzelelement bricht sie alle gleichzeitig.
  */
 /**
- * Die Angabenzeile ueberdeckt hoechstens ein Viertel der Bildhoehe (AK7). Als gerechnete ZAHL in
- * einer gewoehnlichen CSS-Eigenschaft (Auflage S6), nicht als willkuerliche Klasse: Der
- * Vertragstest weist `max-h-[25%]` zurueck, und eine Custom-Property naehme anders als eine
- * gewoehnliche Eigenschaft nahezu beliebige Token-Folgen auf.
+ * Die Angabenzeile ueberdeckt hoechstens ein Viertel der Bildhoehe. Als gerechnete ZAHL in einer
+ * gewoehnlichen CSS-Eigenschaft, nicht als willkuerliche Klasse: Der Vertragstest weist
+ * `max-h-[25%]` zurueck, und eine Custom-Property naehme anders als eine gewoehnliche Eigenschaft
+ * nahezu beliebige Token-Folgen auf.
  */
 const DETAILS_HEIGHT_SHARE = 4
 
@@ -89,8 +89,8 @@ export function PhotoGridTile({
 
   return (
     <li
-      // Auflage S6: Das gerechnete Mass geht als ZAHL in eine gewoehnliche CSS-Eigenschaft - nie
-      // als zusammengesetzte Zeichenkette, nie als Custom-Property, nie in einen `url()`-Kontext.
+      // Das gerechnete Mass geht als ZAHL in eine gewoehnliche CSS-Eigenschaft - nie als
+      // zusammengesetzte Zeichenkette, nie als Custom-Property, nie in einen `url()`-Kontext.
       style={{ width, height }}
       className="relative rounded-md"
       {...handlers}
@@ -100,17 +100,16 @@ export function PhotoGridTile({
         onClick={(event) => void consumeSuppressedClick(event)}
         className="block size-full rounded-md"
       >
-        {/* JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, auch die verworfene (ADR 0112) - eine
-            gedaempfte Bildflaeche verfaelscht die Beurteilung des Motivs. Den Zustand tragen
-            allein die beiden Zeichen und die Zustandswoerter, beide ausserhalb dieses Elements.
+        {/* JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, auch die verworfene - eine gedaempfte
+            Bildflaeche verfaelscht die Beurteilung des Motivs. Den Zustand tragen allein die
+            beiden Zeichen und die Zustandswoerter, beide ausserhalb dieses Elements.
 
             DAS ELEMENT SELBST BLEIBT: Es traegt Beschnitt und Rundung der Bildflaeche - ohne es
             liefe das Bild ueber die Kachelrundung hinaus, ohne dass eine Pruefung anschluege. */}
         <div className="size-full overflow-hidden rounded-md">{image}</div>
-        {/* Die Bedeutung der beiden Zeichen zusaetzlich als UNSICHTBARER Text. Der Stern und der
-            Punkt ersetzen das bisherige beschriftete Kennzeichen; ohne diesen Text verloere die
-            Ansicht ihre Aussage fuer Bildschirmleser. Der Dateiname steht hier bewusst NICHT - er
-            ist im Ruhezustand nicht im Dokument (AK7) und erreicht den Bildschirmleser ueber das
+        {/* Die Bedeutung der beiden Zeichen zusaetzlich als UNSICHTBARER Text: ohne ihn verloere
+            die Ansicht ihre Aussage fuer Bildschirmleser. Der Dateiname steht hier bewusst NICHT -
+            er ist im Ruhezustand nicht im Dokument und erreicht den Bildschirmleser ueber das
             `alt` des Bildes. */}
         {stateWords.length > 0 && <span className="sr-only">{stateWords.join(', ')}</span>}
       </Link>

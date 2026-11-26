@@ -34,12 +34,12 @@ import { parseRatingFilter } from '../utils/ratingFilter'
 const SKELETON_TILE_COUNT = 6
 
 /*
- * Die Einträge bleiben unverändert, ihre Bedeutung ändert sich an zwei Stellen (ADR 0098):
+ * Die Einträge tragen unveränderte Namen, ihre Bedeutung ist an zwei Stellen eine andere:
  *
- * - "Unbewertet" heißt KEINE ALBUMENTSCHEIDUNG, nicht mehr "keine Bewertungszeile". Ein nur als
+ * - "Unbewertet" heißt KEINE ALBUMENTSCHEIDUNG, nicht "keine Bewertungszeile". Ein nur als
  *   Favorit markiertes Bild bleibt darin und behält seinen Vorschlag.
  * - "Favorit" filtert auf das eigene Kennzeichen, nicht auf einen Bewertungsstatus. Die Einträge
- *   schließen einander damit nicht mehr aus: ein Foto kann in "Favorit" UND in "Album-würdig"
+ *   schließen einander damit nicht aus: ein Foto kann in "Favorit" UND in "Album-würdig"
  *   erscheinen.
  */
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
@@ -112,7 +112,7 @@ export function PhotoGridPage() {
   }
 
   /*
-   * SICHERHEIT (Auflage S7): Das Nachladen hat eine SPERRE und ein ENDE. Ein Abruf gleichzeitig
+   * SICHERHEIT: Das Nachladen hat eine SPERRE und ein ENDE. Ein Abruf gleichzeitig
    * (`isFetchingNextPage`), und kein neuer, sobald alles geladen ist (`hasNextPage` wird falsch,
    * sobald die Summe der geladenen Eintraege `total` erreicht). Ohne beides feuerte der
    * Beobachter bei jedem Scroll-Schritt und erzeugte einen Anfragensturm - je Antwort bis zu 200
@@ -122,7 +122,7 @@ export function PhotoGridPage() {
   // Die Sperre liegt in einem REF und nicht in einem Renderwert: Der Beobachter kann mehrfach
   // innerhalb DESSELBEN Ticks melden (Scroll-Schritt, Groessenaenderung, erneutes Einblenden), und
   // `isFetchingNextPage` wird erst beim naechsten Rendern wahr. Ein Renderwert liesse in genau
-  // diesem Fenster beliebig viele Abrufe durch - gemessen elf statt zwei.
+  // diesem Fenster beliebig viele Abrufe durch.
   const fetchingRef = useRef(false)
   const loadMoreRef = useRef<() => void>(() => {})
   loadMoreRef.current = () => {
@@ -170,8 +170,8 @@ export function PhotoGridPage() {
       <h1 className="text-xl sm:text-2xl">Fotos</h1>
 
       {/* Am Telefon (< 640px) ist die Leiste ein EIGENER horizontaler Scrollbereich, einzeilig und
-          am Rand angeschnitten - die Seite selbst scrollt nie seitlich (AK11). Ab `sm:` fliesst
-          sie wieder um. */}
+          am Rand angeschnitten - die Seite selbst scrollt nie seitlich. Ab `sm:` fliesst sie wieder
+          um. */}
       <div
         role="group"
         aria-label="Filter"
@@ -200,15 +200,14 @@ export function PhotoGridPage() {
         onChange={setPersonIds}
       />
 
-      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters. Bis Spec 0525 stand daneben ein
-          zweiter, kachelgenauer Einstieg auf dieselbe Ansicht; er ist mit dem Gate-Modus
-          entfallen. Der Durchgang durch die Serien bleibt über diese eine Stelle erreichbar.
+      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters; der Durchgang durch die Serien
+          bleibt über diese eine Stelle erreichbar.
 
           Der ZUGÄNGLICHE NAME beginnt mit der sichtbaren Beschriftung (WCAG 2.5.3) und sagt nach
           einem GEDANKENSTRICH, was der Weg tut: Er führt durch ALLE Gruppen, beginnend bei der
           ersten.
 
-          Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert (AK8): Ein Weg,
+          Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert: Ein Weg,
           der auf einen Leerzustand führt, ist kein Weg, und ein kurz aufblitzender Einstieg wäre
           schlimmer als keiner. */}
       {duplicateGroupIndex.isSuccess && duplicateGroupIndex.data.first_photo_id !== null && (
@@ -289,7 +288,7 @@ export function PhotoGridPage() {
                     photoId={photo.id}
                     variant="thumbnail"
                     alt={photo.relative_path}
-                    // `object-contain` statt des eingebauten `object-cover`: KEIN BESCHNITT (AK1).
+                    // `object-contain` statt des eingebauten `object-cover`: KEIN BESCHNITT.
                     // tailwind-merge laesst die durchgereichte Utility gewinnen.
                     className="size-full object-contain"
                   />
@@ -310,7 +309,7 @@ export function PhotoGridPage() {
               {query.isFetchingNextPage ? ' — lädt…' : ''}
             </p>
           ) : (
-            // Ueber DIESELBE Sperre wie der Anker (Auflage S7): "ein Abruf gleichzeitig" gilt
+            // Ueber DIESELBE Sperre wie der Anker: "ein Abruf gleichzeitig" gilt
             // ohne Einschraenkung auf den Beobachterpfad. Ein `fetchNextPage()` direkt hier
             // ginge an `fetchingRef` vorbei, und mehrere Druecke im selben Tick erzeugten je
             // einen Abruf.

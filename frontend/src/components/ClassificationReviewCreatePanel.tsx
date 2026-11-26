@@ -255,7 +255,7 @@ interface ClassificationReviewCreatePanelProps {
 }
 
 /**
- * Das Anlegen-Panel der Klassifizierungspruefung (Spec 0616, Seite 1).
+ * Das Anlegen-Panel der Klassifizierungspruefung.
  *
  * Es steht inline unter dem Kopf, nicht in einem Dialog, und bleibt beim Zuklappen nicht im DOM.
  * Die Wahl folgt dem Muster "Wegwahl ohne Vorgabe": zwei `fieldset`s mit vollbreiten Radio-Zeilen,
@@ -300,7 +300,7 @@ export function ClassificationReviewCreatePanel({
   // "Kosten vor dem Start": der Preis ist Kontrollmittel, nicht Beiwerk. Solange eine gewaehlte
   // Seite Cloud ist, startet die Pruefung deshalb nur mit fertiger Schaetzung - waehrend sie
   // laedt oder nach einem Fehler bleibt der Ausloeser zu. Rein kostenfreie Kombinationen
-  // (Eye, lokal) brauchen keine Vorschau und bleiben wie bisher startbar.
+  // (Eye, lokal) brauchen keine Vorschau und bleiben startbar.
   const hasCloudSide = sideA?.kind === 'cloud' || sideB?.kind === 'cloud'
   const estimateReady = !hasCloudSide || estimateQuery.isSuccess
   const isReady = sides !== null && sampleSizeValid && estimateReady && !isSubmitting

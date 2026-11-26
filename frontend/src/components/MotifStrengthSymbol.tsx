@@ -4,15 +4,15 @@ import type { MotifFillStep } from '../utils/motifStrength'
 /**
  * Ein Motivsymbol als Fuellstand: dasselbe Symbol ZWEIMAL uebereinander - unten vollstaendig in
  * `text-text-muted`, darueber deckungsgleich in der Bandfarbe, beschnitten auf die unteren
- * `fillPercent` Prozent seiner Hoehe (ADR 0113 Punkt 2).
+ * `fillPercent` Prozent seiner Hoehe.
  *
  * DIE UMRISSEBENE IST BEI JEDER STAERKE VOLLSTAENDIG DA, einschliesslich 0 % und 100 %: Die
  * Symbolform bleibt damit immer erkennbar, und ein schwach vertretenes Motiv wirkt nicht
- * abgeschnitten (AK2).
+ * abgeschnitten.
  *
  * `fillPercent` kommt FERTIG GERUNDET herein - derselbe Wert, den die Aufrufstelle als Text
  * zeigt. Hier wird nicht ein zweites Mal gerundet, sonst koennten Fuellhoehe und angezeigte Zahl
- * auseinanderlaufen (AK4).
+ * auseinanderlaufen.
  *
  * Beide Ebenen sind `aria-hidden`; die Aussage traegt der zugaengliche Name der umgebenden
  * Schaltflaeche. Der Beschnitt steht als `clip-path`-Rezept in `index.css` (`motif-fill-clip`);
@@ -33,11 +33,11 @@ interface MotifStrengthSymbolProps {
 /**
  * Der Stil der Fuellebene - eine EIGENE Schnittstelle statt eines `as React.CSSProperties`-Casts.
  *
- * SICHERHEIT (specs/architecture/0003-securitykonzept.md, Abschnitt zur Motivstaerke): Die
- * Custom-Property ist hier der einzig verbliebene Weg (eine `clip-path-[…]`-Utility ist als
- * willkuerlicher Wert vertraglich verboten, die Zeichenketten-Variante `clipPath: '…'` untersagt
- * dieselbe Konzeptzeile). Die Auflage dazu lautet: Der Traeger ist ein durch `Math.round`
- * mechanisch geschlossener Integer, nie eine aus API-Daten zusammengesetzte Zeichenkette.
+ * SICHERHEIT: Die Custom-Property ist hier der einzig verbliebene Weg (eine `clip-path-[…]`-
+ * Utility ist als willkuerlicher Wert vertraglich verboten, die Zeichenketten-Variante
+ * `clipPath: '…'` untersagt dieselbe Konzeptzeile). Die Auflage lautet: Der Traeger ist ein durch
+ * `Math.round` mechanisch geschlossener Integer, nie eine aus API-Daten zusammengesetzte
+ * Zeichenkette.
  *
  * Ein Cast haette genau die Typpruefung abgeschaltet, die diese Auflage stuetzt - auch fuer jede
  * regulaere Eigenschaft, die spaeter danebentritt. Die Erweiterung laesst sie scharf und benennt
@@ -47,7 +47,7 @@ interface MotifFillStyle extends React.CSSProperties {
   '--motif-fill': string
 }
 
-/** Die drei Bandfarben aus dem bestehenden Vorrat (ADR 0113 Punkt 4). `none` faerbt nicht ein:
+/** Die drei Bandfarben aus dem bestehenden Vorrat. `none` faerbt nicht ein:
  * die Fuellebene ist dann ohnehin auf 0 % beschnitten. */
 const FILL_TONE: Record<MotifFillStep, string> = {
   strong: 'text-status-success',

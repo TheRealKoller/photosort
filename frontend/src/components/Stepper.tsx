@@ -31,10 +31,10 @@ interface StepperProps {
  * zu 6px je Seite - und damit ueberlappende Trefferflaechen zwischen Nachbarn, weil die Spalten
  * bewusst ohne Abstand aneinanderstossen (siehe die Geometrie-Anmerkung an der Liste unten).
  *
- * `group`: ERSTE VERWENDUNG DIESES MUSTERS IM PROJEKT. Der Zustand "ueberfahren"/"gedrueckt"
- * entsteht hier, dargestellt wird er am Marker (StepMarker.tsx, `group-hover:`/`group-active:`).
- * Der Zustandstraeger ist damit ueber zwei Dateien verteilt; die `quellen`-Angabe des Bausteins
- * `step-marker` zeigt deshalb auf StepMarker.tsx, wo die Varianten tatsaechlich stehen.
+ * `group`: Der Zustand "ueberfahren"/"gedrueckt" entsteht am Bedienelement, dargestellt wird er
+ * am Marker (StepMarker.tsx, `group-hover:`/`group-active:`). Der Zustandstraeger ist damit ueber
+ * zwei Dateien verteilt; die `quellen`-Angabe des Bausteins `step-marker` zeigt deshalb auf
+ * StepMarker.tsx, wo die Varianten tatsaechlich stehen.
  */
 const STEP_CONTROL_CLASSES =
   'tap-target group flex w-full min-w-0 items-center gap-2 px-1 text-left sm:gap-3'
@@ -79,15 +79,15 @@ function StepLabel({ label, auspraegung }: { label: string; auspraegung: StepMar
 }
 
 /**
- * DER GESPERRTE SCHRITT IST SELBST DER AUSLOESER seines Sperrgrunds - der bisherige eigene
- * `i`-Knopf daneben ist ersatzlos entfallen. Wiederverwendet wird das dokumentierte Muster
- * "Info-Popover fuer situative Kurzerklaerungen" samt geraeteunabhaengigem Oeffnungsverhalten.
- * Kein Radix-Tooltip: das ARIA-Tooltip-Muster ist hover/focus-only und oeffnet nicht per Tippen.
+ * DER GESPERRTE SCHRITT IST SELBST DER AUSLOESER seines Sperrgrunds. Wiederverwendet wird das
+ * dokumentierte Muster "Info-Popover fuer situative Kurzerklaerungen" samt geraeteunabhaengigem
+ * Oeffnungsverhalten. Kein Radix-Tooltip: das ARIA-Tooltip-Muster ist hover/focus-only und
+ * oeffnet nicht per Tippen.
  *
  * `<button type="button">` mit `aria-disabled="true"`, NIE `disabled`: `disabled` naehme das
- * Element aus der Tab-Reihenfolge UND schaltete Zeigerereignisse ab - genau die Luecke, die diese
- * Spec schliesst ("der Grund war fuer Tastaturnutzer gar nicht erreichbar"). Es wird kein `<Link>`
- * gerendert; es gibt keinen Navigationspfad.
+ * Element aus der Tab-Reihenfolge UND schaltete Zeigerereignisse ab - der Sperrgrund waere fuer
+ * Tastaturnutzer gar nicht erreichbar. Es wird kein `<Link>` gerendert; es gibt keinen
+ * Navigationspfad.
  *
  * Der Grund steht zusaetzlich als `sr-only`-Text im Baum und ist per `aria-describedby` verlinkt -
  * damit hat Screenreader-Bedienung ihn auch ohne Oeffnen.
@@ -186,9 +186,8 @@ function BlockedStep({
         </PopoverTrigger>
         <PopoverContent
           onOpenAutoFocus={(event) => {
-            // Beim blossen Darueberfahren darf der Fokus NICHT ins Panel springen. Beim frueheren,
-            // nicht fokussierbaren Ausloeser war das folgenlos - beim jetzigen waere es ein
-            // Rueckschritt: der Zeiger streift einen Schritt, und die Tastaturposition ist weg.
+            // Beim blossen Darueberfahren darf der Fokus NICHT ins Panel springen: der Zeiger
+            // streift einen Schritt, und die Tastaturposition waere weg.
             if (openedByHoverRef.current) {
               event.preventDefault()
             }
@@ -227,7 +226,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
 
   return (
     <>
-      {/* Erste Verwendung eines Skip-Links im Produkt - visuell verborgen bis zum Fokus
+      {/* Der Skip-Link ist visuell verborgen bis zum Fokus
           (Standard-sr-only/focus:not-sr-only-Muster). */}
       <a
         href="#pipeline-content"
@@ -238,8 +237,8 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
       {/*
         DIE ORIENTIERUNGSZEILE STEHT AUSSERHALB DES `<nav>`: Sie scrollt mit dem Inhalt weg,
         statt Platz im dauerhaft fixierten Bereich zu belegen - schmal bleibt die haftende Leiste
-        dadurch rund 25px flacher. Der aktuelle Schritt bleibt
-        auch danach markiert (Akzentrand, fetter Schnitt, `aria-current="step"`).
+        dadurch flacher. Der aktuelle Schritt bleibt auch danach markiert (Akzentrand, fetter
+        Schnitt, `aria-current="step"`).
 
         Bewusst KEIN gemeinsamer Behaelter mit dem `<nav>`: ein haftendes Element kann seinen
         Elternkasten nicht verlassen: in einem nur zwei Zeilen hohen Wrapper waere die Leiste gar
@@ -247,9 +246,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
 
         Die SchrittZAHL kommt aus dem Modell (`PIPELINE_STEPS.length`), nicht als Ziffer: Ein
         weiterer oder wegfallender Schritt verschiebt sie damit von selbst, statt eine zweite,
-        still driftende Fassung neben der Liste zu fuehren. Der sichtbare Wortlaut ist derselbe -
-        die benannten Erwartungsaenderungen der abgeloesten "von 5"-Fassung stehen in den Tests,
-        nicht in einer zweiten Rechnung hier.
+        still driftende Fassung neben der Liste zu fuehren.
       */}
       {activeIndex >= 0 && (
         <p className="text-xs text-text-muted sm:hidden" aria-hidden="true">
@@ -267,9 +264,9 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
           Fuellung (`2*index+1` von `2*PIPELINE_STEPS.length`) wirklich unter der Mitte der
           aktuellen Spalte.
 
-          Ein `gap-*` an dieser Liste verschoebe die Spaltenmitten gegenueber der Balkenskala - bei
-          `gap-3` um bis zu ~5px an den Raendern, in der mittleren Spalte um exakt 0px. Der
-          sichtbare Abstand zwischen den Marken kommt deshalb aus `px-1` INNERHALB der Spalte.
+          Ein `gap-*` an dieser Liste verschoebe die Spaltenmitten gegenueber der Balkenskala, an
+          den Raendern am staerksten, in der mittleren Spalte gar nicht. Der sichtbare Abstand
+          zwischen den Marken kommt deshalb aus `px-1` INNERHALB der Spalte.
           `e2e/tests/stepper-progress.spec.ts` macht eine Umstellung darauf unmittelbar rot.
         */}
         <ol className="flex">
@@ -342,8 +339,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
 
           `aria-hidden`, weil die Information vollstaendig und besser im Schrittlisten-Baum steht
           (`aria-current`, der Zustand im Namen, die Orientierungszeile) - ein zweites, prozentual
-          vorgelesenes Fortschrittselement waere Laerm. Er loest zugleich die frueheren
-          Verbindungslinien zwischen den Marken ab.
+          vorgelesenes Fortschrittselement waere Laerm.
         */}
         <Progress aria-hidden="true" value={progress.value} max={progress.max} className="mt-2" />
       </nav>

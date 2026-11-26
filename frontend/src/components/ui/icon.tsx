@@ -31,18 +31,15 @@ import type { LucideIcon } from 'lucide-react'
  * erzwungen in src/designSystem.*.contract.test.ts. Die Aufrufstellen waehlen ihr Symbol
  * datengetrieben ueber seinen Namen, nicht ueber eine Komponenten-Referenz.
  *
- * TREE-SHAKING IST BEDINGUNG, NICHT KOSMETIK: `lucide-react` ist entpackt rund 32 MB (ein Modul je
- * Symbol). Nur BENANNTE Importe in einem STATISCHEN Objektliteral halten die tatsaechlich
- * ausgelieferte Menge bei zweiundzwanzig Pfad-Definitionen. Ein Namespace-Import (`import * as icons`)
- * oder ein berechneter Zugriff auf das Paket-Objekt zoege den vollen Satz ins Bundle.
+ * TREE-SHAKING IST BEDINGUNG, NICHT KOSMETIK: Nur BENANNTE Importe in einem STATISCHEN
+ * Objektliteral halten die ausgelieferte Menge bei zweiundzwanzig Pfad-Definitionen. Ein
+ * Namespace-Import (`import * as icons`) oder ein berechneter Zugriff auf das Paket-Objekt zoege
+ * den vollen Satz ins Bundle.
  *
- * Der Satz wird NICHT stillschweigend erweitert. Die SIEBEN dokumentierten Luecken (`x` Schliessen,
- * `✎` Uebersteuerungs-Marker, `○` "nicht gelaufen", `●●○` Qualitaetsmesser, `–` unbewertet, `↳`
- * Nebenkategorie-Marker und das SCHLOSS des gesperrten Pipeline-Schritts) bleiben Textzeichen,
- * dateilokale SVGs bzw. bestehende Komponenten - sie mit beliebigen weiteren Lucide-Symbolen zu
- * fuellen waere eine Gestaltungsentscheidung ohne Vorlage.
- *
- * Das Schloss lebt als dateilokales SVG in src/components/StepMarker.tsx.
+ * Der Satz wird NICHT stillschweigend erweitert. Die sieben dokumentierten Luecken bleiben
+ * Textzeichen, dateilokale SVGs bzw. bestehende Komponenten - weitere Lucide-Symbole waeren eine
+ * Gestaltungsentscheidung ohne Vorlage. Das Schloss lebt als dateilokales SVG in
+ * src/components/StepMarker.tsx.
  */
 const ICONS = {
   star: Star,
@@ -64,7 +61,7 @@ const ICONS = {
   // `repeat` traegt "Alternativen" und "Tauschen", `plus` "Hinzufuegen" und "Foto hinzufuegen".
   repeat: Repeat,
   plus: Plus,
-  // Die acht Motivsymbole (ADR 0113 Punkt 3): je eines fuer einen Motivschluessel der Registry,
+  // Die acht Motivsymbole: je eines fuer einen Motivschluessel der Registry,
   // zugeordnet in utils/motifIcons.ts. Sie stehen NUR hier als Name, nie als Komponentenreferenz
   // an der Aufrufstelle.
   'user-round': UserRound,

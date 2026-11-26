@@ -20,7 +20,7 @@ interface StepActionBarProps {
   disabled?: boolean
   /** Laufende Anfrage der Abschluss-Aktion. */
   busy?: boolean
-  /** Bittet um den Abbruch des laufenden Vorgangs (Spec 0641). Fehlt ohne eigenen Lauf. */
+  /** Bittet um den Abbruch des laufenden Vorgangs. Fehlt ohne eigenen Lauf. */
   onCancel?: () => void
   /** Der Abbruch ist angefordert - Knopf gesperrt. Der Fokus geht nur bei eigener Anfrage auf die
    * Statuszeile (`cancelFocusToken`). */
@@ -77,7 +77,7 @@ export function StepActionBar({
         </Button>
       )
       break
-    // „wartet" (Spec 0641): gesperrt, aber OHNE Ladezeichen - es laeuft noch nichts.
+    // „wartet": gesperrt, aber OHNE Ladezeichen - es laeuft noch nichts.
     case 'queued':
       control = (
         <Button type="button" className={ACTION_CLASSES} disabled>

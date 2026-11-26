@@ -32,7 +32,7 @@ function ProjectCard({ project }: { project: ProjectOut }) {
   return (
     <Card className="p-0">
       {/* Die ganze Zeile ist EINE Trefferflaeche - `min-h-11` als Zeilenhoehe einer zeilenweisen
-          Liste (Trefferflaechen-Regel 3), nicht als Schaltflaechenmass. */}
+          Liste, nicht als Schaltflaechenmass. */}
       <Link
         to={`/projects/${project.id}`}
         className="flex min-h-11 flex-col gap-2 px-4 py-3 lg:grid lg:grid-cols-12 lg:items-center lg:gap-x-3 lg:gap-y-0"
@@ -118,9 +118,9 @@ export function ProjectListPage() {
         <ul role="status" aria-label="Projekte werden geladen…" className="flex flex-col gap-3">
           {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
-              {/* Hoehe aus der Kartenhoehe gemessen: vier Zeilen mobil, eine Rasterzeile ab `lg:`.
-                  Ein Platzhalter, der die spaetere Hoehe verfehlt, laesst die Seite beim Eintreffen
-                  der Daten springen. */}
+              {/* Der Platzhalter traegt die Höhe der spaeteren Karte (vier Zeilen mobil, eine
+                  Rasterzeile ab `lg:`): verfehlt er sie, springt die Seite beim Eintreffen der
+                  Daten. */}
               <Skeleton className="h-[136px] w-full rounded-lg lg:h-[72px]" />
             </li>
           ))}
@@ -179,11 +179,11 @@ export function ProjectListPage() {
       )}
 
       {/*
-        Namensnennung des Ortsdatensatzes (ADR 0105 Punkt 5): GeoNames steht unter CC BY 4.0, die
-        Nennung ist Pflicht und wird sichtbar erfuellt. Sie steht app-weit am Fuss der
-        Projektliste - der Einstiegsseite nach der Anmeldung - und damit ausserhalb der
-        Arbeitsansichten, und sie haengt NICHT am Ladezustand der Projekte: Die Pflicht besteht,
-        weil die Anwendung den Datensatz benutzt, nicht weil gerade etwas angezeigt wird.
+        Namensnennung des Ortsdatensatzes: GeoNames steht unter CC BY 4.0, die Nennung ist Pflicht
+        und wird sichtbar erfuellt. Sie steht app-weit am Fuss der Projektliste - der Einstiegsseite
+        nach der Anmeldung - und damit ausserhalb der Arbeitsansichten, und sie haengt NICHT am
+        Ladezustand der Projekte: Die Pflicht besteht, weil die Anwendung den Datensatz benutzt,
+        nicht weil gerade etwas angezeigt wird.
 
         Metadatenzeile in `--text-muted` ueber einer freistehenden Linie auf dem Seitengrund
         (`--separator`) - keine neue Komponente, kein neues Token.
