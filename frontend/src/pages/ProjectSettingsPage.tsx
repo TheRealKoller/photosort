@@ -267,7 +267,7 @@ export function ProjectSettingsPage() {
           an, den es nicht gibt. Farbe tragen ausschliesslich Rand und Schaltflaeche.
 
           Die freistehende --separator-Linie auf dem Seitengrund ist genau ihre dokumentierte
-          Rolle; --border waere dort mit 1,45:1 keine Linie. */}
+          Rolle; --border waere dort keine Linie. */}
       <section className="border-t border-separator pt-6">
         <div className="flex flex-col gap-3 rounded-lg border border-danger bg-surface p-4">
           <h2 className="text-lg text-text-h">Gefahrenzone</h2>

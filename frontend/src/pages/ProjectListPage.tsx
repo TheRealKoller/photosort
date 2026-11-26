@@ -118,9 +118,9 @@ export function ProjectListPage() {
         <ul role="status" aria-label="Projekte werden geladen…" className="flex flex-col gap-3">
           {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
-              {/* Hoehe aus der Kartenhoehe gemessen: vier Zeilen mobil, eine Rasterzeile ab `lg:`.
-                  Ein Platzhalter, der die spaetere Hoehe verfehlt, laesst die Seite beim Eintreffen
-                  der Daten springen. */}
+              {/* Der Platzhalter traegt die Höhe der spaeteren Karte (vier Zeilen mobil, eine
+                  Rasterzeile ab `lg:`): verfehlt er sie, springt die Seite beim Eintreffen der
+                  Daten. */}
               <Skeleton className="h-[136px] w-full rounded-lg lg:h-[72px]" />
             </li>
           ))}

@@ -480,8 +480,8 @@ export function PhotoDetailPage() {
           Gesichterwahl zurücksetzt. */}
       <PhotoPersonsSection key={currentPhoto.id} projectId={id} photo={currentPhoto} />
 
-      {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil. Gleiche Sichtbarkeitsregel wie
-          bisher: KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch
+      {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil.
+          KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch
           kein leerer Behaelter stehenbleibt - der Baustein rendert dann gar nichts, und sein
           eigener Testhaken `criterion-score-grid` ist der Nachweis.
 

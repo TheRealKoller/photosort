@@ -107,11 +107,10 @@ export function PhotoGridTile({
             DAS ELEMENT SELBST BLEIBT: Es traegt Beschnitt und Rundung der Bildflaeche - ohne es
             liefe das Bild ueber die Kachelrundung hinaus, ohne dass eine Pruefung anschluege. */}
         <div className="size-full overflow-hidden rounded-md">{image}</div>
-        {/* Die Bedeutung der beiden Zeichen zusaetzlich als UNSICHTBARER Text. Der Stern und der
-            Punkt ersetzen das bisherige beschriftete Kennzeichen; ohne diesen Text verloere die
-            Ansicht ihre Aussage fuer Bildschirmleser. Der Dateiname steht hier bewusst NICHT - er
-            ist im Ruhezustand nicht im Dokument und erreicht den Bildschirmleser ueber das `alt`
-            des Bildes. */}
+        {/* Die Bedeutung der beiden Zeichen zusaetzlich als UNSICHTBARER Text: ohne ihn verloere
+            die Ansicht ihre Aussage fuer Bildschirmleser. Der Dateiname steht hier bewusst NICHT -
+            er ist im Ruhezustand nicht im Dokument und erreicht den Bildschirmleser ueber das
+            `alt` des Bildes. */}
         {stateWords.length > 0 && <span className="sr-only">{stateWords.join(', ')}</span>}
       </Link>
 

@@ -300,7 +300,7 @@ export function ClassificationReviewCreatePanel({
   // "Kosten vor dem Start": der Preis ist Kontrollmittel, nicht Beiwerk. Solange eine gewaehlte
   // Seite Cloud ist, startet die Pruefung deshalb nur mit fertiger Schaetzung - waehrend sie
   // laedt oder nach einem Fehler bleibt der Ausloeser zu. Rein kostenfreie Kombinationen
-  // (Eye, lokal) brauchen keine Vorschau und bleiben wie bisher startbar.
+  // (Eye, lokal) brauchen keine Vorschau und bleiben startbar.
   const hasCloudSide = sideA?.kind === 'cloud' || sideB?.kind === 'cloud'
   const estimateReady = !hasCloudSide || estimateQuery.isSuccess
   const isReady = sides !== null && sampleSizeValid && estimateReady && !isSubmitting

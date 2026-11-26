@@ -130,12 +130,9 @@ export function ProjectPipelineLayout() {
         <Outlet context={outletContext} />
       </div>
 
-      {/* Hier stand zuletzt noch ein "Statistik"-Button - der letzte Rest der frueheren
-          Sekundaernavigation am Seitenende.
-          Er ist ersatzlos entfallen, weil die Statistikseite jetzt ein Nebenziel der
-          Kopfzeilengruppe ist und damit von JEDER Projektseite aus erreichbar; ein zweiter
-          Einstiegspunkt nur hier waere eine Dopplung. Die Seite endet damit mit ihrem
-          Schrittinhalt. */}
+      {/* KEIN eigener "Statistik"-Button am Seitenende: die Statistikseite ist ein Nebenziel der
+          Kopfzeilengruppe und damit von JEDER Projektseite aus erreichbar; ein zweiter
+          Einstiegspunkt nur hier waere eine Dopplung. Die Seite endet mit ihrem Schrittinhalt. */}
     </div>
   )
 }
