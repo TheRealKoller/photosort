@@ -9,19 +9,18 @@ import type { IconName } from './ui/icon'
  * Ein Eintrag der Board-Bewertungsleiste: Symbol, sichtbare Beschriftung und die Ziffer der
  * Taste, die ihn tatsächlich auslöst.
  *
- * DREI EINTRÄGE, ABER NICHT DREI STUFEN EINER SKALA: "Favorit" ist seit ADR 0098 ein
- * UNABHÄNGIGER Zweizustand neben der zweiwertigen Albumentscheidung. Ein- und Ausschalten lässt
- * "Album-würdig"/"Verwerfen" unberührt und umgekehrt; Favorit kann gleichzeitig mit einem der
- * beiden gefüllt sein. Vor dieser Trennung setzte das Markieren als Favorit eine bestehende
- * Entscheidung STILL zurück - kein Fehler, keine Meldung, die Entscheidung war fort.
+ * DREI EINTRÄGE, ABER NICHT DREI STUFEN EINER SKALA: "Favorit" ist ein UNABHÄNGIGER Zweizustand
+ * neben der zweiwertigen Albumentscheidung. Ein- und Ausschalten lässt "Album-würdig"/"Verwerfen"
+ * unberührt und umgekehrt; Favorit kann gleichzeitig mit einem der beiden gefüllt sein. Setzte das
+ * Markieren als Favorit eine bestehende Entscheidung STILL zurück, wäre sie ohne Fehler und ohne
+ * Meldung fort.
  *
- * DIE BELEGUNG BLEIBT 1 / 2 / 3: Übernommen wird die FORM des Kästchens, nicht die
- * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` -
- * beide können auseinanderlaufen, deshalb prüft `PhotoDetailPage.*.test.tsx` sie
- * tabellengetrieben gegeneinander.
+ * DIE BELEGUNG BLEIBT 1 / 2 / 3: Das Kästchen übernimmt die FORM des Boards, nicht dessen
+ * Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` - beide können
+ * auseinanderlaufen, deshalb prüft `PhotoDetailPage.*.test.tsx` sie tabellengetrieben gegeneinander.
  *
  * ZIFFERNFARBE IN DER ZUSTANDSFARBE, aber für "Verwerfen" `--danger-text` statt
- * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT.
+ * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` kein AA und ist hier TEXT.
  */
 const OPTIONS: {
   control: RatingControl
@@ -96,16 +95,16 @@ interface RatingButtonsProps {
   favorite: boolean
   /**
    * Die Toggle-Entscheidung (erneutes Klicken derselben Bewertung setzt zurück auf
-   * unbewertet) liegt bewusst beim Aufrufer, nicht hier in der Komponente - so kann
-   * dieselbe Logik auch von einem Tastatur-Shortcut-Handler (1/2/3-Tasten) auf Seitenebene
-   * wiederverwendet werden, statt sie zu duplizieren.
+   * unbewertet) liegt beim Aufrufer, nicht hier in der Komponente - so kann dieselbe Logik auch
+   * von einem Tastatur-Shortcut-Handler (1/2/3-Tasten) auf Seitenebene wiederverwendet werden,
+   * statt sie zu duplizieren.
    */
   onToggle: (status: RatingStatus) => void
   /**
    * Eigener Handler statt eines dritten Werts in `onToggle`: Die beiden schreiben auf
    * VERSCHIEDENE Endpunkte (`PUT .../rating` bzw. `PUT .../favorite`), und genau deren Trennung
-   * ist der Zweck der Story. Ein gemeinsamer Handler lüde dazu ein, beide Felder aus einem
-   * teilbefüllten Zustand zu schreiben.
+   * ist gewollt. Ein gemeinsamer Handler lüde dazu ein, beide Felder aus einem teilbefüllten
+   * Zustand zu schreiben.
    */
   onToggleFavorite: () => void
   disabled?: boolean
@@ -129,7 +128,7 @@ export function RatingButtons({
   // `disabled` synchron mithält. Das Button-eigene busy-Prop (eigener Spinner je Button)
   // wird bewusst NICHT an alle drei Buttons weitergereicht - drei parallele Spinner plus
   // die separate "Speichert…"-Zeile wären redundante Bewegungsunruhe für eine häufig
-  // wiederholte, schnelle Aktion ("Durchsatz vor Erklärung").
+  // wiederholte, schnelle Aktion.
   const isDisabled = disabled || busy
 
   return (

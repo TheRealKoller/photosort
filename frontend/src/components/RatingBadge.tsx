@@ -15,8 +15,8 @@ const TONE_BY_STATUS: Record<RatingStatus, BadgeTone> = {
  * Die Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`).
  *
  * Fuer "Album-wuerdig" gilt `book` und NICHT `check`: `check` ist im Produkt bereits das Symbol
- * der Erfolgsmeldung (ui/alert.tsx), eine Doppelbelegung braeche "Bewertungsstufen auf einen
- * Blick unterscheidbar".
+ * der Erfolgsmeldung, eine Doppelbelegung braeche "Bewertungsstufen auf einen Blick
+ * unterscheidbar".
  */
 const SYMBOLS: Record<RatingStatus, IconName> = {
   album_worthy: 'book',
@@ -34,9 +34,9 @@ interface RatingBadgeProps {
   /** Die Albumentscheidung; `null` heisst "keine getroffen". */
   status: RatingStatus | null
   /**
-   * Das Favoriten-Kennzeichen - seit ADR 0098 eine EIGENE Angabe neben der Albumentscheidung
-   * und deshalb ein eigenes, gleichzeitig sichtbares Kennzeichen. Ein einzelnes Badge koennte
-   * nur eines von beidem zeigen.
+   * Das Favoriten-Kennzeichen - eine EIGENE Angabe neben der Albumentscheidung und deshalb ein
+   * eigenes, gleichzeitig sichtbares Kennzeichen. Ein einzelnes Badge koennte nur eines von beidem
+   * zeigen.
    */
   favorite?: boolean
   /**
@@ -52,8 +52,8 @@ interface RatingBadgeProps {
 
 /**
  * MEHRFACHCODIERUNG DER DREI BEWERTUNGSZUSTAENDE - sie muessen ohne Farbwahrnehmung
- * unterscheidbar bleiben. In Graustufen-Luminanz liegen Favorit (0.48) und Album-wuerdig (0.54)
- * bei nur 1.10:1 zueinander, als reine Farbflaechen also praktisch identisch hell. Die
+ * unterscheidbar bleiben: in Graustufen-Luminanz liegen Favorit und Album-wuerdig so nah
+ * beieinander, dass sie als reine Farbflaechen praktisch identisch hell sind. Die
  * Unterscheidbarkeit traegt AUSSCHLIESSLICH ueber die Mehrfachcodierung:
  *   1. zugaenglicher Name (Favorit / Album-wuerdig / Verworfen),
  *   2. eigenes Symbol (`data-icon`: star / book / x-circle),

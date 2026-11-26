@@ -20,7 +20,7 @@ interface CriterionScoreGridProps {
 
 const DEFAULT_TITLES = { quality: 'Qualität — Einzelwerte', content: 'Bildinhalt — Einzelwerte' }
 
-/** Eine Nachschlagzeile: Name links, Wert rechts. `text-sm` ist die Bezugsgröße von AK5 - die
+/** Eine Nachschlagzeile: Name links, Wert rechts. `text-sm` ist die Bezugsgröße - die
  *  Albumtauglichkeits-Zeile des Urteils steht mindestens beim 1,4-fachen davon. */
 function ScoreRow({
   label,
@@ -48,7 +48,7 @@ function ScoreRow({
  * Einzelwert steht wo" - deshalb mehrspaltig ab `sm:`, auf Telefonbreite einspaltig, und in der
  * kleinsten Textstufe der Seite.
  *
- * KEIN AUFKLAPPEN, KEIN AUSLÖSER (AK4): Jede Angabe steht ohne Bedienhandlung da. Ein Block ohne
+ * KEIN AUFKLAPPEN, KEIN AUSLÖSER: Jede Angabe steht ohne Bedienhandlung da. Ein Block ohne
  * Inhalt entfällt vollständig - keine Kopfzeile, kein leeres `<dl>`; bei komplett leerer Eingabe
  * rendert die Komponente `null` statt eines leeren Rahmens.
  *
@@ -56,9 +56,9 @@ function ScoreRow({
  * hier nachgebauten Zuordnung.
  *
  * KEIN RANG. Er ist keiner der fünfzehn Einzelwerte, sondern Teil des URTEILS und steht
- * ausschließlich in `PhotoVerdict` (Spec 0497, AK5). Nähme dieser Baustein ihn ebenfalls
- * entgegen, stünde dieselbe Angabe an zwei Stellen der Seite - die beiden liefen früher oder
- * später auseinander, und der Nutzer läse denselben Rang zweimal untereinander.
+ * ausschließlich in `PhotoVerdict`. Nähme dieser Baustein ihn ebenfalls entgegen, stünde dieselbe
+ * Angabe an zwei Stellen der Seite - die beiden liefen früher oder später auseinander, und der
+ * Nutzer läse denselben Rang zweimal untereinander.
  */
 export function CriterionScoreGrid({
   criterionScores,
@@ -95,7 +95,7 @@ export function CriterionScoreGrid({
           </h3>
           <dl className="flex flex-col gap-2">
             {qualityScores.map((score) => (
-              // S3: geschluesselt ueber den Registry-Schluessel, nie ueber den Anzeigenamen.
+              // Geschluesselt ueber den Registry-Schluessel, nie ueber den Anzeigenamen.
               <ScoreRow
                 key={score.criterion_key}
                 label={score.display_name}

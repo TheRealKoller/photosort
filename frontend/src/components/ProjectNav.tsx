@@ -85,8 +85,8 @@ const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
  * zweite, gegenlaeufige `lg:`-Regel zum Wieder-Abschalten - eine stille Fehlerquelle.
  *
  * `--separator` STATT `--border` NACH DER BENANNTEN AUSNAHME "Gruppentrenner auf
- * `--elevated`/`--overlay`" des Design-Systems (ebenso am Token in index.css vermerkt):
- * Innerhalb von Panels und Popovern verwenden Gruppengrenzen `--separator`.
+ * `--elevated`/`--overlay`" des Design-Systems: Innerhalb von Panels und Popovern verwenden
+ * Gruppengrenzen `--separator`.
  *
  * AUSDRUECKLICH NICHT die Regel "Linie auf dem Grund" - die trifft hier NICHT zu: das
  * `PopoverContent` steht auf `--elevated`, nicht auf `--bg`/`--surface`. Ein Wechsel auf

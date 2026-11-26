@@ -43,8 +43,8 @@ interface CurationLightboxProps {
  * Beide Kuratierungsschritte montieren sie: Sie liest keines der drei Endauswahl-Felder und leitet
  * keine Zugehoerigkeit ueber `isInAlbum` her.
  *
- * Dateiname, Pfad, Feinlabels, Orts- und Kameratext stehen ausschliesslich als React-Textknoten;
- * `relative_path` sonst nur in `alt` (Sicherheitsauflage S3 der Spec 0531).
+ * Dateiname, Pfad, Feinlabels, Orts- und Kameratext sind fremdbestimmter Text und stehen
+ * ausschliesslich als React-Textknoten; `relative_path` sonst nur in `alt`.
  */
 export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
   const closeRef = useRef<HTMLButtonElement>(null)

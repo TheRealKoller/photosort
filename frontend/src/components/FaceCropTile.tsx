@@ -25,8 +25,8 @@ function toBlob(source: FaceCropSource): Blob | null {
 
 /**
  * Macht aus einem Ausschnitt eine Blob-URL und gibt sie frei, sobald die Quelle wechselt oder die
- * Kachel aushängt. SICHERHEIT (S6): Ein Ausschnitt steht nie als `data:`-URL im DOM, und keine
- * URL überlebt ihre Kachel. `failed` heißt: nicht darstellbar.
+ * Kachel aushängt. SICHERHEIT: Ein Ausschnitt steht nie als `data:`-URL im DOM, und keine URL
+ * überlebt ihre Kachel. `failed` heißt: nicht darstellbar.
  */
 export function useFaceCropUrl(source: FaceCropSource | undefined): string | 'failed' | undefined {
   const [url, setUrl] = useState<string | 'failed' | undefined>(undefined)

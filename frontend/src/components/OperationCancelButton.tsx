@@ -15,10 +15,10 @@ interface OperationCancelButtonProps {
 }
 
 /**
- * Der EINE Abbruch-Knopf (Spec 0641): `secondary`, nie `destructive` - abgebrochen wird nichts
- * Vernichtendes, alles bis jetzt Fertige bleibt. Er sitzt beim Fortschritt seines Vorgangs, nicht
- * in einer Sammlung am Seitenrand. Die 44-px-Trefferflaeche spannt `tap-target` der Schaltflaeche
- * auf; die sichtbare Dichte bleibt bei 32 px.
+ * Der EINE Abbruch-Knopf: `secondary`, nie `destructive` - abgebrochen wird nichts Vernichtendes,
+ * alles bis jetzt Fertige bleibt. Er sitzt beim Fortschritt seines Vorgangs, nicht in einer
+ * Sammlung am Seitenrand. Die 44-px-Trefferflaeche spannt `tap-target` der Schaltflaeche auf; die
+ * sichtbare Dichte bleibt bei 32 px.
  */
 export function OperationCancelButton({
   operation,

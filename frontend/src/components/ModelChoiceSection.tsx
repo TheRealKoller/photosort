@@ -11,7 +11,7 @@ import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
 
 /**
- * Der Abschnitt „Modellwahl" der Projekteinstellungen (Spec 0383, ADR 0143).
+ * Der Abschnitt „Modellwahl" der Projekteinstellungen.
  *
  * Je Tätigkeit genau EIN Radio (nie zwei Kontrollkästchen: „keine Kategorisierung" schließt das
  * Datenmodell aus), alle Marken einer Tätigkeit in einer Gruppe über `name`. Beide Marken dürfen
@@ -20,7 +20,7 @@ import { Skeleton } from './ui/skeleton'
  * Gespeichert wird EINMAL unter dem Raster, nicht je Karte: der `PUT` schreibt alle drei Spalten
  * in einem Commit, und erst diese Atomarität macht „ein fehlgeschlagenes Speichern lässt die
  * bisherige Wahl unverändert" wahr. Nach einem Fehlschlag springen die Marken auf die
- * Serverantwort zurück, statt den geänderten Entwurf stehen zu lassen.
+ * Serverantwort zurück.
  *
  * Die Fakten der Karte bleiben in JEDEM Zustand lesbar; `disabled` trägt nur das Bedienelement.
  */

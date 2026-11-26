@@ -13,7 +13,7 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 
 /**
- * Die Projektleiste fuer laufende und wartende Vorgaenge (Spec 0641).
+ * Die Projektleiste fuer laufende und wartende Vorgaenge.
  *
  * Sie erscheint NUR, solange es etwas zu nennen gibt - ein Projekt ohne Vorgang bekommt keine
  * leere Zeile. Die Namen kommen aus der Antwort des Servers (`label`), dieselbe Vokabel wie in

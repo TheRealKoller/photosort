@@ -15,7 +15,7 @@ export interface CurationPhotoTileProps {
   width: number
   imageHeight: number
   /** Die EIGENE Bewertung (`utils/ownRating.ts::ownRatingStatus`), nie eine zweite Ableitung aus
-   * `photo.ratings[]` (S6/S10). `rejected` macht die Kachel zur gestrichenen Kachel. */
+   * `photo.ratings[]`. `rejected` macht die Kachel zur gestrichenen Kachel. */
   ownStatus: RatingStatus | null
   /** true, solange ein Handgriff an DIESEM Foto läuft. */
   deciding: boolean
@@ -37,7 +37,7 @@ export interface CurationPhotoTileProps {
  * handelt sofort, ohne Bestätigung; während der Anfrage ist die Fläche `busy` und nimmt keinen
  * zweiten Druck an (der Unique-Constraint der Bewertungszeile).
  *
- * Fokusziele trägt die Seite über `data-focus-key` (numerische Foto-Id, nie ein Name - S11).
+ * Fokusziele trägt die Seite über `data-focus-key` (numerische Foto-Id, nie ein Name).
  */
 export function CurationPhotoTile({
   photo,

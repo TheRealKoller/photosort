@@ -75,10 +75,10 @@ function StanceBadge({ stance, proposed }: { stance: ParticipantStance; proposed
  * `variant="destructive"` KOMMT HIER NICHT VOR (Kollisionsregel im Docstring von `ui/button.tsx`):
  * Diese Kachel zeigt Bewertungs-Kennzeichen je Teilnehmer.
  *
- * SICHERHEIT (S10): `username` und Dateiname sind fremdbestimmter Text und erscheinen
- * ausschließlich als reguläre React-Textknoten - nie über `dangerouslySetInnerHTML`, nie in
- * `href`, `src`, `style` oder einer URL. Das Session-Token liegt in `localStorage`, und
- * eingeschleuster Inhalt liefe im Browser BEIDER Nutzer.
+ * SICHERHEIT: `username` und Dateiname sind fremdbestimmter Text und erscheinen ausschließlich
+ * als reguläre React-Textknoten - nie über `dangerouslySetInnerHTML`, nie in `href`, `src`, `style`
+ * oder einer URL. Das Session-Token liegt in `localStorage`, und eingeschleuster Inhalt liefe im
+ * Browser BEIDER Nutzer.
  */
 export function SelectionPhotoTile({
   photo,

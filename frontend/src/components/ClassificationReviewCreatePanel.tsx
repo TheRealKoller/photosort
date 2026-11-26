@@ -255,7 +255,7 @@ interface ClassificationReviewCreatePanelProps {
 }
 
 /**
- * Das Anlegen-Panel der Klassifizierungspruefung (Spec 0616, Seite 1).
+ * Das Anlegen-Panel der Klassifizierungspruefung.
  *
  * Es steht inline unter dem Kopf, nicht in einem Dialog, und bleibt beim Zuklappen nicht im DOM.
  * Die Wahl folgt dem Muster "Wegwahl ohne Vorgabe": zwei `fieldset`s mit vollbreiten Radio-Zeilen,

@@ -38,7 +38,7 @@ export interface UndoToastProps {
  *
  * Titel und Dateiname liegen in einem DAUERHAFT eingehängten `role="status"`; der Knopf liegt
  * außerhalb davon, und der Fokus wird nie in den Hinweis gezogen. Dateiname und Server-`detail`
- * sind Textknoten (S11), das Vorschaubild kommt über den authentifizierten Abruf nach Foto-Id.
+ * sind Textknoten, das Vorschaubild kommt über den authentifizierten Abruf nach Foto-Id.
  */
 export function UndoToast({ notice, busy, error, restartKey, onUndo, onDismiss }: UndoToastProps) {
   const [focusWithin, setFocusWithin] = useState(false)

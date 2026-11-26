@@ -18,12 +18,11 @@ import { Progress } from './ui/progress'
  * Die Ableitung "welcher Teilschritt, welcher Zustand, welcher Fortschritt" steht vollständig in
  * `utils/classificationSteps.ts` - hier bleibt reine Darstellung.
  *
- * ZUSTANDSDARSTELLUNG: Jede Zeile trägt ihren Zustand als AUSGESCHRIEBENES WORT und zusätzlich als
- * `data-step-state`, nie allein über Farbe oder Symbol. Das Zeichen links ist bewusst der bereits
- * im Produkt etablierte `StatusDot` (laufend: Puls in der Prozessfarbe, `motion-reduce`-fest) bzw.
- * der `check`-Haken - kein neuer Spinner und kein durchgestrichener Kreis: das Design-System führt
- * `rounded-full` als abschließende Fundstellenliste und kennt kein neutrales Kreuz-Symbol. Die
- * Zustandsaussage hängt ohnehin am Text, das Zeichen begleitet ihn nur.
+ * Jede Zeile trägt ihren Zustand als AUSGESCHRIEBENES WORT und zusätzlich als `data-step-state`,
+ * nie allein über Farbe oder Symbol. Das Zeichen links ist der bereits im Produkt etablierte
+ * `StatusDot` (laufend: Puls in der Prozessfarbe, `motion-reduce`-fest) bzw. der `check`-Haken -
+ * kein neuer Spinner und kein durchgestrichener Kreis. Die Zustandsaussage hängt ohnehin am Text,
+ * das Zeichen begleitet ihn nur.
  */
 
 const STATE_LABELS: Record<ClassificationStepState, string> = {
@@ -31,7 +30,7 @@ const STATE_LABELS: Record<ClassificationStepState, string> = {
   running: 'läuft',
   done: 'erledigt',
   skipped: 'übersprungen',
-  // Spec 0641: Der unterbrochene Teilschritt und alles danach - beide ohne Farbe und ohne Puls.
+  // Der unterbrochene Teilschritt und alles danach - beide ohne Farbe und ohne Puls.
   cancelled: 'abgebrochen',
   not_started: 'nicht begonnen',
 }
@@ -96,7 +95,7 @@ export function ClassificationProgress({ run }: ClassificationProgressProps) {
 
 /**
  * Die Restdauer des laufenden Teilschritts - eine eigene Textzeile, kein Ersatz für den
- * Fortschrittswert, den Balken oder das Zustandswort (AK9).
+ * Fortschrittswert, den Balken oder das Zustandswort.
  *
  * Eigene Komponente, weil `useSteadyEtaText` ein Hook ist und in der Schrittschleife nicht
  * aufgerufen werden dürfte. Der Nebeneffekt ist erwünscht: Je Teilschritt entsteht eine eigene

@@ -19,7 +19,7 @@ import { Icon, type IconName } from './ui/icon'
  *
  * ES GIBT KEINEN DRITTEN EINTRAG. „Noch offen" ist kein Zustand: Die Ansicht zeigt die
  * Auswertung des Überlebens-Prädikats, und jede Aufnahme trägt beim Öffnen bereits das, was ohne
- * weiteres Zutun eintritt (ADR 0111). Exportiert, damit die Schlüsselmenge selbst prüfbar ist.
+ * weiteres Zutun eintritt. Exportiert, damit die Schlüsselmenge selbst prüfbar ist.
  */
 export const DUPLICATE_ZUSTAENDE: Record<
   DuplicateDecision,
@@ -67,7 +67,7 @@ export function DuplicateStateLabel({ decision }: { decision: DuplicateDecision 
 }
 
 /**
- * Die Bewertungszeile (A7): Schärfe immer, Belichtung nur mit Wert.
+ * Die Bewertungszeile: Schärfe immer, Belichtung nur mit Wert.
  *
  * Die Werte kommen aus `sharpness`/`exposure` der Gruppenantwort, NIE aus `PhotoOut.suggestion` —
  * jenes Feld fällt nach jeder Entscheidung auf `null`. Die Auszeichnung ist nur ein Wort: kein
@@ -199,7 +199,7 @@ export interface DuplicatePhotoTileProps {
  * ALLE MITGLIEDER SIND GLEICHRANGIG: Keine Karte trägt eine Auszeichnung als Gewinner, Original
  * oder Vorgeschlagener. Der Zustand, den sie zeigt, sagt, was ohne Zutun geschieht.
  *
- * ALLES STEHT GLEICHZEITIG DA (A4): Bildfläche, Dateiname, Zustandskennzeichen, Bewertungszeile
+ * ALLES STEHT GLEICHZEITIG DA: Bildfläche, Dateiname, Zustandskennzeichen, Bewertungszeile
  * und Wahl — nichts liegt hinter einem Aufklappen.
  *
  * DIE BILDFLÄCHE IST EIN NATIVES `<button>` und öffnet die Großansicht. Die Wahlzeile liegt
@@ -234,11 +234,11 @@ export function DuplicatePhotoTile({
       {/* Die Bildfläche schneidet ihre Ecken ab - Trefferflächen-Utilities haben hier nichts zu
           suchen, sie würden still abgeschnitten. Sie ist ohnehin größer als 44 × 44 px.
 
-          JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen (A6): Hier liegen
+          JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen: Hier liegen
           ähnliche Aufnahmen nebeneinander, und genau ihr Helligkeits- und Qualitätsunterschied
           soll beurteilt werden. Den Zustand tragen Rahmen und Kennzeichen außerhalb des Bildes.
 
-          KEIN BESCHNITT (Spec 0638): Die Maße kommen aus dem Raster und stehen, bevor das
+          KEIN BESCHNITT: Die Maße kommen aus dem Raster und stehen, bevor das
           authentifiziert geladene Bild eintrifft; das Bild ist darin eingepasst. Ein Rand bei
           unbekanntem oder extremem Verhältnis ist die Kartenfläche. */}
       <button

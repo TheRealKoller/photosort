@@ -41,7 +41,7 @@ interface SelectionTargetFieldProps {
  * senden `null`, `0` ist kein Weg dorthin.
  *
  * GESPEICHERT WIRD BEIM VERLASSEN DES FELDES und bei `Enter`, nie bei jedem Tastendruck: jedes
- * Speichern rechnet den gesamten Vorschlag neu (Sicherheitskonzept, S3).
+ * Speichern rechnet den gesamten Vorschlag neu.
  *
  * DAS FELD KLEMMT NICHT. `min={1}` ist ein Hinweis; die Grenze setzt allein der Endpunkt durch.
  *
