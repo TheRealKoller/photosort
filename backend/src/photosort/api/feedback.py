@@ -31,7 +31,7 @@ from photosort.quality_weights import (
     store_weights,
 )
 
-# SICHERHEIT (S1): Der Torwaechter haengt am ROUTER und gilt damit fuer jeden Endpunkt hier, auch
+# SICHERHEIT: Der Torwaechter haengt am ROUTER und gilt damit fuer jeden Endpunkt hier, auch
 # fuer einen spaeter ergaenzten. Er traegt zusaetzlich seinen Eintrag in
 # `tests/test_auth_guard.py::_protected_router_operations()` und je Pfad einen eigenen,
 # pfadbenannten 401-Fall. Ohne ihn waere die Diagnose ein unauthentifizierter Lesepfad auf
@@ -43,8 +43,8 @@ from photosort.quality_weights import (
 # Urheberschaft, nie Geltungsbereich: Die Fassung wirkt auf jeden Lauf jedes Projekts.
 router = APIRouter(prefix="/feedback", tags=["feedback"], dependencies=[Depends(get_current_user)])
 
-# Deklarative Obergrenze wie in S4: Ein unbeschraenkter Pydantic-`int` erzeugt unter SQLite
-# jenseits von 2^63 einen `OverflowError` und damit `500` statt `422`.
+# Deklarative Obergrenze der fremdgesteuerten Ids: Ein unbeschraenkter Pydantic-`int` erzeugt
+# unter SQLite jenseits von 2^63 einen `OverflowError` und damit `500` statt `422`.
 _MAX_ID = 1_000_000_000
 
 # EIN Text fuer beide Konfliktfaelle der Uebernahme waere falsch - die beiden Waechter sagen
@@ -72,7 +72,7 @@ class ExchangeStatsOut(BaseModel):
 
     `quality_incomparable_count` haelt die Paare mit gleichem UND die mit fehlendem eingefrorenem
     Qualitaetswert; sie gehen in `preferred_lower_rated_count` nicht ein und werden auch seinem
-    Gegenstueck nicht zugeschlagen (D4)."""
+    Gegenstueck nicht zugeschlagen."""
 
     kind: ExchangeKind
     count: int
@@ -81,7 +81,7 @@ class ExchangeStatsOut(BaseModel):
 
 
 class CriterionAgreementOut(BaseModel):
-    """Die Bilanz eines Kriteriums (D5).
+    """Die Bilanz eines Kriteriums.
 
     `case_count` ist die Zahl der TATSAECHLICH AUSWERTBAREN Paare - beide Fotos tragen den
     Messwert. Sie kann kleiner sein als die Zahl der gleichstufigen Austausche; beide stehen
@@ -124,21 +124,21 @@ class WeightPreviewOut(BaseModel):
     """Die Gewichts-Vorschau: was gilt, was vorgeschlagen wird, woran das haengt.
 
     `based_on_event_id` ist das ZUSTIMMUNGS-TOKEN auf den zuletzt beruecksichtigten
-    Ereignisstand (S6), nie ein Objektverweis: Es wird nie zu einer Zeile aufgeloest, traegt
+    Ereignisstand, nie ein Objektverweis: Es wird nie zu einer Zeile aufgeloest, traegt
     keine Autorisierung und ist bei leerem Log `0`. Es ist das Einzige, was "der Nutzer hat
     uebernommen, was ihm angezeigt wurde" wahr macht - die Uebernahme prueft es auf STRIKTE
     GLEICHHEIT gegen die hoechste `id` des GESAMTEN Logs.
 
     `current_set_id` ist die geltende Fassung, `None` heisst "es gilt der Startwertsatz". Die
-    Ruecknahme MUSS sie nennen koennen (S7), und `can_revert` ist genau
+    Ruecknahme MUSS sie nennen koennen, und `can_revert` ist genau
     `current_set_id is not None` - deshalb ein BERECHNETES Feld und kein zweites, unabhaengig
     gefuelltes: Zwei Quellen fuer dieselbe Aussage liefen auseinander, und die Oberflaeche boete
     eine Schaltflaeche ohne Ziel an. Die erste Fassung ist sehr wohl zuruecknehmbar - ihre
     Vorgaengerin ist der Startwertsatz.
 
     DER VORSCHLAG WIRD AUS DEN STARTWERTEN ABGELEITET, nie aus den geltenden Gewichten: Sonst
-    verschoebe jede Uebernahme die Grundlage der naechsten, und die Bandbreite aus G3 waere nach
-    wenigen Runden verlassen, ohne dass eine einzelne Uebernahme sie je verletzte."""
+    verschoebe jede Uebernahme die Grundlage der naechsten, und das Band um den Startwert waere
+    nach wenigen Runden verlassen, ohne dass eine einzelne Uebernahme es je verletzte."""
 
     current: list[CriterionWeightOut]
     proposed: list[ProposedWeightOut]
@@ -148,12 +148,12 @@ class WeightPreviewOut(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def can_revert(self) -> bool:
-        """Ohne gespeicherte Fassung gibt es nichts zurueckzunehmen (G10)."""
+        """Ohne gespeicherte Fassung gibt es nichts zurueckzunehmen."""
         return self.current_set_id is not None
 
 
 class FeedbackDiagnosisOut(BaseModel):
-    """Die Diagnose - AUSSCHLIESSLICH AGGREGATE (S8).
+    """Die Diagnose - AUSSCHLIESSLICH AGGREGATE.
 
     `correction_count` ist die UNGEWICHTETE Zahl aller festgehaltenen Korrekturen, ueber alle
     Projekte und beide Nutzer. Ein Ereignis der gemeinsamen Endauswahl wiegt in der RECHNUNG
@@ -171,13 +171,13 @@ class FeedbackDiagnosisOut(BaseModel):
 
 
 class WeightAdoptionIn(BaseModel):
-    """Der Body der Uebernahme: GENAU EIN FELD, und das ist ein Waechter (G7/S4).
+    """Der Body der Uebernahme: GENAU EIN FELD, und das ist ein Waechter.
 
     Kein Gewicht, kein Kriterium, kein Nutzer - Massenzuweisung ist strukturell ausgeschlossen
     statt im Handler herausgefiltert, und `extra="forbid"` weist ein zusaetzliches Feld
     ausdruecklich ab, statt es still zu verwerfen.
 
-    `based_on_event_id` ist das Zustimmungs-Token (S6): `0` bei leerem Log, sonst die hoechste
+    `based_on_event_id` ist das Zustimmungs-Token: `0` bei leerem Log, sonst die hoechste
     `id` des gesamten Logs, wie sie die Diagnose ausgewiesen hat."""
 
     model_config = ConfigDict(extra="forbid")
@@ -186,7 +186,7 @@ class WeightAdoptionIn(BaseModel):
 
 
 class WeightRevertIn(BaseModel):
-    """Der Body der Ruecknahme: die Fassung, die zurueckgenommen werden soll (S7).
+    """Der Body der Ruecknahme: die Fassung, die zurueckgenommen werden soll.
 
     Ohne diese Angabe legen zwei Aufrufe kurz hintereinander erst die Ruecknahme und dann deren
     Ruecknahme an - das Ergebnis ist der Ausgangszustand, die Kette sieht lueckenlos aus, und
@@ -201,7 +201,7 @@ async def _weight_preview(session: AsyncSession) -> WeightPreviewOut:
     """Die Vorschau, aus EINER Rechnung fuer alle drei Endpunkte.
 
     Ein zweiter Rechenweg fuer dasselbe liefe auseinander - und die Zusage "die gespeicherten
-    Werte sind exakt die zuvor angezeigten" (G6) haengt daran, dass Anzeige und Uebernahme
+    Werte sind exakt die zuvor angezeigten" haengt daran, dass Anzeige und Uebernahme
     denselben Weg gehen."""
     diagnosis = await load_diagnosis(session, criterion_keys=tuple(QUALITY_CRITERION_WEIGHTS))
     current = await effective_weights(session)
@@ -239,7 +239,7 @@ async def adopt_feedback_weights(
     geprueft - nie gegen ein nach Projekt oder Art gefiltertes Maximum. Sind seither Ereignisse
     hinzugekommen, gleich in welchem Projekt, antwortet der Endpunkt `409` und schreibt NICHTS.
 
-    ER SCHREIBT DIE NEUE FASSUNG UND SONST NICHTS (G9): Keine Rangzeile bewegt sich, es entsteht
+    ER SCHREIBT DIE NEUE FASSUNG UND SONST NICHTS: Keine Rangzeile bewegt sich, es entsteht
     kein neuer Lauf, es wird kein Hintergrundjob eingereiht, und es ergeht kein Modell- oder
     Cloud-Aufruf. Erst der naechste Durchlauf rechnet mit den neuen Gewichten. Das ist der
     bewusste Gegensatz zu `PUT /projects/{id}/selection-target`, das synchron neu rechnet - eine
@@ -271,12 +271,12 @@ async def revert_feedback_weights(
 
     ES WIRD NIE EINE FASSUNG GELOESCHT; die Kette bleibt lueckenlos. Und es ist ein UMSCHALTER:
     Der zweite Druck fuehrt zurueck auf die Werte, von denen der erste zurueckgesetzt hat, und
-    geht nicht eine weitere Fassung rueckwaerts (G10).
+    geht nicht eine weitere Fassung rueckwaerts.
 
     Der Aufruf NENNT die Fassung, die zurueckgenommen werden soll, und wird mit `409` abgewiesen,
     wenn sie nicht mehr die geltende ist - auch dann, wenn es ueberhaupt keine gibt. Ohne diesen
     Waechter legen zwei Aufrufe kurz hintereinander erst die Ruecknahme und dann deren Ruecknahme
-    an (S7).
+    an.
 
     Die Vorgaengerin der ersten Fassung ist der STARTWERTSATZ: Die erste Anpassung bleibt damit
     zuruecknehmbar, ohne dass je eine Fassung mit den Startwerten gespeichert worden waere.
@@ -309,7 +309,7 @@ async def get_feedback_diagnosis(
     stuenden sie neben einem Vorschlag, den sie nicht belegen. Der Endpunkt nimmt deshalb keinen
     Projektparameter entgegen. Die Beschriftung des Abschnitts spricht das aus.
 
-    ES GIBT KEINE EINZELEREIGNISSE HIER und keine Aufschluesselung je Nutzer (S8). Das Log haelt
+    ES GIBT KEINE EINZELEREIGNISSE HIER und keine Aufschluesselung je Nutzer. Das Log haelt
     auch ZURUECKGENOMMENE Korrekturen fest, die der Bestand nicht mehr zeigt; alles andere, was
     die Diagnose zaehlt, ist ueber `PhotoOut.ratings[]` ohnehin je Foto lesbar.
 

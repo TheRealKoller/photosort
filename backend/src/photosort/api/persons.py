@@ -1,19 +1,19 @@
 """Die acht Endpunkte der Personen.
 
 SICHERHEIT:
-* S1 - Der Router traegt `dependencies=[Depends(get_current_user)]`; jeder Endpunkt ist
+* Der Router traegt `dependencies=[Depends(get_current_user)]`; jeder Endpunkt ist
   authentifiziert, auch die Gesichts-Endpunkte, die Auflistung "Ohne Namen" und der PUT der
   Korrektur.
-* S2 - Alle Eingabeschemata haben `extra="forbid"` und genau die genannten Felder. `user_id` kommt
+* Alle Eingabeschemata haben `extra="forbid"` und genau die genannten Felder. `user_id` kommt
   ausschliesslich aus `current_user` und steht in keiner Antwort. Ein `IntegrityError` wird `409`.
   Eine Box nimmt kein Weg vom Client an: Sie entsteht beim Zuordnen aus demselben Detektionslauf
   wie das Merkmal.
-* S3/S5 - Keine Antwort traegt ein Merkmal, einen Schwerpunkt, eine Aehnlichkeit oder eine
+* Keine Antwort traegt ein Merkmal, einen Schwerpunkt, eine Aehnlichkeit oder eine
   gespeicherte Box. Die Auflistung "Ohne Namen" schreibt nichts und ruft `embed` nie.
-* S7 - Die Modellaufrufe laufen auf einem EIGENEN Executor mit genau einem Thread: Wartende belegen
+* Die Modellaufrufe laufen auf einem EIGENEN Executor mit genau einem Thread: Wartende belegen
   keinen Platz im gemeinsamen Threadpool, und die `cv2`-Objekte sind serialisiert. Gelesen wird nur
   die lokale Display-Variante; fehlt sie, ruft kein Endpunkt das Modell.
-* S8 - Ausschnitte sind neu codierte JPEGs; ihre Antworten tragen `Cache-Control: no-store` und
+* Ausschnitte sind neu codierte JPEGs; ihre Antworten tragen `Cache-Control: no-store` und
   `X-Content-Type-Options: nosniff`.
 * Schreibsperre - siehe `person_write_lock`.
 """
@@ -112,7 +112,7 @@ class PersonOut(BaseModel):
 class PersonCreateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # S4: die Laenge an der API-Grenze VOR jeder weiteren Verarbeitung.
+    # Die Laenge an der API-Grenze VOR jeder weiteren Verarbeitung.
     name: str = Field(max_length=200)
     photo_id: int = Field(ge=1, le=MAX_ID)
     face_index: int = Field(ge=0, lt=MAX_FACES_PER_PHOTO)

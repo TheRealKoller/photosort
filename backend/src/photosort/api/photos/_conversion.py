@@ -48,7 +48,7 @@ class RatingFilter(enum.StrEnum):
     """Die Eintraege des Rasterfilters. `favorite` bleibt als EINTRAG, ist aber kein
     Bewertungsstatus mehr: er filtert auf die eigene Spalte `Rating.favorite`.
 
-    `unrated` heisst ab jetzt "KEINE ALBUMENTSCHEIDUNG" (`status IS NULL`), nicht mehr "keine
+    `unrated` heisst "KEINE ALBUMENTSCHEIDUNG" (`status IS NULL`), nicht "keine
     Zeile" - ein nur als Favorit markiertes Bild bleibt damit in diesem Filter."""
 
     UNRATED = "unrated"
@@ -62,7 +62,7 @@ class RatingOut(BaseModel):
     """Die Bewertungszeile EINES Nutzers. `status` ist die Albumentscheidung und `null`, wenn
     keine getroffen wurde - auch dann, wenn die Zeile wegen `favorite` existiert.
 
-    SICHERHEIT (S6): Die Oberflaeche liest den EIGENEN Zustand - Albumentscheidung UND
+    SICHERHEIT: Die Oberflaeche liest den EIGENEN Zustand - Albumentscheidung UND
     Kennzeichen - ausschliesslich ueber `utils/ownRating.ts` (Abgleich ueber den
     `username`-Claim), nie ueber eine Zweitableitung wie `ratings.some(r => r.favorite)`. Eine
     solche stellte die Auszeichnung des anderen als die eigene dar."""
@@ -200,8 +200,8 @@ class PhotoLocationOut(BaseModel):
     """Der Ort DIESES Fotos - in VOLLER EXIF-Präzision, ohne serverseitige Rundung (die Rundung
     auf zwei Nachkommastellen liegt allein in `ClusterPlaceOut`).
 
-    `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail (Muss-Kriterium des
-    Sicherheitskonzepts): `scoring.GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen
+    `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail:
+    `scoring.GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen
     zwei aufeinanderfolgenden Fotos, nicht den DURCHMESSER eines Clusters - ein Spaziergang in
     400-m-Schritten teilt nie und kann Kilometer ueberspannen. Eine `"derived"`-Koordinate kann
     deshalb beliebig weit von der tatsaechlichen Aufnahmestelle entfernt liegen; sie ist eine
@@ -223,8 +223,8 @@ class EventPlaceOut(BaseModel):
     welche Stufe (erkannte Sehenswuerdigkeit -> ungefaehre Koordinate -> mehrere Orte) tatsaechlich
     gilt. Das Frontend bildet die Rangfolge NICHT nach, es formatiert nur.
 
-    `kind` benennt die STUFE, nicht den einzigen Text des Events: seit Spec 0514 (ADR 0120) steht
-    `landmark_name` NEBEN `EventOut.place_name`, statt ihn zu verdraengen. Verdraengt bleibt allein
+    `kind` benennt die STUFE, nicht den einzigen Text des Events: `landmark_name` steht
+    NEBEN `EventOut.place_name`, statt ihn zu verdraengen. Verdraengt bleibt allein
     die KOORDINATENSTUFE - `kind` bleibt `"landmark"` auch dann, wenn daneben ein Ortsname steht,
     und traegt weiterhin keine Koordinate.
 
@@ -234,8 +234,8 @@ class EventPlaceOut(BaseModel):
     `landmark_name` ist freier, extern erzeugter LLM-Text (`Event.landmark_name`, ueber
     `sanitize_landmark_name` entstanden) - dieselbe Auflage wie bei `FineLabelOut.raw_label`:
     ausschliesslich als regulaerer React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als
-    HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Seit Spec 0514 traegt ein
-    Event ihn nur, wenn ihn mindestens ein Zehntel seiner Fotos bezeugt
+    HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Ein Event traegt ihn
+    nur, wenn ihn mindestens ein Zehntel seiner Fotos bezeugt
     (`events.LANDMARK_MIN_SHARE`); ein zu schwach gestuetzter Name ist von "nie erkannt" NICHT zu
     unterscheiden und hat keinen eigenen Anzeigezustand. Bricht in
     `frontend/src/pages/AlbumDraftPage.*.test.tsx`, Faelle
@@ -251,14 +251,13 @@ class EventPlaceOut(BaseModel):
 class EventOut(BaseModel):
     """Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehoert.
 
-    Der Server liefert weiterhin KEINE fertige Ueberschrift, sondern ihre Teile: Nummer,
-    Zeitspanne, den aufgeloesten Ort und den aufgeloesten Ortsnamen. Anders als die frueheren
-    Cluster-Angaben haengt hier nichts mehr davon ab, welche Fotos eine Antwort gerade enthaelt -
-    alle Werte stehen in der `events`-Zeile.
+    Der Server liefert KEINE fertige Ueberschrift, sondern ihre Teile: Nummer,
+    Zeitspanne, den aufgeloesten Ort und den aufgeloesten Ortsnamen. Es haengt nichts davon ab,
+    welche Fotos eine Antwort gerade enthaelt - alle Werte stehen in der `events`-Zeile.
 
     Auch zusammengesetzt wird hier nichts: `place_name` ist der REINE Ortsname ("Ort" bzw.
     "Ort, Viertel"), und die Form "<Name>, <Ort>" entsteht erst in
-    `frontend/src/utils/timeOfDay.ts::eventPlaceName` (Spec 0514, ADR 0120). Eine zweite Quelle
+    `frontend/src/utils/timeOfDay.ts::eventPlaceName`. Eine zweite Quelle
     derselben Form erzeugte genau die Divergenz, gegen die `photoDetail.structure.test.ts` steht.
 
     `place_name` steht BEWUSST HIER und nicht in `EventPlaceOut`: `_event_place_out` liefert bei
@@ -271,8 +270,7 @@ class EventOut(BaseModel):
     wortgleich: ausschliesslich als regulaerer React-Textknoten rendern, nie
     `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in `href`/`src`/`style`, nie als
     React-`key`. Die Schluessel-Auflage ist hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der
-    Normalfall, den diese Story eigens behandelt. Bricht in
-    `frontend/src/pages/AlbumDraftPage.*.test.tsx`, Fall
+    Normalfall. Bricht in `frontend/src/pages/AlbumDraftPage.*.test.tsx`, Fall
     `rendert einen HTML-artigen Ortsnamen als Text, nicht als Markup`."""
 
     id: int
@@ -312,15 +310,15 @@ class MotifAssessmentOut(BaseModel):
 
 class EyeResultOut(BaseModel):
     """Die Eye-Auswertung eines Fotos - gesetzt GENAU dann, wenn die Motiv-Kopfzeile
-    `source="eye"` traegt (Spec 0609).
+    `source="eye"` traegt.
 
     Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Die Zeile steht auch neben
     einer gueltigen Cloud-Kopfzeile. Dieses Feld zeigt sie nur, wenn sie auch gilt; die ZAHLENDE
     Albumstufe steht unabhaengig davon in `album_suitability`, sobald der Lauf Eye als Quelle
-    eingefroren hat (ADR 0144).
+    eingefroren hat.
 
     `fine_labels` sind die ROHEn Eye-Tags ab Konfidenz 0.5, beim Schreiben zeichensaniert und
-    laengenbegrenzt (S12) - deshalb hier als reine Textknoten, ohne weitere Umformung. Die
+    laengenbegrenzt - deshalb hier als reine Textknoten, ohne weitere Umformung. Die
     Modellrevision steht hier und NICHT in `MotifAssessmentOut.provider`: Eye ist kein
     Cloud-Anbieter. `mapping_version` ist die Fassung der Uebersetzung, mit der die Zeile entstand
     - ein serverseitiger Schluessel von `eye_mapping.MAPPINGS`, als Rohwert."""
@@ -340,17 +338,17 @@ class AlbumSuitabilityOut(BaseModel):
     unterscheidbar - die Oberflaeche zeigt an dieser Stelle einen Satz statt einer Stufe. Es gilt
     auch fuer ein Foto, das nur eine Stufe des ANDEREN Verfahrens traegt: es gibt keinen Rueckfall.
 
-    SICHERHEIT (S2): `source` ist das am Lauf eingefrorene Verfahren (`album_level_source`) bzw.
+    SICHERHEIT: `source` ist das am Lauf eingefrorene Verfahren (`album_level_source`) bzw.
     ohne Lauf die Projekteinstellung - festgelegt allein vom Server, nie aus Query, Body,
     Motiv-Kopfzeile oder `eye_result`. Der geschlossene `Literal` bricht die Antwortvalidierung bei
     jedem anderen Wert.
 
     `reason` ist FREIER MODELLTEXT und nur bei `source="cloud"` gesetzt; bei `eye` ist es
-    serverseitig `None` (S4) - Eye liefert keinen Text. Der Cloud-Text ist bereits am Parser
-    saniert und gekappt (`album_suitability.py`, Sicherheitsauflage S2) und wird hier unveraendert
+    serverseitig `None` - Eye liefert keinen Text. Der Cloud-Text ist bereits am Parser
+    saniert und gekappt (`album_suitability.py`, Sicherheitsauflage) und wird hier unveraendert
     durchgereicht; eine zweite Fassung derselben Regel gibt es nicht. In der Oberflaeche gehoert er
     ausschliesslich als regulaerer Textknoten gerendert - nie ueber `dangerouslySetInnerHTML`, nie
-    in ein `href`, `src` oder `style` (S12).
+    in ein `href`, `src` oder `style`.
 
     Die Aussage ist erkennbar die des MODELLS, nicht die von PhotoSort: sie stammt aus einem Bild,
     das Text enthalten kann."""
@@ -387,8 +385,8 @@ class MotifStrengthOut(BaseModel):
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
-    # Behaelt Namen und Form und liefert seit Spec 0426 die KORRIGIERTE Zeit (ADR 0090, Punkt 1).
-    # Der brechende Bedeutungswechsel ist beabsichtigt; die beiden Felder darunter treten daneben,
+    # Behaelt Namen und Form und liefert die KORRIGIERTE Zeit.
+    # Der Bedeutungswechsel ist beabsichtigt; die beiden Felder darunter treten daneben,
     # damit eine korrigierte Anzeige als korrigiert erkennbar bleibt.
     taken_at: datetime
     # Die aufgezeichnete Zeit (EXIF `DateTimeOriginal`, sonst `last_modified`).
@@ -399,7 +397,7 @@ class PhotoOut(BaseModel):
     # einem Foto, dessen Versatz beim Scan an einem Ueberlauf gescheitert ist).
     time_offset_minutes: int
     camera: CameraOut | None = None
-    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes (ADR 0110 Punkt 1). `null` heisst "nicht
+    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes. `null` heisst "nicht
     # bekannt" und ist ein REGULAERER Zustand, kein Fehler - die Oberflaeche plant ein solches
     # Foto mit 3:2 ein. Einheitlich auf ALLEN Lesepfaden ausgeliefert, nicht nur auf dem der
     # Rasteransicht: ein je Query-Modus divergierendes `PhotoOut` waere genau die "zweite,
@@ -409,8 +407,7 @@ class PhotoOut(BaseModel):
     suggestion: SuggestionOut | None
     # Die Rangzeile des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi - `null`,
     # solange kein erfolgreicher Lauf existiert oder das Foto darin keine Zeile hat. EIN Feld und
-    # keine Liste: ein Foto steht je Lauf in genau einer Zeile, seit die Partition allein das
-    # Event ist.
+    # keine Liste: ein Foto steht je Lauf in genau einer Zeile.
     ranking: RankingOut | None = None
     # Immer eine Liste, nie None (analog `ratings`) - best-effort: enthaelt nur Kriterien, fuer
     # die tatsaechlich eine PhotoCriterionScore-Zeile existiert, sortiert nach
@@ -442,7 +439,7 @@ class PhotoOut(BaseModel):
     # Die Eye-Auswertung, `null` ohne Eye-Kopfzeile - auch dann, wenn ein Schattensatz daneben
     # steht (siehe `EyeResultOut`). Auf ALLEN Lesepfaden befuellt, Muster `motif_assessment`.
     eye_result: EyeResultOut | None = None
-    # DIE DREI FELDER DER ENDAUSWAHL (ADR 0099 Punkt 4), auf ALLEN Lesepfaden befuellt - Muster
+    # DIE DREI FELDER DER ENDAUSWAHL, auf ALLEN Lesepfaden befuellt - Muster
     # `RankingOut.proposed`: ein je Query-Modus verschiedenes `PhotoOut` waere die zweite,
     # driftende Abbildung. Alle drei sind PROJEKTAUSSAGEN und tragen kein nutzerbezogenes Datum.
     #
@@ -450,7 +447,7 @@ class PhotoOut(BaseModel):
     # `album_decision` benannt: so heisst bereits `ratings[].status`, die Entscheidung eines
     # NUTZERS - und die beiden zu verwechseln ist genau der Fehler, den diese Story ausschliesst.
     #
-    # ALLE DREI OHNE VORGABEWERT, anders als `location`/`event`/`ranking` darueber (Auflage S9):
+    # ALLE DREI OHNE VORGABEWERT, anders als `location`/`event`/`ranking` darueber:
     # Ein `= False` waere die stille Ausfallrichtung "nicht im Album" - plausibel, ohne Ausnahme
     # und ohne Fehlercode, und der Fehler zeigte sich erst an einem leeren Album statt an der
     # Stelle, an der er entsteht. Zusammen mit den pflichtigen `to_photo_out`-Parametern
@@ -463,7 +460,7 @@ class PhotoOut(BaseModel):
     # `album_selection.py::selection_state(...).contested`.
     contested: bool
     # Je WIRKSAM zugeordneter Person nur Id und Herkunft (`recognized`/`corrected`), nach Slot -
-    # nie ein Name, ein Merkmal oder eine Aehnlichkeit (S5). Ohne Vorgabewert: wie
+    # nie ein Name, ein Merkmal oder eine Aehnlichkeit. Ohne Vorgabewert: wie
     # `decisions` ist `persons` ein pflichtiger Schluesselwortparameter von `to_photo_out`, damit
     # ein vergessener Aufrufer vor der Laufzeit scheitert statt still eine leere Liste zu liefern.
     persons: list[PhotoPersonOut]
@@ -475,7 +472,7 @@ class PhotoListOut(BaseModel):
 
 
 class AlbumParticipantOut(BaseModel):
-    """EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, nie mehr (Auflage S8).
+    """EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, nie mehr.
 
     Die Liste entsteht aus einer AUSDRUECKLICHEN Projektion auf diese zwei Spalten, nie aus einer
     Serialisierung des `User`-Objekts: Dies ist der erste Endpunkt, der den vollstaendigen
@@ -499,7 +496,7 @@ class AlbumSelectionOut(BaseModel):
 
     # ALLE Nutzer, nach `user_id` sortiert - auch der, der noch nie etwas angefasst hat. Aus
     # `ratings[]` abgeleitet fehlte genau er, und die Story benennt ihn ausdruecklich als "kein
-    # Sonderfall". Seine LAENGE ist zugleich der Nenner der Einigkeitsregel (Auflage S8).
+    # Sonderfall". Seine LAENGE ist zugleich der Nenner der Einigkeitsregel.
     participants: list[AlbumParticipantOut]
     # "Mindestens eine Rangzeile des letzten erfolgreichen Laufs traegt `selection_position`."
     # Trennt die beiden Leerzustaende, die die Story GETRENNT verlangt ("kein Auswahlvorschlag"
@@ -531,7 +528,7 @@ class AlbumDraftOut(BaseModel):
 
 def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
     return SuggestionOut(
-        status=score.suggested_status,  # type: ignore[arg-type]  # caller already checked not None
+        status=score.suggested_status,  # type: ignore[arg-type]
         reason=suggestion_reason(score),
         duplicate_of=score.duplicate_of,
         sharpness=score.sharpness,
@@ -640,13 +637,13 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     # sind. Die PRAESENZ dieser Kopfzeile ist damit das Erfolgssignal, nicht die Existenz einer
     # Feinlabel-Zeile.
     #
-    # SICHERHEITSAUFLAGE S14, auch hier: gepruaft wird auf `source='cloud'`, nicht auf das bloße
+    # SICHERHEITSAUFLAGE, auch hier: geprueft wird auf `source='cloud'`, nicht auf das bloße
     # Vorhandensein der Kopfzeile. Der Kriterien-Lauf schreibt fuer jedes beurteilte Foto eine
     # LOKALE Kopfzeile; ein reiner Existenztest meldete jedes lokal beurteilte Foto als
     # erfolgreich cloud-klassifiziert, obwohl nie ein Cloud-Aufruf stattfand. Dieselbe Bedingung
     # steht in worker/remote_categories.py::select_remote_category_candidates und
     # candidate_counts.py::count_remote_category_candidates.
-    # SICHERHEITSAUFLAGE S6: das Erfolgssignal ist ZUSAMMENGESETZT, genau wie das Skip-Kriterium
+    # SICHERHEITSAUFLAGE: das Erfolgssignal ist ZUSAMMENGESETZT, genau wie das Skip-Kriterium
     # der Auswahl - Cloud-Kopfzeile UND Albumtauglichkeitszeile. Ohne die zweite Haelfte meldete
     # diese Stelle fuer jedes Bestandsfoto `RESULT`, waehrend dasselbe Foto in Auswahl und
     # Schaetzung wieder Kandidat ist; und ein Foto, das seine Stufe wiederholt unbrauchbar liefert,
@@ -678,7 +675,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
             # Spiegelt exakt die WHERE-Klausel von
             # worker/remote_categories.py::select_remote_category_candidates - und zwar ueber
             # DASSELBE Praedikat, nicht ueber eine zweite Formulierung davon. Kein
-            # Ort des Praedikats: Anzeige, keine Grenze (S1).
+            # Ort des Praedikats: Anzeige, keine Grenze.
             is_candidate=survives_ausschuss_for(photo),
         ),
     ]
@@ -699,7 +696,7 @@ NO_PLACE = PhotoPlace()
 def _event_place_out(event: Event) -> EventPlaceOut | None:
     """Der Ortsteil einer `events`-Zeile - `None` bei unbekanntem oder fehlendem `place_kind`.
 
-    SICHERHEIT (M8): MITGLIEDSCHAFTSPRUEFUNG statt blindem Cast, sonst legt ein einzelner Wert
+    SICHERHEIT: MITGLIEDSCHAFTSPRUEFUNG statt blindem Cast, sonst legt ein einzelner Wert
     ausserhalb des Vorrats die gesamte Listenantwort auf 500. Die drei Zweige sind einzeln
     ausgeschrieben und setzen dabei die Feldkombination ein zweites Mal durch: eine driftende
     Zeile kann so keine Koordinate unter `"multiple"` ausliefern."""
@@ -736,7 +733,7 @@ def location_out(location: EffectiveLocation | None) -> PhotoLocationOut | None:
 def _album_suitability_out(photo: Photo, source: CategoryMethod) -> AlbumSuitabilityOut | None:
     """Die zaehlende Stufe aus der Tabelle des Verfahrens `source` - unabhaengig von der Herkunft
     der Motiv-Kopfzeile. Fehlt die Zeile dieses Verfahrens, ist das Ergebnis `None`, auch wenn das
-    andere Verfahren eine Stufe hat (kein Rueckfall, ADR 0144).
+    andere Verfahren eine Stufe hat (kein Rueckfall).
 
     Der Cloud-Text wird UNVERAENDERT aus der Zeile uebernommen - kein erneutes Sanieren, kein
     erneutes Kappen. Beides geschah EINMAL am Parser; eine zweite Fassung hier waere die zweite
@@ -745,7 +742,7 @@ def _album_suitability_out(photo: Photo, source: CategoryMethod) -> AlbumSuitabi
         result = photo.eye_result
         if result is None:
             return None
-        # S4: Eye hat keinen Modelltext; eine daneben liegende Cloud-Begruendung gehoert nicht zu
+        # Eye hat keinen Modelltext; eine daneben liegende Cloud-Begruendung gehoert nicht zu
         # dieser Stufe und bleibt hier aussen vor.
         return AlbumSuitabilityOut(level=result.album_level, reason=None, source="eye")
     suitability = photo.album_suitability
@@ -848,7 +845,7 @@ def to_photo_out(
     Bekommen `GET /projects/{id}/photos`, `GET /projects/{id}/album-draft`,
     `GET /projects/{id}/draft-alternatives` oder `GET /projects/{id}/album-selection` je eine
     Antwort-Zwischenspeicherung, ein `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, MUSS
-    der Schluessel den Nutzer enthalten. Dafuer gibt es seit ADR 0098 ZWEI UNABHAENGIGE URSACHEN;
+    der Schluessel den Nutzer enthalten. Dafuer gibt es ZWEI UNABHAENGIGE URSACHEN;
     der Wegfall der einen hebt die Auflage nicht auf:
 
     * der ANTWORTKOERPER: `PhotoOut.suggestion` wird unten genau dann gesetzt, wenn der anfragende
@@ -871,31 +868,31 @@ def to_photo_out(
 
     Auf `GET /projects/{id}/album-selection` trifft von den beiden Ursachen nur die erste zu: Die
     MENGE ist dort nutzerunabhaengig, `PhotoOut.suggestion` bleibt es nicht. EINE Ursache genuegt;
-    die Abwesenheit der anderen ist keine Erlaubnis (Auflage S7).
+    die Abwesenheit der anderen ist keine Erlaubnis.
 
     `curation_position` traegt keinen Ablehnungsfilter; sie numeriert die gelieferte Reihenfolge
     und haengt damit an der Menge, nicht an einer Bewertung.
 
-    `decisions` und `user_count` sind PFLICHTIGE Schluesselwortparameter ohne Vorgabewert (Auflage
-    S9). Ein vergessener Aufrufer wirft keine Ausnahme und liefert keinen Fehlercode - er
+    `decisions` und `user_count` sind PFLICHTIGE Schluesselwortparameter ohne Vorgabewert.
+    Ein vergessener Aufrufer wirft keine Ausnahme und liefert keinen Fehlercode - er
     antwortete `in_final_selection: false` fuer jedes Foto, plausibel und still. Das ist die
     Menge, die als Album gilt und die der Export nimmt; der Fehler zeigte sich erst an einem
     leeren Album, nicht an der Stelle, an der er entsteht. `mypy --strict` ist die einzige
     Pruefung, die ihn vor der Laufzeit faengt.
 
-    `album_level_source` ist ebenfalls PFLICHTIGES Schluesselwort (S9) und kommt aus
+    `album_level_source` ist ebenfalls PFLICHTIGES Schluesselwort und kommt aus
     `album_level_source`, EINMAL je Anfrage berechnet. Er kommt nie aus einem Query- oder
-    Body-Parameter und nie aus einem anderen Feld derselben Antwort (S2): Ein vergessener Aufrufer
+    Body-Parameter und nie aus einem anderen Feld derselben Antwort: Ein vergessener Aufrufer
     scheiterte an `mypy --strict`, statt still die Tabelle des anderen Verfahrens zu lesen.
 
     Die drei Felder sind PROJEKTAUSSAGEN und tragen die Cache-Auflage ausdruecklich NICHT - genau
     wie `ratings[]` und `RankingOut.proposed`."""
     # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) er OFFEN ist - gestellt und im
-    # Duplikat-Vergleich noch nicht beantwortet (ADR 0104) - UND (b) der anfragende Nutzer noch
+    # Duplikat-Vergleich noch nicht beantwortet - UND (b) der anfragende Nutzer noch
     # KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat, unabhaengig davon, ob eine ANDERE
     # Person das Foto schon bewertet hat; die eigene Bewertung hat immer Vorrang.
     #
-    # Das VORHANDENSEIN der Bewertungszeile ist hier keine Aussage: seit `favorite` eine eigene
+    # Das VORHANDENSEIN der Bewertungszeile ist hier keine Aussage: da `favorite` eine eigene
     # Spalte ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das
     # Zeilenvorhandensein gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald
     # jemand das Foto als Favorit markiert - ohne Meldung und ohne Weg zurueck.

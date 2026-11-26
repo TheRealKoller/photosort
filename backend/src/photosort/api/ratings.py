@@ -13,11 +13,11 @@ from photosort.api.deps import get_current_user, get_session
 from photosort.feedback_log import load_frozen_context, record_album_decision
 from photosort.models import FeedbackEventKind, Photo, Rating, RatingStatus, User
 
-# Siehe photos.py fuer die Begruendung: current_user als Depends()-Parameter statt Router-Level
-# dependencies=[...], da jeder Endpunkt hier das User-Objekt selbst braucht (user_id fuer die
-# eigene Bewertung), nicht nur eine reine Auth-Pruefung.
+# current_user als Depends()-Parameter statt Router-Level dependencies=[...], da jeder Endpunkt
+# hier das User-Objekt selbst braucht (user_id fuer die eigene Bewertung), nicht nur eine reine
+# Auth-Pruefung.
 #
-# SICHERHEIT (S1): Fuer diesen Router gibt es deshalb KEIN Vollstaendigkeitsnetz -
+# SICHERHEIT: Fuer diesen Router gibt es deshalb KEIN Vollstaendigkeitsnetz -
 # `_protected_router_operations()` in tests/test_auth_guard.py fuehrt ihn nicht. Ein hier
 # vergessener `current_user`-Parameter waere STILL OEFFENTLICH: kein Fehler, keine 401, nur ein
 # unauthentifizierter Schreibzugriff auf eine fremde Bewertungszeile. Jeder Endpunkt bekommt
@@ -28,7 +28,7 @@ router = APIRouter(tags=["ratings"])
 class RatingUpdate(BaseModel):
     """Die Albumentscheidung, und nur sie.
 
-    `status` ist NICHT nullable (Auflage S8): `null` ist kein zulaessiger Body-Wert, sondern
+    `status` ist NICHT nullable: `null` ist kein zulaessiger Body-Wert, sondern
     ausschliesslich das Ergebnis von `DELETE`. Waere er zulaessig, entstuende die verbotene Zeile
     (`status IS NULL AND favorite IS FALSE`) ueber den regulaeren Schreibweg."""
 
@@ -51,9 +51,9 @@ class RatingWriteOut(BaseModel):
     `updated_at` ist `None`, wenn die Zeile dabei geleert und damit geloescht wurde - ein dann
     ersatzweise gesetzter Zeitstempel behauptete eine Zeile, die es nicht mehr gibt.
 
-    `user_id` stammt AUSSCHLIESSLICH aus `current_user` (Auflage S7) und benennt den Nutzer, fuer
+    `user_id` stammt AUSSCHLIESSLICH aus `current_user` und benennt den Nutzer, fuer
     den geschrieben wurde. Es steht hier, weil die Entwurfsansicht den geschriebenen Zustand in
-    ihre bereits geladene Liste einsetzt, statt sie neu zu laden (Spec 0430): Ein Eintrag von
+    ihre bereits geladene Liste einsetzt, statt sie neu zu laden: Ein Eintrag von
     `PhotoOut.ratings[]` traegt `user_id`, und ohne dieses Feld muesste der Client eine Id
     ERFINDEN und in seiner zwischengespeicherten Antwort ablegen."""
 
@@ -94,8 +94,8 @@ def album_decision_kind(
 
     `None` heisst AUSDRUECKLICH "kein Ereignis" und ist der Rueckgabewert fuer jeden
     Schreibvorgang, der den Status NICHT bewegt - dieselbe Entscheidung erneut gesetzt, eine nicht
-    vorhandene zurueckgenommen (L1, ADR 0100 Punkt 4). Eine Wiederholung ist keine Korrektur, und
-    die Story misst Korrekturen.
+    vorhandene zurueckgenommen. Eine Wiederholung ist keine Korrektur, und gemessen werden
+    Korrekturen.
 
     Daraus faellt OHNE SONDERFALL heraus, dass `PUT /photos/{id}/favorite` kein Ereignis erzeugt:
     Der Endpunkt laesst `status` unberuehrt, also ist `previous == new`. Das entscheidende
@@ -124,17 +124,17 @@ async def write_own_rating(
 
     Sie haelt zwei Zusagen, die sonst je Endpunkt neu getroffen werden muessten:
 
-    INVARIANTE (Auflage S8): Es entsteht nie eine Zeile mit `status IS NULL AND favorite IS
+    INVARIANTE: Es entsteht nie eine Zeile mit `status IS NULL AND favorite IS
     FALSE`, und eine dadurch leer gewordene wird geloescht. Die Loeschung steht hier und nur
     hier - je Endpunkt wiederholt waere sie drei Stellen, die auseinanderlaufen koennen.
 
-    SICHERHEIT (S7): Die Aufsuchbedingung ist ueberall `(photo_id, user_id)`, und `user_id`
+    SICHERHEIT: Die Aufsuchbedingung ist ueberall `(photo_id, user_id)`, und `user_id`
     stammt ausschliesslich aus `current_user` - nie aus Body oder Query. Ohne das koennte Nutzer
     A die Zeile von Nutzer B ueberschreiben (Broken Object-Level Authorization). Welches FELD ein
     Endpunkt aendert, entscheidet allein sein `next_state`; der jeweils andere Wert wird aus dem
     Bestand uebernommen und nie aus einem teilbefuellten Modell neu geschrieben.
 
-    SIE COMMITTET NICHT (Auflage S5, Spec 0432): Die Transaktionsgrenze gehoert dem Aufrufer, der
+    SIE COMMITTET NICHT: Die Transaktionsgrenze gehoert dem Aufrufer, der
     genau EINMAL committet. Ein `record`-Parameter allein machte den Austausch nicht atomar - der
     erste der beiden Aufrufe waere nach seinem eigenen Commit unwiderruflich geschrieben, und ein
     Fehlschlag des zweiten hinterliesse einen halb ausgefuehrten Austausch. Der `flush` bleibt
@@ -148,7 +148,7 @@ async def write_own_rating(
     IDS STATT EINES `Photo`-OBJEKTS: Der `rollback` des `409`-Zweigs laesst jedes geladene Objekt
     expired zurueck, und ein danach angefasstes Attribut braeche unter `asyncio` mit
     `MissingGreenlet`. Der Austausch-Endpunkt loest seine beiden Fotos zudem ausschliesslich ueber
-    ihre Rangzeile auf (S2) und haette hier gar kein `Photo` anzubieten."""
+    ihre Rangzeile auf und haette hier gar kein `Photo` anzubieten."""
     rating = await _get_own_rating(session, photo_id, user_id)
     current = (None, False) if rating is None else (rating.status, rating.favorite)
     new_status, new_favorite = next_state(*current)
@@ -183,7 +183,7 @@ async def write_own_rating(
         rating.status = new_status
         rating.favorite = new_favorite
 
-    # SICHERHEIT (S9): der `flush` bringt `uq_rating_photo_user` hier zum Tragen. Drei Endpunkte
+    # SICHERHEIT: der `flush` bringt `uq_rating_photo_user` hier zum Tragen. Drei Endpunkte
     # schreiben auf dieselbe Zeile, und die Oberflaeche loest zwei davon aus derselben
     # Tastenbelegung aus; ohne diese Behandlung waere ein alltaeglicher Doppelklick eine `500`
     # statt einer `409`.
@@ -219,7 +219,7 @@ async def set_rating(
     photo_id: int,
     payload: RatingUpdate,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
+    # SICHERHEIT: ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
 ) -> RatingWriteOut:
     """Setzt die ALBUMENTSCHEIDUNG dieses Nutzers: gehoert das Bild ins Album (`album_worthy`)
@@ -228,7 +228,7 @@ async def set_rating(
     Sie ist KEINE Aussage ueber die Bildguete - ein bewusst aufgenommener schlechter
     Schnappschuss und ein gestrichenes gutes Bild sind gewollte, widerspruchsfreie Zustaende.
 
-    `favorite` bleibt UNBERUEHRT (Auflage S7)."""
+    `favorite` bleibt UNBERUEHRT."""
     photo = await _get_photo_or_404(photo_id, session)
 
     written = await write_own_rating(
@@ -239,7 +239,7 @@ async def set_rating(
         next_state=lambda _status, favorite: (payload.status, favorite),
     )
     # Der EINE Commit dieses Endpunkts: Bewertungszeile und etwaiges Ereignis gehen gemeinsam
-    # oder gar nicht (Auflage S5).
+    # oder gar nicht.
     await session.commit()
     return written
 
@@ -248,20 +248,20 @@ async def set_rating(
 async def delete_rating(
     photo_id: int,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
+    # SICHERHEIT: ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
 ) -> RatingWriteOut:
     """Nimmt NUR die Albumentscheidung zurueck (`status = NULL`).
 
     Die Zeile BLEIBT stehen, solange `favorite` gesetzt ist; sonst wird sie geloescht. Eine
     pauschale Zeilenloeschung verloere die Auszeichnung mit der Ruecknahme der Albumentscheidung,
-    ohne jede Meldung (Auflage S7). Idempotent: `200`, ob eine Zeile bestand oder nicht - und
+    ohne jede Meldung. Idempotent: `200`, ob eine Zeile bestand oder nicht - und
     ohne bestehende Albumentscheidung entsteht dabei KEIN Ereignis, weil nichts zurueckgenommen
     wurde.
 
     Die Antwort ist der eigene Zeilenzustand danach (`RatingWriteOut`), damit der Album-Entwurf
     ihn in seine geladene Liste einsetzt statt neu zu laden. Sie unterscheidet "Zeile bestand" von
-    "bestand nicht" nur ueber `favorite`, also nur ueber den eigenen Zustand (S9)."""
+    "bestand nicht" nur ueber `favorite`, also nur ueber den eigenen Zustand."""
     photo = await _get_photo_or_404(photo_id, session)
 
     written = await write_own_rating(
@@ -280,18 +280,18 @@ async def set_favorite(
     photo_id: int,
     payload: FavoriteUpdate,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
+    # SICHERHEIT: ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
 ) -> RatingWriteOut:
     """Setzt oder entfernt die Auszeichnung als Favorit - eine eigene, von der Albumentscheidung
-    UNABHAENGIGE Angabe (ADR 0098 Punkt 2). Sie wirkt nicht auf den Album-Entwurf.
+    UNABHAENGIGE Angabe. Sie wirkt nicht auf den Album-Entwurf.
 
     Legt die Zeile bei Bedarf an und loescht sie, wenn danach beides leer ist. `status` bleibt
-    unberuehrt (Auflage S7).
+    unberuehrt.
 
     ES ENTSTEHT KEIN EREIGNIS DER NACHARBEIT: Der Favorit wirkt nicht auf den Album-Entwurf und
     ist damit keine Aussage ueber einen Modellfehler. Das faellt ohne Sonderfall daraus heraus,
-    dass dieser Endpunkt `status` unberuehrt laesst (Spec 0432, L1)."""
+    dass dieser Endpunkt `status` unberuehrt laesst."""
     photo = await _get_photo_or_404(photo_id, session)
 
     written = await write_own_rating(

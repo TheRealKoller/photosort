@@ -78,35 +78,35 @@ class AusschussPhotoEntryOut(BaseModel):
     Aufnahme mit Gruppe liegt im Stapel ihrer Gruppe (`AusschussGroupEntryOut`). Am Detailfilter
     `?photo=<id>` steht er fuer jede Bestandsaufnahme, auch fuer ein Gruppenmitglied.
 
-    `reason` ist der GRUND der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
-    (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`,
+    `reason` ist der GRUND der Markierung und kommt vom Server, nicht aus einer
+    TypeScript-Ableitung: `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`,
     `earlier_decision`, wenn `suggested_status` UND `duplicate_of` leer sind, aber eine
     Entscheidungszeile existiert, sonst `low_quality` (`_ausschuss_reason`, dieselbe Ableitung wie
-    `suggestion_reason`). Der Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein
-    (AK4); `SuggestionOut.reason` bleibt zweiwertig.
+    `suggestion_reason`). Der Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein;
+    `SuggestionOut.reason` bleibt zweiwertig.
 
     `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdruecklich NICHT
-    `duplicates.py::effective_decision_for` (ADR 0111 Punkt 1): Die Uebersicht zeigt den
+    `duplicates.py::effective_decision_for`: Die Uebersicht zeigt den
     Sichtungsfortschritt, und ein unwirksames `keep` (Unschaerfe-Ablehnung ohne Gruppe) bleibt als
     gespeicherte Handlung sichtbar. Die Detailansicht zieht dieselbe Groesse, damit Uebersicht und
     Detail ueber denselben Bildzustand sprechen. Ein `null` heisst "noch nicht entschieden"; es gibt
     keinen Weg zurueck in diesen Zustand.
 
     `group_anchor_photo_id` ist der Repraesentant der Duplikatgruppe des Fotos oder `null`. Er
-    entsteht ueber `duplicates.py::representative_of` aus der PROJEKTBEGRENZTEN Kantenliste (Auflage
-    S6): `PhotoScore.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, eine eigene Abfrage
+    entsteht ueber `duplicates.py::representative_of` aus der PROJEKTBEGRENZTEN Kantenliste:
+    `PhotoScore.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, eine eigene Abfrage
     darauf koennte den Gewinner eines fremden Projekts nennen. Eine Zugriffsmarke ist die Id nicht -
     die Folgeanfrage laeuft erneut ueber `project_id`.
 
     `keep_possible` ist die WIRKSAMKEIT des angebotenen "behalten" und kommt vom Server
-    (`duplicates.py::keep_possible_for`, Auflage S7): Ein `keep` wirkt nur ueber eine Gruppe
+    (`duplicates.py::keep_possible_for`): Ein `keep` wirkt nur ueber eine Gruppe
     (`duplicate_of IS NOT NULL`), sonst hebt es eine Ablehnung nicht auf. Aus `reason` ist das
     AUSDRUECKLICH NICHT ableitbar - ein Eintrag aus einem frueheren Lauf traegt `earlier_decision`
     und trotzdem `true`. Eine zweite Ableitung im Client naehme dem Nutzer dort die einzige
     Handlung, die die Aufnahme zurueckholt.
 
     `decision_effective` ist die WIRKSAMKEIT der gespeicherten Zeile
-    (`duplicates.py::decision_effective_for`, Auflage S7): `null` ohne Zeile, `true` fuer ein
+    (`duplicates.py::decision_effective_for`): `null` ohne Zeile, `true` fuer ein
     `discard`, fuer ein `keep` nur, solange `duplicate_of IS NOT NULL`. Ein veraltetes `keep` ist
     `false` - der Client markiert es dann als "wirkt nicht mehr", statt es abzuleiten."""
 
@@ -117,7 +117,7 @@ class AusschussPhotoEntryOut(BaseModel):
     group_anchor_photo_id: int | None
     keep_possible: bool
     decision_effective: bool | None
-    # Spec 0639: Der Merker selbst (Verlierer) bzw. die Zugehoerigkeit zu einem automatisch
+    # Der Merker selbst (Verlierer) bzw. die Zugehoerigkeit zu einem automatisch
     # entschiedenen Stern (Repraesentant ueber die automatischen Kanten).
     auto_decided: bool
 
@@ -141,7 +141,7 @@ class AusschussGroupEntryOut(BaseModel):
     alle ihre Mitglieder (dieselbe Zahl wie die Mitgliederzahl der Gruppenantwort);
     `1 <= member_count <= group_size`.
 
-    SICHERHEIT (S8): Anker, `cover` und beide Zahlen stammen aus dem projektbegrenzten Bestand und
+    SICHERHEIT: Anker, `cover` und beide Zahlen stammen aus dem projektbegrenzten Bestand und
     `load_duplicate_links(session, project.id)`, gruppiert allein ueber `representative_of`
     (`duplicates.py::group_ausschuss_stock`). Eine eigene SQL-Fassung des Sterns ist untersagt:
     `duplicate_of` zeigt ohne Projektbedingung auf `photos.id`, der Stapel naehme sonst fremde
@@ -153,7 +153,7 @@ class AusschussGroupEntryOut(BaseModel):
     member_count: int
     group_size: int
     decision_counts: DecisionCountsOut
-    # Spec 0639: ganz automatisch entschieden oder gar nicht; `decision_counts` bleibt die Zahl
+    # Ganz automatisch entschieden oder gar nicht; `decision_counts` bleibt die Zahl
     # der GESPEICHERTEN Zeilen (dort null) und behaelt damit seine Bedeutung.
     auto_decided: bool
 
@@ -170,11 +170,11 @@ class AusschussOut(BaseModel):
     `total` zaehlt die EINTRAEGE des Gesamtbestands (Einzel-Eintraege und Stapel, paginierbar),
     `open_count` die projektweite Zahl der AUFNAHMEN mit offenem Vorschlag - unabhaengig von
     `limit`/`offset`. Die beiden Einheiten fallen auseinander, sobald ein Stapel mehr als eine
-    offene Aufnahme traegt. Der Bestaetigungsbutton nennt genau `open_count` (AK9), weil der
+    offene Aufnahme traegt. Der Bestaetigungsbutton nennt genau `open_count`, weil der
     Abschluss je Aufnahme schreibt; aus `len(items)` gebildet nennte er auf der zweiten Seite eine
     andere Zahl, und ein bereits entschiedenes Bild zaehlte mit.
 
-    SICHERHEIT (S8 der Spec 0525, S9 der Spec 0533): Die Antwort traegt `PhotoOut` samt
+    SICHERHEIT: Die Antwort traegt `PhotoOut` samt
     `suggestion`/`ratings` - am Einzel-Eintrag als `photo`, am Stapel als `cover` - und ist damit in
     BEIDEN Eintragsarten eine Funktion des ANFRAGENDEN Nutzers. Bekaeme sie je eine
     Zwischenspeicherung, ein `ETag`, ein `Cache-Control` ueber `no-store` hinaus oder einen
@@ -185,7 +185,7 @@ class AusschussOut(BaseModel):
     items: list[AusschussEntryOut]
     total: int
     open_count: int
-    # Spec 0639: Zahl der automatisch entschiedenen GRUPPEN, projektweit und unabhaengig von
+    # Zahl der automatisch entschiedenen GRUPPEN, projektweit und unabhaengig von
     # `limit`/`offset`/Filter - wie `open_count` eine Aussage ueber den ganzen Bestand.
     auto_decided_group_count: int
 
@@ -250,12 +250,12 @@ def _ausschuss_photo_entry_out(
     return AusschussPhotoEntryOut(
         kind="photo",
         photo=photo_out,
-        # SICHERHEIT (S7): die vorhandene Ableitung plus den dritten Fall, nicht eine zweite
+        # SICHERHEIT: die vorhandene Ableitung plus den dritten Fall, nicht eine zweite
         # Fassung davon.
         reason=_ausschuss_reason(photo),
         decision=None if entscheidung is None else entscheidung.decision,
         group_anchor_photo_id=representative_of(photo.id, links),
-        # SICHERHEIT (S7), zwei Unabhaengige Aussagen: die Wirksamkeit des angebotenen "behalten"
+        # SICHERHEIT, zwei Unabhaengige Aussagen: die Wirksamkeit des angebotenen "behalten"
         # und die der gespeicherten Zeile. Beide stammen aus `duplicates.py`, keine Ableitung im
         # Client (siehe `AusschussPhotoEntryOut`).
         keep_possible=keep_possible_for(photo),
@@ -284,26 +284,26 @@ def _ausschuss_group_entry_out(
 
 @router.get("/projects/{project_id}/ausschuss", response_model=AusschussOut)
 async def list_ausschuss(
-    # SICHERHEIT (S5): deklarativ begrenzt wie der Gruppen-Index daneben - ein unbeschraenkter
+    # SICHERHEIT: deklarativ begrenzt wie der Gruppen-Index daneben - ein unbeschraenkter
     # Pydantic-`int` erreicht die Datenbank und wird jenseits von 2^63 zu `500` statt `404`.
     project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
-    # Die Detailansicht der Schritt-Route ist derselbe Endpunkt mit gesetztem Filter (AK5, AK8):
+    # Die Detailansicht der Schritt-Route ist derselbe Endpunkt mit gesetztem Filter:
     # `items` traegt dann GENAU den passenden Eintrag oder eine leere Liste, `total`/`open_count`
     # bleiben projektweit, und `limit`/`offset` sind in diesem Zweig ohne Wirkung - das Muster des
     # Alternativ-Zweigs der Fotoliste. Damit ist der Deep-Link `?photo=<id>` auch fuer eine Aufnahme
     # ausserhalb der geladenen Seite definiert.
     #
-    # SICHERHEIT (S5): deklarativ begrenzt, BEVOR der Wert die Datenbank erreicht - ein
+    # SICHERHEIT: deklarativ begrenzt, BEVOR der Wert die Datenbank erreicht - ein
     # unbeschraenkter Pydantic-`int` wird jenseits von 2^63 zu `500` statt einer leeren Liste.
     photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
-    # Spec 0639: Der Filter liegt nur in der Adresse (`?auto_decided=true`); `false` wirkt wie
+    # Der Filter liegt nur in der Adresse (`?auto_decided=true`); `false` wirkt wie
     # weggelassen. Zusammen mit `photo_id` ist er widerspruechlich und wird VOR jeder Abfrage
     # abgewiesen (422) - der Detailzweig liefert immer genau einen Eintrag.
     auto_decided: bool = Query(False),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S5): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
     # `_protected_router_operations()` in `test_auth_guard.py` fuehrt ihn nicht - fuer ihn gibt es
     # KEIN Vollstaendigkeitsnetz. Ein Endpunkt, der diesen Parameter vergisst, waere STILL
@@ -315,11 +315,11 @@ async def list_ausschuss(
     mit Grund, gespeicherter Entscheidung und Gruppenanker.
 
     Der Bestand ist die VEREINIGUNG beider Ursachen - "offener Vorschlag" UND
-    "Entscheidungszeile", also offen, angenommen und aufgehoben zusammen (AK1, AK3). Er ist
+    "Entscheidungszeile", also offen, angenommen und aufgehoben zusammen. Er ist
     ausdruecklich NICHT `NOT ueberlebt`: Eine mit `Ausschuss` entschiedene Aufnahme ist weder
     Ueberlebende noch offener Vorschlag.
 
-    SICHERHEIT (S1/S6): Projektbindung und Bestandsbedingung stehen als UND-Glieder in DERSELBEN
+    SICHERHEIT: Projektbindung und Bestandsbedingung stehen als UND-Glieder in DERSELBEN
     Anweisung, nie als nachgelagerter Filter ueber einer bereits gebildeten Menge.
     `duplicates.py::has_open_suggestion` traegt selbst keine Projektbedingung - ohne
     `Photo.project_id == project_id` daneben lieferte der Endpunkt jeden offenen Vorschlag der
@@ -327,7 +327,7 @@ async def list_ausschuss(
     Gruppenanker stammt deshalb aus der bereits projektbegrenzten Kantenliste. Eine unbekannte oder
     fremde `photo_id` liefert eine leere Liste, ununterscheidbar von einer unbekannten.
 
-    KEIN `404`/`409` fuer "nichts gefunden": Der leere Ausschuss ist ein regulaerer Zustand (AK14) -
+    KEIN `404`/`409` fuer "nichts gefunden": Der leere Ausschuss ist ein regulaerer Zustand -
     auch ohne erfolgreichen `ScoringRun` und bei einem Projekt ganz ohne Fotos. `404` gibt es allein
     fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln; `422` fuer eine Id
     ausserhalb der Grenzen.
@@ -336,8 +336,7 @@ async def list_ausschuss(
     Stelle seiner ersten Bestandsaufnahme (`Photo.taken_at, Photo.id`), `limit`/`offset`/`total`
     zaehlen Einzel-Eintraege und Stapel. Geschnitten wird erst NACH dem Gruppieren - ein
     SQL-`LIMIT` davor zerlegte eine Gruppe ueber zwei Seiten in zwei Stapel. `open_count` ist
-    davon unabhaengig und nennt die Zahl der Aufnahmen, die der Bestaetigungsbutton traegt
-    (AK9)."""
+    davon unabhaengig und nennt die Zahl der Aufnahmen, die der Bestaetigungsbutton traegt."""
     if auto_decided and photo_id is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -348,7 +347,7 @@ async def list_ausschuss(
 
     # Eine Anweisung, zwei UND-Glieder: die Projektbindung und der Bestand. `has_ausschuss_entry`
     # zieht dieselbe Praesenzgrenze wie das Ueberlebenden-Praedikat und steht NICHT ausgeschrieben
-    # hier (Auflage S9 - eine zweite Fassung daneben liefe ohne Fehler und ohne Meldung weg). Die
+    # hier - eine zweite Fassung daneben liefe ohne Fehler und ohne Meldung weg. Die
     # gespeicherte Entscheidung kommt ueber einen ALIAS: `has_ausschuss_entry` korreliert seine
     # Unterabfrage auf `photo_duplicate_decisions`, und dieselbe Tabelle unaliasiert im FROM
     # zoege die Korrelation an sich.
@@ -366,7 +365,7 @@ async def list_ausschuss(
         .tuples()
         .all()
     )
-    # SICHERHEIT (S8): Gruppenschluessel, Anker, Titelbild und Mitglieder stammen allein aus dem
+    # SICHERHEIT: Gruppenschluessel, Anker, Titelbild und Mitglieder stammen allein aus dem
     # projektbegrenzten Bestand und diesen Kanten - nie aus einem eigenen SQL-Stern.
     links = await load_duplicate_links(session, project.id)
     slots = group_ausschuss_stock(bestand, links)
@@ -375,7 +374,7 @@ async def list_ausschuss(
     auto_links = [link for link in links if link.photo_id in auto_ids]
     auto_decided_group_count = len(auto_representatives)
 
-    # SICHERHEIT (S1): dieselbe ausgeschriebene Projektbindung wie der Bestand - eine Zaehlung ohne
+    # SICHERHEIT: dieselbe ausgeschriebene Projektbindung wie der Bestand - eine Zaehlung ohne
     # sie gaebe dem Button eine Zahl, die auf dieser Seite niemand einloesen kann.
     open_count = (
         await session.execute(

@@ -1,6 +1,6 @@
 """Die Kameras eines Projekts und ihr Zeitversatz - Liste, Setzen, Vorschlag.
 
-Die ZWEITE der zwei Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1; die erste ist
+Die ZWEITE der zwei Schreibstellen auf `Photo.taken_at` (die erste ist
 `worker/scan.py::_process_scan_block`), und beide rechnen ueber `cameras.py::shifted` aus
 `taken_at_original`.
 
@@ -41,9 +41,8 @@ from photosort.models import (
 from photosort.worker import rebuild_run_grouping
 
 # Router-weite Auth wie `api/stats.py` (anders als `api/photos/`): kein Endpunkt hier braucht
-# das tatsaechliche User-Objekt, und dies ist ein NEU angelegtes Modul - ohne die Router-Ebene
-# haenge die Absicherung eines kuenftigen vierten Endpunkts allein daran, dass niemand die
-# Dependency vergisst.
+# das tatsaechliche User-Objekt - ohne die Router-Ebene haenge die Absicherung eines kuenftigen
+# vierten Endpunkts allein daran, dass niemand die Dependency vergisst.
 router = APIRouter(prefix="/projects", tags=["cameras"], dependencies=[Depends(get_current_user)])
 
 # SICHERHEIT - Obergrenze der Foto-Ids des Vorschlags, im Muster von
@@ -147,7 +146,7 @@ async def _locked_camera_or_404(
     Dauer der Transaktion gesperrt.
 
     `with_for_update()` serialisiert zwei gleichzeitige `PUT`s unter PostgreSQL (unter SQLite
-    wirkungslos, siehe Sicherheitskonzept) - tragend ist deshalb der `409`-Waechter unten. Eine
+    wirkungslos) - tragend ist deshalb der `409`-Waechter unten. Eine
     fremde Id ergibt `404` OHNE Rueckspiegelung des Werts."""
     camera = (
         await session.execute(
@@ -315,7 +314,7 @@ async def suggest_camera_time_offset(
 
     `photo_id` ist das Foto der betroffenen Kamera, `reference_photo_id` eines von einer ANDEREN
     Kamera. Gerechnet wird auf der AUFGEZEICHNETEN Zeit des Kamerafotos und der KORRIGIERTEN des
-    Referenzfotos (ADR 0090, Punkt 6): rechnete der Vorschlag auf der korrigierten Zeit des
+    Referenzfotos: rechnete der Vorschlag auf der korrigierten Zeit des
     Kamerafotos, haenge er vom bereits gesetzten Versatz ab und derselbe Aufruf mit demselben
     Fotopaar schluege spaeter etwas anderes vor.
 

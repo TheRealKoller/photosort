@@ -41,7 +41,7 @@ async def _participants(session: AsyncSession) -> list[AlbumParticipantOut]:
     """Alle Konten als AUSDRUECKLICHE Projektion auf zwei Spalten, nach `user_id` sortiert.
 
     Nie `model_validate(User)`: `password_hash` und `created_at` duerfen diesen Endpunkt nicht
-    erreichen (Auflage S8). Die LAENGE dieser Liste ist der Nenner der Regel - sie stammt damit
+    erreichen. Die LAENGE dieser Liste ist der Nenner der Regel - sie stammt damit
     aus derselben Leseoperation wie die Anzeige, und die beiden koennen nicht auseinandergehen."""
     rows = (await session.execute(select(User.id, User.username).order_by(User.id))).all()
     return [AlbumParticipantOut(user_id=user_id, username=username) for user_id, username in rows]
@@ -51,14 +51,14 @@ async def _participants(session: AsyncSession) -> list[AlbumParticipantOut]:
 async def album_selection(
     project_id: int,
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen
     # Parameter vergisst, waere STILL OEFFENTLICH. `current_user.id` geht unveraendert an
     # `to_photo_out`: die MENGE dieser Antwort ist zwar nutzerunabhaengig, `PhotoOut.suggestion`
     # bleibt es nicht.
     current_user: User = Depends(get_current_user),
 ) -> AlbumSelectionOut:
-    """Die gemeinsame Endauswahl des Projekts - die Menge, die als Album gilt (ADR 0099).
+    """Die gemeinsame Endauswahl des Projekts - die Menge, die als Album gilt.
 
     Sie ist ABGELEITET und nirgends gespeichert: Gespeichert wird allein die ausdrueckliche
     gemeinsame Entscheidung. Einigkeit beider Entwuerfe ist eine VORBELEGUNG, die nur wirkt,
@@ -69,18 +69,18 @@ async def album_selection(
     `has_proposal` (trennt die beiden Leerzustaende) und `items`.
 
     DIE ANTWORTMENGE IST ADDITIV: `strittig ∪ Endauswahl ∪ entschieden`. Der dritte Teil ist keine
-    Redundanz (ADR 0099 Punkt 5) - ein ausdruecklich HERAUSGENOMMENES Bild gehoert nicht zur
+    Redundanz - ein ausdruecklich HERAUSGENOMMENES Bild gehoert nicht zur
     Endauswahl und verschwaende sonst aus beiden Sichten; die Entscheidung liesse sich dann nicht
     mehr aendern, obwohl die Story das ausdruecklich zusagt. Es bleibt stattdessen mit einem
-    Anzeigezustand stehen, genau wie ein gestrichenes Foto im Entwurf (ADR 0071 Entscheidung 3).
+    Anzeigezustand stehen, genau wie ein gestrichenes Foto im Entwurf.
     Kein Ausschluss bildet die Menge. Ein Bild, das BEIDE gestrichen haben und ueber das niemand
     entschieden hat, erscheint hier nicht; der Weg zurueck fuehrt ueber den Einzelentwurf.
 
-    KEINE SEITENWEISE, wie der Entwurfszweig (ADR 0098, Auflage S14). Die Obergrenze der Antwort
+    KEINE SEITENWEISE, wie der Entwurfszweig. Die Obergrenze der Antwort
     ist `Vorschlag ∪ jemals bewertet ∪ entschieden`; die Zahl der Abfragen ist fest und
     unabhaengig von der Fotoanzahl.
 
-    SICHERHEIT - Projektbindung (S2): `Photo.project_id == project_id` ist eine UND-Bedingung
+    SICHERHEIT - Projektbindung: `Photo.project_id == project_id` ist eine UND-Bedingung
     ueber die GESAMTE Kandidatenmenge und steht AUSSERHALB der ODER-Verknuepfung ihrer drei
     Quellen; der Rangzweig haengt zusaetzlich am `criterion_scoring_run_id` des letzten
     erfolgreichen Laufs DIESES Projekts. Zwei der drei Quellen sind projektblind:
@@ -91,13 +91,13 @@ async def album_selection(
     kohaerent aussehende Fotos eines anderen, und das ist die Menge, die der Export nimmt.
     `photos` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
 
-    SICHERHEIT (S8): `users` stammt aus DERSELBEN Leseoperation wie `participants`. Gingen
+    SICHERHEIT: `users` stammt aus DERSELBEN Leseoperation wie `participants`. Gingen
     beide auseinander, behauptete die Ansicht Einigkeit ueber zwei Teilnehmer, waehrend die Regel
     ueber drei rechnet - kein Feld der Antwort saehe dabei widerspruechlich aus."""
     project = await get_project_or_404(project_id, session)
     album_source = await album_level_source(session, project)
 
-    # (1) Teilnehmer UND Nenner aus EINER Leseoperation (S8).
+    # (1) Teilnehmer UND Nenner aus EINER Leseoperation.
     participants = await _participants(session)
     users = len(participants)
 
@@ -124,7 +124,7 @@ async def album_selection(
     candidate_rows = (
         await session.execute(
             select(Photo.id, Photo.taken_at, ranking.event_id, ranking.selection_position)
-            # SICHERHEIT (S2): das Pflichtpraedikat, UND-verknuepft ueber die gesamte Menge.
+            # SICHERHEIT: das Pflichtpraedikat, UND-verknuepft ueber die gesamte Menge.
             .where(Photo.project_id == project_id)
             .outerjoin(
                 ranking,

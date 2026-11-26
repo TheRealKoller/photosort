@@ -4,7 +4,7 @@ Ein Vorgang ist genau eine Lauf-Zeile der fuenf Arten (`scan`, `ausschuss`, `cla
 `export`, `review`). Der Abbruch ist ein Merker (`cancel_requested_at`), kein Signal: der Worker
 liest ihn an seinen Pruefpunkten und beendet den Lauf selbst als `cancelled`.
 
-SICHERHEIT (S1): Der Torwaechter haengt am ROUTER. Jede Anweisung dieses Moduls traegt
+SICHERHEIT: Der Torwaechter haengt am ROUTER. Jede Anweisung dieses Moduls traegt
 `project_id` in ihrer `WHERE`-Klausel - eine fremde Lauf-Id ist damit `404` und kein Inhaltsorakel.
 Ein Abbruch aendert ausschliesslich den Merker und bei wartenden Laeufen den Endzustand; er
 loescht nichts und liest keine Nutzdaten.

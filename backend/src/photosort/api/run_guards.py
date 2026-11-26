@@ -35,7 +35,7 @@ async def reject_while_a_criterion_run_is_active(
     gesetzt.
 
     `afterwards` ist der Nachsatz, der dem Nutzer sagt, WAS danach moeglich ist - der Richtwert
-    oder (Spec 0383) die Modellwahl. Der Statuscode und der erste Satz bleiben wortgleich."""
+    oder die Modellwahl. Der Statuscode und der erste Satz bleiben wortgleich."""
     latest = (
         (
             await session.execute(

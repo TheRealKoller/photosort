@@ -48,8 +48,8 @@ class DuplicateGroupPhotoOut(BaseModel):
     """Ein Mitglied der Duplikat-Gruppe: das Foto, sein wirksamer Zustand und ob sich dieser
     ueberhaupt aendern laesst.
 
-    DIE ANTWORT NENNT DIE AUSWERTUNG DES UEBERLEBENS-PRAEDIKATS, NICHT DIE ENTSCHEIDUNGSZEILE
-    (ADR 0111). Die beiden fielen genau dort auseinander, wo keine Zeile steht: Ein unentschiedener
+    DIE ANTWORT NENNT DIE AUSWERTUNG DES UEBERLEBENS-PRAEDIKATS, NICHT DIE ENTSCHEIDUNGSZEILE.
+    Die beiden fielen genau dort auseinander, wo keine Zeile steht: Ein unentschiedener
     Duplikat-Verlierer traegt `suggested_status = REJECTED` und scheidet aus, sah aber aus wie der
     Repraesentant, der bleibt. Es gibt deshalb keinen dritten Wert und kein `null`, und aus der
     Antwort geht nicht hervor, ob ein Zustand vom Automaten oder vom Nutzer stammt.
@@ -57,7 +57,7 @@ class DuplicateGroupPhotoOut(BaseModel):
     `keep_possible = false` heisst: Kein Wert der Entscheidungszeile aendert diesen Zustand - die
     Ablehnung folgt nicht aus dem Duplikat. Der GRUND reist nicht als Feld, weil er aus der
     Bedingung selbst folgt; die Oberflaeche rendert dort einen festen Text. Entstuende ein dritter
-    Ablehnungsgrund, gehoert er ab dann als eigenes Feld hierher (ADR 0111, Konsequenzen) -
+    Ablehnungsgrund, gehoert er ab dann als eigenes Feld hierher -
     `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen.
 
     `sharpness`/`exposure` sind die Rohwerte aus `PhotoScore` (Laplace-Varianz, hoeher = schaerfer;
@@ -84,7 +84,7 @@ class DuplicateGroupOut(BaseModel):
     `previous_photo_id`/`next_photo_id` tragen die Repraesentanten-Id der jeweils benachbarten
     Gruppe, `null` am Rand - dort ist die Schaltflaeche `disabled`, nicht abwesend.
 
-    SICHERHEIT (S6): Beide Nachbar-Ids stammen aus derselben projektbegrenzten Kantenliste wie die
+    SICHERHEIT: Beide Nachbar-Ids stammen aus derselben projektbegrenzten Kantenliste wie die
     Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
     auf `photos.id` ohne Projektbedingung. Zugriffsmarken sind sie nicht: Die Folgeanfrage laeuft
     erneut ueber `project_id` und loest eine fremde Id nicht auf.
@@ -98,7 +98,7 @@ class DuplicateGroupOut(BaseModel):
     previous_photo_id: int | None
     next_photo_id: int | None
     span_seconds: int
-    # Spec 0639: Die Gruppe ist ganz automatisch entschieden oder gar nicht. Das Feld ist reine
+    # Die Gruppe ist ganz automatisch entschieden oder gar nicht. Das Feld ist reine
     # Leseauskunft; die Entscheidungszeile bleibt unberuehrt und `decision` bleibt `null`."""
     auto_decided: bool
 
@@ -114,10 +114,10 @@ async def build_duplicate_group_out(
     Fassung davon liefe auseinander.
 
     `404` (als `HTTPException`), wenn es keine Gruppe gibt. Der Fall deckt unbekannte Id, fremdes
-    Projekt (die Kantenliste ist bereits projektbegrenzt, S7) und "Foto in keinem Stern" - und
+    Projekt (die Kantenliste ist bereits projektbegrenzt) und "Foto in keinem Stern" - und
     unterscheidet sie ausdruecklich nicht.
 
-    SICHERHEIT (S10): Die Antwort traegt `PhotoOut` und damit `suggestion`/`ratings`; sie ist
+    SICHERHEIT: Die Antwort traegt `PhotoOut` und damit `suggestion`/`ratings`; sie ist
     damit eine Funktion des ANFRAGENDEN Nutzers. Bekaeme sie je eine Zwischenspeicherung, ein
     `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, muss der Schluessel den Nutzer
     enthalten."""
@@ -167,15 +167,15 @@ async def build_duplicate_group_out(
                     persons=photo_person_outs(persons_by_id.get(member_id, [])),
                     album_level_source=album_source,
                 ),
-                # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier
-                # (Auflage S2): Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
+                # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier:
+                # Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
                 # Homeserver Richtung Cloud-Anbieter verlassen. Eine zweite Fassung liefe von der
                 # ersten weg, ohne Fehler und ohne Meldung -
                 # `tests/test_ausschuss_ueberlebende.py` schlaegt fuer jede hier ausgeschriebene
                 # Fassung an.
                 effective_decision=effective_decision_for(photos[member_id]),
                 keep_possible=keep_possible_for(photos[member_id]),
-                # SICHERHEIT (S10): ueber `_score_metrics`, das die fehlende Zeile kennt - ein
+                # SICHERHEIT: ueber `_score_metrics`, das die fehlende Zeile kennt - ein
                 # blosser Attributzugriff wuerfe fuer den Repraesentanten ohne `PhotoScore` und
                 # machte die ganze Gruppenantwort zur `500`.
                 sharpness=_score_metrics(photos[member_id])[0],
@@ -199,9 +199,9 @@ def _score_metrics(photo: Photo) -> tuple[float | None, float | None]:
 
 
 def empty_duplicate_group_out() -> DuplicateGroupOut:
-    """Der leere Gruppenstand fuer eine Aufnahme OHNE Gruppe (Spec 0525, AK6).
+    """Der leere Gruppenstand fuer eine Aufnahme OHNE Gruppe.
 
-    Der Einzel-Schreibweg nimmt seit Spec 0525 auch die Unschaerfe-Ablehnung an, die in keinem
+    Der Einzel-Schreibweg nimmt auch die Unschaerfe-Ablehnung an, die in keinem
     Stern liegt: Dort ist die Entscheidung selbst das Ergebnis und es gibt keine Gruppe, die man
     zurueckgeben koennte. Die Antwortform bleibt trotzdem dieselbe `DuplicateGroupOut` - die
     Oberflaeche schreibt den Rueckgabewert der Entscheidung unmittelbar fort und braucht eine
@@ -226,9 +226,9 @@ class DuplicateGroupIndexOut(BaseModel):
     beginnt.
 
     `first_photo_id` ist `null`, wenn es keine Gruppe gibt - die Oberflaeche rendert den Einstieg
-    dann gar nicht, statt auf eine leere Ansicht zu fuehren (AK8).
+    dann gar nicht, statt auf eine leere Ansicht zu fuehren.
 
-    KEINE LISTE ALLER GRUPPEN (ADR 0111 Punkt 3): Sie waere eine zweite Quelle derselben
+    KEINE LISTE ALLER GRUPPEN: Sie waere eine zweite Quelle derselben
     Reihenfolge neben `position`/`total`, deren Momentaufnahmen auseinanderlaufen koennen. Die
     Nachbarn reisen in der Gruppenantwort selbst."""
 
@@ -240,7 +240,7 @@ class DuplicateGroupIndexOut(BaseModel):
 async def duplicate_group_index(
     project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste und keinen Vollstaendigkeitstest - ein Endpunkt, der
     # diesen Parameter vergisst, waere STILL OEFFENTLICH (keine 401, nur Daten). Der eigene
     # 401-Fall steht in `tests/test_api_duplicate_group_index.py`.
@@ -255,7 +255,7 @@ async def duplicate_group_index(
     `total` ist DIESELBE Zahl wie in `DuplicateGroupOut` und zaehlt alle Gruppen des Projekts,
     entschiedene eingeschlossen.
 
-    SICHERHEIT (S6): `first_photo_id` stammt aus derselben projektbegrenzten Kantenliste wie die
+    SICHERHEIT: `first_photo_id` stammt aus derselben projektbegrenzten Kantenliste wie die
     Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
     auf `photos.id` ohne Projektbedingung. Eine Zugriffsmarke ist die Id nicht: Die Folgeanfrage
     laeuft erneut ueber `project_id`.
@@ -283,7 +283,7 @@ async def duplicate_group(
 ) -> DuplicateGroupOut:
     """Alle Aufnahmen EINER Duplikat-Gruppe samt ihrem wirksamen Zustand und ihren Nachbargruppen.
 
-    Die Gruppe ist ABGELEITET und nirgends gespeichert (ADR 0104 Punkt 1): Sie ist der Stern ueber
+    Die Gruppe ist ABGELEITET und nirgends gespeichert: Sie ist der Stern ueber
     `PhotoScore.duplicate_of` - der Gewinner und alle, die auf ihn zeigen -, zur Lesezeit gebildet.
     Sie hat deshalb keine eigene Id und ist ueber JEDES ihrer Mitglieder unter derselben Antwort
     erreichbar, den Gewinner eingeschlossen.

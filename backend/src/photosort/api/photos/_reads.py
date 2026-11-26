@@ -50,7 +50,7 @@ async def get_project_or_404(project_id: int, session: AsyncSession) -> Project:
 
 
 async def auto_decided_ids(session: AsyncSession, project_id: int) -> set[int]:
-    """Die Fotos DIESES Projekts, deren `PhotoScore.auto_decided` steht (Spec 0639).
+    """Die Fotos DIESES Projekts, deren `PhotoScore.auto_decided` steht.
 
     Projektbindung ausgeschrieben in derselben Anweisung, wie alle Zaehlungen dieses Moduls: Der
     Merker ist Lauf-Zustand EINES Projekts und darf eine fremde Antwort nicht veraendern."""
@@ -100,7 +100,7 @@ async def filtered_photo_ids(
                 Photo.id.in_(select(effective.c.photo_id).where(effective.c.person_id == person_id))
             )
     if rating_status is RatingFilter.UNRATED:
-        # "Unbewertet" ist KEINE ALBUMENTSCHEIDUNG, nicht mehr "keine Zeile": seit `favorite`
+        # "Unbewertet" ist KEINE ALBUMENTSCHEIDUNG, nicht "keine Zeile": da `favorite`
         # eine eigene Spalte ist, kann eine Zeile ohne jede Albumentscheidung existieren. Ueber
         # das Zeilenvorhandensein gepruefte Abwesenheit liesse ein nur als Favorit markiertes
         # Foto still aus dem Filter fallen.
@@ -109,7 +109,7 @@ async def filtered_photo_ids(
         # Bildet dieselbe Regel wie has_suggestion in to_photo_out als SQL-Praedikat nach: keine
         # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND ein OFFENER Vorschlag.
         #
-        # "Offen" ist seit ADR 0104 mehr als "suggested_status gesetzt": Eine im Duplikat-Vergleich
+        # "Offen" ist mehr als "suggested_status gesetzt": Eine im Duplikat-Vergleich
         # entschiedene Aufnahme ist beantwortet und verschwindet aus diesem Filter - und damit auch
         # aus der Zaehlung des Ausschuss-Gates, die denselben Filter benutzt. Die Bedingung steht
         # deshalb an EINER Stelle (`duplicates.py::has_open_suggestion`); die Objektfassung
@@ -121,9 +121,9 @@ async def filtered_photo_ids(
             has_open_suggestion(),
         )
     elif rating_status is RatingFilter.FAVORITE:
-        # Eigene SPALTE, nicht mehr ein Wert von `status`. Ohne diesen Zweig wuerfe
+        # Eigene SPALTE, kein Wert von `status`. Ohne diesen Zweig wuerfe
         # `RatingStatus("favorite")` unten einen `ValueError` - eine 500 auf einem
-        # nutzererreichbaren Query-Parameter (Auflage S11).
+        # nutzererreichbaren Query-Parameter.
         base = base.where(own_rating.favorite.is_(True))
     elif rating_status is not None:
         base = base.where(own_rating.status == RatingStatus(rating_status.value))
@@ -219,9 +219,9 @@ async def event_and_location_by_photo_id(
 
     SICHERHEIT - zwei GETRENNTE Bindungen, beide ausgeschrieben:
 
-    * (M5) Die Inferenzbasis haengt an `Photo.project_id`. Ohne sie erbte ein Foto Koordinaten aus
+    * Die Inferenzbasis haengt an `Photo.project_id`. Ohne sie erbte ein Foto Koordinaten aus
       einem fremden Projekt.
-    * (M1) Die Event-Abfrage haengt an `Event.criterion_scoring_run_id` - `event_id` ist ein
+    * Die Event-Abfrage haengt an `Event.criterion_scoring_run_id` - `event_id` ist ein
       GLOBALER Surrogatschluessel, und eine Id aus Projekt B identifiziert unter `/projects/A/...`
       eindeutig ein fremdes Event. Die Lauf-Id wird EINMAL PRO REQUEST aufgeloest und hierher
       durchgereicht, nie in dieser Funktion neu bestimmt; fehlt sie, bleibt `event` `None`. Die
@@ -294,13 +294,13 @@ async def user_count(session: AsyncSession) -> int:
     """Der NENNER der Einigkeitsregel: die Zahl der Konten im Bestand.
 
     Eine einzelne Zahl statt der Nutzerliste, weil die drei Bestands-Lesepfade (Listing, Entwurf,
-    Alternativen) von der Nutzermenge nichts anderes brauchen. Der neue Endpunkt zaehlt bewusst
-    NICHT hierueber: Er liefert `participants` mit aus, und sein Nenner stammt aus DERSELBEN
-    Leseoperation (Auflage S8) - gingen beide auseinander, behauptete die Ansicht Einigkeit ueber
+    Alternativen) von der Nutzermenge nichts anderes brauchen. Der Endauswahl-Endpunkt zaehlt
+    bewusst NICHT hierueber: Er liefert `participants` mit aus, und sein Nenner stammt aus
+    DERSELBEN Leseoperation - gingen beide auseinander, behauptete die Ansicht Einigkeit ueber
     zwei Teilnehmer, waehrend die Regel ueber drei rechnet, und kein Feld der Antwort saehe dabei
     widerspruechlich aus.
 
-    RESTRISIKO, bewusst getragen und in der Spec benannt: Der Nenner ist die GLOBALE Nutzerzahl.
+    RESTRISIKO, bewusst getragen: Der Nenner ist die GLOBALE Nutzerzahl.
     Ein drittes, administrativ angelegtes Konto aendert die Endauswahl jedes Projekts, ohne dass
     ein Schreibzugriff stattfindet."""
     return (await session.execute(select(func.count()).select_from(User))).scalar_one()
@@ -324,9 +324,9 @@ async def latest_successful_criterion_scoring_run_id(
 
 async def album_level_source(session: AsyncSession, project: Project) -> CategoryMethod:
     """Das Verfahren, dessen Stufe in DIESEM Projekt zaehlt: die am juengsten erfolgreichen Lauf
-    eingefrorene Quelle, ohne erfolgreichen Lauf die Projekteinstellung (ADR 0144).
+    eingefrorene Quelle, ohne erfolgreichen Lauf die Projekteinstellung.
 
-    SICHERHEIT (S3): Gelesen wird ausschliesslich der juengste erfolgreiche Lauf DIESES Projekts
+    SICHERHEIT: Gelesen wird ausschliesslich der juengste erfolgreiche Lauf DIESES Projekts
     (`project_id`), nie der global juengste - sonst zeigte ein Projekt die Herkunft eines fremden
     Laufs. Der Livewert der Einstellung gilt nur, solange es keinen Lauf gibt: sonst wirkte ein
     Wechsel sofort, und der bestehende Entwurf wechselte still seine Grundlage.
@@ -351,7 +351,7 @@ class PlacedPhotos:
     """Eine Fotomenge, in die Events eines Laufs EINGEORDNET und darin numeriert - drei
     zusammengehoerige Teile EINER Herleitung.
 
-    Nicht mehr `DraftContent`: Die Einordnung traegt seit Spec 0431 ZWEI Zweige, den Album-Entwurf
+    Nicht `DraftContent`: Die Einordnung traegt ZWEI Zweige, den Album-Entwurf
     eines Nutzers und die gemeinsame Endauswahl des Projekts. Ein Name, der nur den einen nennt,
     laedt dazu ein, sie fuer den anderen ein zweites Mal zu schreiben.
 
@@ -393,7 +393,7 @@ def place_in_events(
     ueber die gelieferte Reihenfolge vergeben, nicht die `selection_position`: ein aufgenommenes
     Foto hat keine, und eine Luecke waere eine Aussage ueber einen Platz, den es nicht gibt.
 
-    Die Komplexitaetsklasse ist verbindlich (Auflage S14): ein Durchgang ueber die Zeilen, nie eine
+    Die Komplexitaetsklasse ist verbindlich: ein Durchgang ueber die Zeilen, nie eine
     Abfrage je Foto. Die Eventliste kommt FERTIG herein."""
     placed: list[tuple[int, int, datetime, int]] = []
     event_id_by_photo_id: dict[int, int] = {}
@@ -435,9 +435,9 @@ class RunEvents:
 
 
 async def run_events(session: AsyncSession, criterion_scoring_run_id: int) -> RunEvents:
-    """Die Events eines Laufs aus EINER Abfrage (Auflage S14), von Entwurf und Endauswahl geteilt.
+    """Die Events eines Laufs aus EINER Abfrage, von Entwurf und Endauswahl geteilt.
 
-    SICHERHEIT (M1, S2): ausschliesslich ueber `Event.criterion_scoring_run_id` des uebergebenen,
+    SICHERHEIT: ausschliesslich ueber `Event.criterion_scoring_run_id` des uebergebenen,
     je Anfrage einmal aufgeloesten Laufs; `EventOut` entsteht nur ueber `event_out`, damit die
     Mitgliedschaftspruefung des Ortsteils (`_event_place_out`) an einer Stelle bleibt."""
     events = (
@@ -473,7 +473,7 @@ async def partition_sizes(session: AsyncSession, criterion_scoring_run_id: int) 
     einer Partition mit genau einem einsehbaren Foto. Die Zahl an der Event-Überschrift und der
     tatsächlich einsehbare Vorrat müssen dieselbe Menge beschreiben.
 
-    SICHERHEIT (S2): das Lauf-Prädikat steht auch HIER - diese Zählabfrage speist `partition_size`
+    SICHERHEIT: das Lauf-Prädikat steht auch HIER - diese Zählabfrage speist `partition_size`
     auf jedem Lesepfad, den Alternativen-Endpunkt eingeschlossen, und ist damit eine Abfrage
     dieser Endpunkte wie jede andere."""
     result = await session.execute(
@@ -516,7 +516,6 @@ async def ranking_by_photo_id(
 #
 # OEFFENTLICH (kein fuehrender Unterstrich), weil die Grenze GETEILT ist: `api/duplicate_decisions.py`
 # zieht sie von hier. Ein geteilter Grenzwert soll nicht zweimal dastehen - zwei Zahlen liefen
-# auseinander, und die kleinere entschiede still, welche Anfrage `422` statt `404` bekommt. Die
-# aeltere Nachbildung in `api/cameras.py` bleibt vorerst stehen (eigener Wert, eigene Begruendung);
-# sie darf spaeter hierher zusammengezogen werden.
+# auseinander, und die kleinere entschiede still, welche Anfrage `422` statt `404` bekommt.
+# `api/cameras.py` fuehrt einen eigenen Wert.
 MAX_QUERY_POSITION = 1_000_000_000

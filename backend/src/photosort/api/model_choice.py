@@ -1,7 +1,7 @@
-"""Die Modellwahl eines Projekts als eigener Lese- und Schreibendpunkt (Spec 0383).
+"""Die Modellwahl eines Projekts als eigener Lese- und Schreibendpunkt.
 
-Der Router ist bewusst schlank: er validiert die GESCHLOSSENE Eingabe (keine freie Modell-ID, S1),
-prueft die Verfuegbarkeit nur als Wahrheitswert (S4) und schreibt die drei Spalten in EINEM
+Der Router ist bewusst schlank: er validiert die GESCHLOSSENE Eingabe (keine freie Modell-ID),
+prueft die Verfuegbarkeit nur als Wahrheitswert und schreibt die drei Spalten in EINEM
 Commit. Die Aufloesung selbst lebt in `photosort.model_choice` - hier entsteht kein zweiter Weg
 zu Modell und Anbieter.
 
@@ -46,7 +46,7 @@ class CloudModelOut(BaseModel):
     estimate_usd_per_image: float | None
     input_usd_per_mtok: float | None
     output_usd_per_mtok: float | None
-    # Die einzige ausgelieferte Betriebsgroesse (S4) - bewusst je ANBIETER, weil der
+    # Die einzige ausgelieferte Betriebsgroesse - bewusst je ANBIETER, weil der
     # Schrittmacher prozessweit je Anbieter zaehlt.
     requests_per_minute: int
     available: bool
@@ -84,7 +84,7 @@ class ModelChoiceOut(BaseModel):
 
 
 class ModelChoiceIn(BaseModel):
-    """Die geschlossene Eingabe des Schreibendpunkts (S1).
+    """Die geschlossene Eingabe des Schreibendpunkts.
 
     `extra="forbid"`: ein zusaetzliches Feld ist ein `422` und verschwindet nicht still. Beide
     Modellfelder sind PFLICHT (auch als `null`), damit ein Wechsel auf Eye das Kategorisierungs-
@@ -184,7 +184,7 @@ async def put_model_choice(
     Reihenfolge der Pruefungen: `404` -> `409` (laufende Klassifizierung) -> `422` -> schreiben.
     Bei einem Fehler aendert sich NICHTS; der Handler schreibt ausschliesslich
     `category_method`/`category_model`/`landmark_model` und fasst die Einwilligungs-Spalten
-    nicht an (S3)."""
+    nicht an."""
     project = await _get_project_or_404(project_id, session)
     await reject_while_a_criterion_run_is_active(
         session,
@@ -205,8 +205,8 @@ async def put_model_choice(
             )
 
     # `cloud` mit `category_model=None` ist ausdruecklich erlaubt: das ist die
-    # Installationsvorgabe und der Rueckweg aus Eye, und beides braucht keinen Schluessel
-    # (ADR 0143 Punkt 6). Gespeichert wird dann `NULL`, und `category_is_default` sagt es.
+    # Installationsvorgabe und der Rueckweg aus Eye, und beides braucht keinen Schluessel.
+    # Gespeichert wird dann `NULL`, und `category_is_default` sagt es.
 
     _reject_unusable_model(payload.category_model, project.category_model)
     _reject_unusable_model(payload.landmark_model, project.landmark_model)

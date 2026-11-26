@@ -75,8 +75,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 
-# Spec 0383: ein gespeichertes Modell, das nicht mehr in der Registry steht, ist ein 409 - es
-# gibt keinen Rueckfall auf die Installationsvorgabe (ADR 0143 Punkt 2). Woertlich an jeder
+# Ein gespeichertes Modell, das nicht mehr in der Registry steht, ist ein 409 - es
+# gibt keinen Rueckfall auf die Installationsvorgabe. Woertlich an jeder
 # Stelle derselbe Satz, damit die Oberflaeche ihn nicht je Endpunkt anders erklaeren muss.
 MODEL_CHOICE_UNAVAILABLE_DETAIL = (
     "Das im Projekt eingestellte Modell ist nicht mehr wählbar. "
@@ -214,7 +214,7 @@ class CriterionScoringRunSummary(BaseModel):
     phase: ClassificationPhase | None
     cloud_requested: bool
     cloud_error_message: str | None
-    # Der beim Start GEWAEHLTE Weg (Spec 0609) - `null` bei Altzeilen, deren Weg unbekannt ist.
+    # Der beim Start GEWAEHLTE Weg - `null` bei Altzeilen, deren Weg unbekannt ist.
     # Kein Ableiten aus `cloud_requested`: Eye mit Einwilligung fragt Cloud an, ohne der Cloud-Weg
     # zu sein, und "unbekannt" ist fuer Altzeilen die wahre Aussage.
     mode: ClassificationMode | None
@@ -237,8 +237,7 @@ class CriterionScoringRunSummary(BaseModel):
     cloud_phases: list[CloudPhaseSummaryOut]
     cloud_cost_total_usd: float | None
     # Die geschaetzte Restdauer GENAU DES Teilschritts, den `phase` nennt - in Sekunden, nicht als
-    # Text: Die Spanne, die die Oberflaeche daraus macht, ist eine Darstellungsentscheidung
-    # (ADR 0116 Punkt 4).
+    # Text: Die Spanne, die die Oberflaeche daraus macht, ist eine Darstellungsentscheidung.
     #
     # EIN Feld, keines je Teilschritt und keines an `CloudPhaseSummaryOut`: Es laeuft zu jedem
     # Zeitpunkt genau einer, ein erledigter hat keine Restdauer und ein ausstehender keine
@@ -320,9 +319,9 @@ class ClassifyRequest(BaseModel):
     der Server einen zwischenzeitlichen Re-Scan/Re-Scoring als 409 ablehnen kann, statt auf
     einem veralteten cluster_key-Stand weiterzuarbeiten.
 
-    `mode` ist seit Spec 0383 nur noch die Entscheidung "wie im Projekt eingestellt" oder "nur
-    lokal" - `cloud`/`eye` sind keine Wege der Anfrage mehr, sondern Ergebnisse der im Projekt
-    gespeicherten Wahl (ADR 0143). Kein Vorgabewert: ein fehlendes Feld ist eine `422` und kein
+    `mode` ist nur die Entscheidung "wie im Projekt eingestellt" oder "nur
+    lokal" - `cloud`/`eye` sind keine Wege der Anfrage, sondern Ergebnisse der im Projekt
+    gespeicherten Wahl. Kein Vorgabewert: ein fehlendes Feld ist eine `422` und kein
     stiller Rueckfall auf einen Weg, den der Client nie genannt hat - ein unbekannter Wert ebenso,
     deshalb `Literal` und kein freier String.
 
@@ -334,7 +333,7 @@ class ClassifyRequest(BaseModel):
 
 
 class ProjectModelChoiceOut(BaseModel):
-    """Die wirksame Wahl des Projekts im Projekt-Datensatz (Spec 0383, API-Punkt 3).
+    """Die wirksame Wahl des Projekts im Projekt-Datensatz.
 
     Fuenf Felder, KEIN `*_is_default`: die Herkunft ("Installationsvorgabe" vs. ausdruecklich
     gespeichert) braucht nur die Einstellungsseite, und die liest `GET …/model-choice`.
@@ -380,10 +379,10 @@ class ProjectOut(BaseModel):
     # exponiert, damit das Frontend-Verfügbarkeitsgate proaktiv aus den ohnehin geladenen
     # Projektdaten dieser Seite ableitbar ist, statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
-    # Die WIRKSAME Modellwahl des Projekts, gebaut ueber `describe_model_choice` (ADR 0143).
-    # Sie ersetzt das fruehere `eye_available`: die Verfuegbarkeit beider Methoden liefert
-    # `GET …/model-choice`, hier steht das, was der naechste Lauf tatsaechlich aufruft. Der
-    # Lesepfad wirft NICHT - ein entferntes Modell erscheint als ID mit `provider: null`.
+    # Die WIRKSAME Modellwahl des Projekts, gebaut ueber `describe_model_choice`. Die
+    # Verfuegbarkeit beider Methoden liefert `GET …/model-choice`, hier steht das, was der naechste
+    # Lauf tatsaechlich aufruft. Der Lesepfad wirft NICHT - ein entferntes Modell erscheint als ID
+    # mit `provider: null`.
     model_choice: ProjectModelChoiceOut
     # Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse; er gated
     # BEIDE Cloud-Anteile. Hier statt in einem eigenen GET exponiert, damit ProjectSettingsPage
@@ -401,7 +400,7 @@ class ProjectOut(BaseModel):
     # rechnet? Bewusst NICHT der Status des neuesten Laufs: nach "erfolgreich, dann gescheitert"
     # rechnet der `PUT` den Vorschlag des erfolgreichen Laufs weiterhin neu.
     has_selection_proposal: bool
-    # Bestandszahlen des Projekts (ADR 0103): fuer die ganze Liste in EINER gruppierten Abfrage zu
+    # Bestandszahlen des Projekts: fuer die ganze Liste in EINER gruppierten Abfrage zu
     # haben, in konstanter Antwortgroesse, und damit auch im Zwei-Sekunden-Takt von
     # `useProjectQuery` tragbar. Die Kennzahlen von `GET /projects/{id}/stats` erfuellen das nicht
     # (zwei `os.stat` je Foto) und bleiben deshalb dort.
@@ -413,7 +412,7 @@ class ProjectOut(BaseModel):
     taken_at_latest: datetime | None
 
 
-# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos/_reads.py::MAX_QUERY_POSITION`:
+# SICHERHEIT - Obergrenze des Richtwerts, im Muster von `api/photos/_reads.py::MAX_QUERY_POSITION`:
 # ein Pydantic-`int` ist unbeschraenkt, der Wert wird in eine INTEGER-Spalte geschrieben und geht
 # in `⌈0,25·T⌉`/`⌈T/m⌉`/`T − m`; jenseits von 2^63 ergibt das unter SQLite einen `OverflowError`
 # und damit eine 500 statt einer 422.
@@ -588,13 +587,12 @@ def phase_progress(
     """Der Zaehler-/Nenner-Stand GENAU DES laufenden Teilschritts.
 
     Die Zuordnung "welcher Zaehler gehoert zu welchem Teilschritt" steht SERVERSEITIG; das
-    Frontend bildet sie nicht nach (ADR 0116 Punkt 2). Die Landmark-Zahlen kommen aus der bereits
+    Frontend bildet sie nicht nach. Die Landmark-Zahlen kommen aus der bereits
     gebauten `phases`-Liste und der Remote-Stand aus deren Eintrag - KEIN zusaetzlicher
-    Datenbankzugriff je Projekt, der im Zwei-Sekunden-Takt des Pollings anfiele (ADR 0103
-    Punkt 1).
+    Datenbankzugriff je Projekt, der im Zwei-Sekunden-Takt des Pollings anfiele.
 
     `ranking` liefert `(None, None)` und damit immer `null`: Der Teilschritt arbeitet ueber
-    Partitionen und hat keine gezaehlte Menge (ADR 0116 Punkt 5).
+    Partitionen und hat keine gezaehlte Menge.
     """
     if run.phase is ClassificationPhase.CRITERIA:
         return run.photos_processed, run.photos_total
@@ -626,7 +624,7 @@ def phase_remaining_seconds(
 
     Die Statuspruefung steht VOR der Rechnung, und sie prueft NICHT allein `phase`: Der Zustand
     "beendet, aber `phase` nicht zurueckgesetzt" existiert am Bestand (Altzeilen). Ohne sie
-    zaehlte eine laengst beendete Zeile weiter hoch, ohne dass etwas fehlschluege (AK8)."""
+    zaehlte eine laengst beendete Zeile weiter hoch, ohne dass etwas fehlschluege."""
     if run.status is not ScanStatus.RUNNING or run.phase is None:
         return None
     processed, total = phase_progress(run, phases)
@@ -756,7 +754,7 @@ async def _to_project_out(
 ) -> ProjectOut:
     """Das Aggregat kommt als PARAMETER herein, statt hier je Projekt nachgeladen zu werden:
     `list_projects` laedt es einmal fuer alle Projekte, die Einzeloperationen fuer genau eines.
-    Ein Nachladen an dieser Stelle waere die Abfrage je Projekt, die ADR 0103 ausschliesst."""
+    Ein Nachladen an dieser Stelle waere eine Abfrage je Projekt im Polling-Takt."""
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
     criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
@@ -890,7 +888,7 @@ async def delete_project(
     # Ein aktiver Lauf schreibt in genau die Zeilen, die gleich verschwinden. Alle FUENF Lauftypen
     # - der Remote-Klassifizierungslauf gehoert zwingend dazu, er schreibt nach
     # photo_category_classifications/photo_fine_labels/fine_labels, und die Klassifizierungspruefung
-    # (Spec 0616) schreibt in ihre sechs eigenen Tabellen. Geprueft wird jeweils nur der NEUESTE
+    # schreibt in ihre sechs eigenen Tabellen. Geprueft wird jeweils nur der NEUESTE
     # Lauf: ein nicht mehr aktueller RUNNING-Altlauf darf nicht dauerhaft blockieren (ein
     # haengengebliebener wird ohnehin vom Watchdog auf FAILED gesetzt).
     latest_runs = (
@@ -1010,26 +1008,26 @@ async def confirm_ausschuss_gate(
 
     `409` ohne erfolgreichen `ScoringRun`. Mit erfolgreichem Lauf schreibt der Aufruf in EINER
     Transaktion fuer jede Aufnahme mit `duplicates.py::has_open_suggestion` die Zeile `discard` und
-    setzt danach `gate_confirmed_at`, falls es leer ist (Auflage S3): Ein halb geschriebener Bestand
+    setzt danach `gate_confirmed_at`, falls es leer ist: Ein halb geschriebener Bestand
     waere eine willkuerliche Teilmenge in der Menge, die den Homeserver verlaesst, und ein gesetzter
     Zeitstempel ohne die Uebernahme oeffnete den naechsten Schritt ohne sie.
 
     Ein LEERER offener Bestand ist kein Fehler und kein Nichtstun: Auch dann setzt der Aufruf den
     Zeitstempel (siehe die Bedingung unten). Er ist neben dem Autoset des Laufs der EINZIGE Setzer -
-    ein Nutzer, der zuletzt alle Vorschlaege einzeln entschieden hat (AK6), stuende sonst ohne
-    Abschluss-Aktion fest und der naechste Schritt bliebe dauerhaft gesperrt (M1, AK13).
+    ein Nutzer, der zuletzt alle Vorschlaege einzeln entschieden hat, stuende sonst ohne
+    Abschluss-Aktion fest und der naechste Schritt bliebe dauerhaft gesperrt.
 
-    SICHERHEIT (S1): Die Menge bestimmt der SERVER, projektweit und in DERSELBEN Anweisung wie die
+    SICHERHEIT: Die Menge bestimmt der SERVER, projektweit und in DERSELBEN Anweisung wie die
     Projektbindung - ein Aufruf ohne Body schriebe sonst `discard` ueber alle Projekte der Instanz.
     `has_open_suggestion` traegt selbst keine Projektbedingung; sie kommt allein aus dem Join auf
     `Photo`.
 
-    SICHERHEIT (S2): Der Aufruf bleibt bodyfrei. Eine mitgeschickte Id-Liste wird nie gelesen. Ein
-    Massen-`keep` gibt es nicht: Nur `discard` verkleinert den abfliessenden Bestand (ADR 0104
-    Punkt 3, fail-closed) - die einzige Richtung, die ihn vergroesserte, waere zugleich ein
+    SICHERHEIT: Der Aufruf bleibt bodyfrei. Eine mitgeschickte Id-Liste wird nie gelesen. Ein
+    Massen-`keep` gibt es nicht: Nur `discard` verkleinert den abfliessenden Bestand
+    (fail-closed) - die einzige Richtung, die ihn vergroesserte, waere zugleich ein
     Massen-Schreibweg auf beliebige Fotos.
 
-    SICHERHEIT (S4): Bestehende Entscheidungszeilen bleiben unangetastet, und zwar durch die
+    SICHERHEIT: Bestehende Entscheidungszeilen bleiben unangetastet, und zwar durch die
     Auswahlbedingung statt durch Nachfilterung: Wer eine Zeile traegt, ist kein offener Vorschlag. Ein
     `discard` auf eine manuell behaltene Aufnahme waere deren stille Ruecknahme. Deshalb auch KEIN
     `DELETE` vor dem Schreiben - anders als beim Einzel- und Gruppenweg wird hier nie ueberschrieben.
@@ -1071,7 +1069,7 @@ async def confirm_ausschuss_gate(
         try:
             await session.flush()
         except IntegrityError:
-            # Das schmale Fenster der Auflage S3: Die andere Sitzung hat zwischen unserer Auswahl
+            # Das schmale Fenster: Die andere Sitzung hat zwischen unserer Auswahl
             # und unserem `INSERT` dieselbe Aufnahme entschieden. Der Primaerschluessel wirft; der
             # Rueckzug umfasst AUCH den Zeitstempel unten, der noch gar nicht gesetzt ist.
             await session.rollback()
@@ -1102,13 +1100,13 @@ async def trigger_classify(
     """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet den gewaehlten Weg mit
     der Kriterien- und der Rangfolge-Phase (worker/classification.py: run_classification).
 
-    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0609 S5, Spec 0383 API-Punkt 4) -
+    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage -
     jede Zeile hier hat einen Grund, genau an dieser Stelle zu stehen:
 
     1. `403`, wenn das Feature-Flag aus ist.
     2. `404` bei unbekanntem Projekt - VOR allem, was vom Projekt abhaengt, denn ohne Projekt
        gibt es weder eine wirksame Wahl noch eine Einwilligung zu pruefen.
-    3. die drei `409` wie bisher (kein erfolgreicher ScoringRun, Gate nicht bestaetigt, veralteter
+    3. die drei `409` (kein erfolgreicher ScoringRun, Gate nicht bestaetigt, veralteter
        `scoring_run_id`-Bezug).
     4. `409`, wenn die im Projekt gespeicherte Wahl nicht mehr auflösbar ist
        (`MODEL_CHOICE_UNAVAILABLE_DETAIL`) - es gibt keinen Rueckfall auf die
@@ -1158,7 +1156,7 @@ async def trigger_classify(
         )
 
     # Genau EINE Aufloesung je Anfrage: sie bestimmt Weg, Modelle, Anbieter und die Grundlage der
-    # Schaetzung - "angezeigt = aufgerufen = abgerechnet" per Bau (ADR 0143).
+    # Schaetzung - "angezeigt = aufgerufen = abgerechnet" per Bau.
     try:
         resolved = resolve_model_choice(project)
     except UnknownModelChoiceError as error:
@@ -1198,10 +1196,10 @@ async def trigger_classify(
     # Anbieterfeld - ein vom Client geliefertes Geldfeld wanderte sonst ungeprueft in die
     # Buchfuehrung.
     #
-    # NUR MIT CLOUD-KONTAKT wird eine Schaetzung eingefroren (ADR 0138 Punkt 7): findet kein
+    # NUR MIT CLOUD-KONTAKT wird eine Schaetzung eingefroren: findet kein
     # Cloud-Aufruf statt, speichert der Lauf `NULL` - "keine Schaetzung", nicht "0 USD geschaetzt".
     # Die ANTWORT von `GET .../classify/estimate` bleibt davon unberuehrt und nennt fuer den
-    # kostenfreien Weg weiterhin `0.0` (S7).
+    # kostenfreien Weg weiterhin `0.0`.
     estimate = await build_classification_estimate(
         session, project, mode="local" if payload.mode == "local" else "project"
     )
@@ -1224,7 +1222,7 @@ async def trigger_classify(
     await session.refresh(criterion_run)
 
     # `use_cloud` bleibt der vierte Positionsparameter des Jobs und ist genau beim wirksamen
-    # Cloud-Weg `True`; `mode` faehrt als Schluesselwort mit (S6). Die aufgeloesten Modelle
+    # Cloud-Weg `True`; `mode` faehrt als Schluesselwort mit. Die aufgeloesten Modelle
     # fahren mit, damit der Job nicht erneut raten muss. Ein alter Worker kennt die
     # Schluesselwoerter nicht und verwirft den Job sichtbar mit `TypeError`.
     await enqueuer.enqueue_job(
@@ -1312,12 +1310,12 @@ async def estimate_classification(
 
     `project` schaetzt die beiden Tätigkeiten der Projektwahl (Kategorisierung nach
     `category_method`, Sehenswürdigkeits-Erkennung bei projektweiter Einwilligung), `local`
-    keine. Ein nicht stattfindender Anteil ist `null`, nie ein Objekt mit `0.0` (S7) - die Summe
+    keine. Ein nicht stattfindender Anteil ist `null`, nie ein Objekt mit `0.0` - die Summe
     ist dann `0.0`, und die Oberflaeche schreibt dort das Wort "kostenfrei".
 
     Die Vorgabe `project` gibt es NUR auf diesem Lesepfad: sie ist die Fortschreibung des
     bisherigen Verhaltens fuer Clients, die noch ohne `mode` fragen. Der Laufpfad daneben kennt
-    keine Vorgabe (S5).
+    keine Vorgabe.
 
     Ein im Projekt gespeichertes Modell, das nicht mehr in der Registry steht, ist `409` mit der
     Meldung aus `MODEL_CHOICE_UNAVAILABLE_DETAIL` - kein Rueckfall auf die Installationsvorgabe.
@@ -1418,7 +1416,7 @@ async def build_classification_estimate(
     # `candidate_count is None` heisst "Menge nicht verlaesslich schaetzbar" (Landmark vor dem
     # ersten erfolgreichen Durchlauf), NICHT "findet nicht statt" - das ist der `null`-ANTEIL.
     # Ein solcher Anteil traegt keinen Betrag (`estimated_cost_usd is None`), die Summe wird
-    # deshalb insgesamt unbekannt statt still kleiner. Keine Anteile -> `0.0` = kostenfrei (S7).
+    # deshalb insgesamt unbekannt statt still kleiner. Keine Anteile -> `0.0` = kostenfrei.
     costs = [part.estimated_cost_usd for part in parts if part.candidate_count is not None]
     estimated_cost_usd: float | None
     if any(cost is None for cost in costs):

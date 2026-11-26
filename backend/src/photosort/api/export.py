@@ -1,10 +1,10 @@
-"""Der Export der Endauswahl nach OpenCloud - die drei Antworten der Story an drei Endpunkten.
+"""Der Export der Endauswahl nach OpenCloud - die drei Antworten an drei Endpunkten.
 
 Anzahl VORHER (`export-preview`, synchron), 202 + Polling WAEHREND (`export`, der Ausloeser),
 Bestätigung + Fehlerliste DANACH (`exports/{run_id}`). Dazu `ProjectOut.last_export_run` fuer den
 Polling-Zustand (Muster `last_scan`).
 
-SICHERHEIT (S1): Der Torwaechter haengt am ROUTER, nicht am Endpunkt - und genau das ist hier
+SICHERHEIT: Der Torwaechter haengt am ROUTER, nicht am Endpunkt - und genau das ist hier
 moeglich, weil KEIN Endpunkt dieses Routers das `User`-Objekt selbst braucht. Der Ausloeser nimmt
 kein `current_user` entgegen (das Ergebnis gehoert dem Projekt, `export_runs` ohne `user_id`) -
 seine Authentifizierung ist an der Funktionssignatur NICHT sichtbar. Er traegt deshalb DREI
