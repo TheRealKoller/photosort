@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Spec 0641: Nach einer erfolgreichen Abbruch-Anforderung ist der Knopf gesperrt und kann keinen
+ * Nach einer erfolgreichen Abbruch-Anforderung ist der Knopf gesperrt und kann keinen
  * Fokus halten. Der Fokus geht deshalb auf die Statuszeile des Vorgangs - sie ist bereits
  * `aria-live="polite"` und traegt jetzt „… wird abgebrochen…".
  *

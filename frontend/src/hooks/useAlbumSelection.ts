@@ -33,7 +33,7 @@ export function useAlbumSelectionQuery(projectId: number) {
  * Die gemeinsame Entscheidung über ein Bild - sofort wirksam, ohne Bestätigungsschritt.
  *
  * Sie schreibt den betroffenen Eintrag im geladenen Stand FORT und nimmt den eigenen Schlüssel von
- * der Invalidierung aus (Muster `useDraftDecisionMutation`, ADR 0099 Punkt 6). Daraus folgt
+ * der Invalidierung aus (Muster `useDraftDecisionMutation`). Daraus folgt
  * beides zugleich: Das entschiedene Bild verlässt die Arbeitssicht sofort, und die Ergebnissicht
  * ordnet sich dabei nicht neu. Träfe die breite Invalidierung den eigenen Schlüssel mit, spränge
  * die gerade gedrückte Kachel unter dem Finger an eine andere Stelle - und der nächste Druck
@@ -58,7 +58,7 @@ export function useAlbumDecisionMutation(projectId: number) {
       // Die Anzahl im Export-Ausloeser („N Fotos") kommt aus `getExportPreview` - ein anderer
       // Schlüssel als die Endauswahl-Antwort. Eine Entscheidung aendert die inkludierte Menge und
       // damit die Anzahl; ohne diese Invalidierung bliebe „N Fotos" veraltet, bis neu gemountet
-      // wird (Spec 0263, UI/UX: „bei jeder Änderung der Endauswahl nachgezogen").
+      // wird.
       void queryClient.invalidateQueries({ queryKey: ['export-preview', projectId] })
     },
   })

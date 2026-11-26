@@ -23,7 +23,7 @@ import { POLL_INTERVAL_MS } from './useProjects'
 /**
  * Die Pruefungen eines Projekts, neueste zuerst - die Reihenfolge kommt vom Server und wird hier
  * nicht nachgebaut. Gepollt wird nur, solange wirklich eine Pruefung laeuft ODER wartet
- * (`running`/`queued`, Spec 0641): ein stehender Endpunkt wird nicht im Hintergrund belastet.
+ * (`running`/`queued`): ein stehender Endpunkt wird nicht im Hintergrund belastet.
  */
 export function useClassificationReviewsQuery(projectId: number) {
   return useQuery({
@@ -81,7 +81,7 @@ export function useClassificationReviewQuery(projectId: number, reviewId: number
     queryFn: () => getClassificationReview(projectId, reviewId),
     refetchInterval: (query) => {
       const review = query.state.data as ClassificationReviewDetailOut | undefined
-      // Ein wartender Lauf (Spec 0641) ist noch nicht fertig - ohne Polling bliebe die Seite
+      // Ein wartender Lauf ist noch nicht fertig - ohne Polling bliebe die Seite
       // stehen, bis der Nutzer neu laedt.
       return review?.status === 'running' || review?.status === 'queued' ? POLL_INTERVAL_MS : false
     },

@@ -101,7 +101,7 @@ export function useTriggerScanMutation(id: number) {
     mutationFn: () => triggerScan(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
-      // Spec 0641: Die Projektleiste nennt den angenommenen Vorgang sofort, nicht erst beim
+      // Die Projektleiste nennt den angenommenen Vorgang sofort, nicht erst beim
       // naechsten Abruf.
       void queryClient.invalidateQueries({ queryKey: operationsQueryKey(id) })
     },
@@ -194,7 +194,7 @@ export function modelChoiceQueryKey(id: number) {
 }
 
 /**
- * Katalog und gespeicherte Wahl des Projekts (Spec 0383). Eigene Query statt eines Feldes an
+ * Katalog und gespeicherte Wahl des Projekts. Eigene Query statt eines Feldes an
  * `ProjectOut`: der Katalog ist statisch je Installation und aendert sich nie durch einen Lauf -
  * er wuerde bei jedem `useProjectQuery`-Poll mitgeladen und die Projektliste unnoetig vergroessern.
  *
@@ -232,7 +232,7 @@ export function classificationEstimateQueryKey(id: number, mode: ClassificationW
 }
 
 /**
- * Die Kostenschaetzung des GEWAEHLTEN Wegs (Spec 0609). Sie wird erst geladen, wenn ein Weg
+ * Die Kostenschaetzung des GEWAEHLTEN Wegs. Sie wird erst geladen, wenn ein Weg
  * gewaehlt ist (`enabled`): solange nichts gewaehlt ist, gibt es keine Kosten zu zeigen, und ein
  * Abruf mit geratenem Weg zeigte den Betrag eines Laufs, den niemand gestartet hat.
  *

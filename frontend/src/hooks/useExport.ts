@@ -41,7 +41,7 @@ export function useExport(projectId: number) {
     mutationFn: () => triggerExport(projectId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', projectId] })
-      // Spec 0641: Der angenommene Vorgang steht sofort in der Projektleiste.
+      // Der angenommene Vorgang steht sofort in der Projektleiste.
       void queryClient.invalidateQueries({ queryKey: operationsQueryKey(projectId) })
     },
     onError: () => setAwaiting(false),

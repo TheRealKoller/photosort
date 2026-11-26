@@ -94,7 +94,7 @@ export function useDuplicateDecisionMutation(projectId: number, photoId: number)
 }
 
 /**
- * Die gruppenweite Abkürzung — GENAU EIN Aufruf, unabhängig von der Mitgliederzahl (AK9).
+ * Die gruppenweite Abkürzung — GENAU EIN Aufruf, unabhängig von der Mitgliederzahl.
  *
  * Welche Fotos betroffen sind, bestimmt der Server aus dem Stern; die Oberfläche schickt keine
  * Id-Liste. Eine Schleife über die Kacheln sähe im Ergebnis gleich aus und wäre n einzelne

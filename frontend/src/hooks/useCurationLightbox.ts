@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router'
 /**
  * Liest die Id der offenen Grossansicht aus dem Verlaufszustand.
  *
- * SICHERHEIT (Auflage S1 der Spec 0531): Der Verlaufszustand ueberlebt Reload,
+ * SICHERHEIT: Der Verlaufszustand ueberlebt Reload,
  * Sitzungswiederherstellung und App-Updates; seine Form ist deshalb eine nicht vertrauenswuerdige
  * Eingabe. Gelesen wird ohne `as`-Cast, und nur eine sichere Ganzzahl gilt. Die Id wird danach
  * ausschliesslich in der geladenen Liste NACHGESCHLAGEN - jede weitere Verwendung nimmt `photo.id`
@@ -35,7 +35,7 @@ interface CurationLightbox<T> {
    * dort nicht vorkommt. */
   photo: T | undefined
   /** `triggerKey` nennt den Ausloeser, wenn ein Foto mehrere hat (Standard: die Foto-Id). Er lebt
-   * nur in einem Ref, NIE im Verlaufszustand - der traegt weiter nur die Id (Auflage S2). */
+   * nur in einem Ref, NIE im Verlaufszustand - der traegt weiter nur die Id. */
   open: (photoId: number, triggerKey?: TriggerKey) => void
   close: () => void
   /** Callback-Ref fuer einen Ausloeser - Ziel der Fokus-Rueckgabe. */
@@ -48,7 +48,7 @@ interface CurationLightbox<T> {
  * DER ZUSTAND IST DER VERLAUFSEINTRAG: `open` legt auf derselben URL einen Eintrag mit
  * `state: { grossansicht: <id> }` an - die Seite bleibt montiert, ihr lokaler Zustand und der
  * Query-Cache bleiben unberuehrt, und Browser-Zurueck schliesst ohne eigenen Code. Der Zustand
- * traegt NUR die Id (Auflage S2): Der Browser legt ihn in seiner Sitzungswiederherstellung auf der
+ * traegt NUR die Id: Der Browser legt ihn in seiner Sitzungswiederherstellung auf der
  * Platte ab, ueber Abmelden hinaus; Dateinamen oder Pfade laegen dort ausserhalb jeder Bereinigung.
  *
  * `close` verhaelt sich wie Browser-Zurueck: Einen in dieser Montierung angelegten Eintrag verlaesst

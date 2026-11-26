@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 /**
  * Hält den angezeigten Restdauer-Text ruhig: Ein geänderter Text wird erst übernommen, wenn er in
- * ZWEI aufeinanderfolgenden Antworten steht (AK3 b).
+ * ZWEI aufeinanderfolgenden Antworten steht.
  *
  * Das ist das vierte der vier Mittel gegen eine zappelnde Anzeige - neben dem kumulierten
  * Durchsatz, den Schwellen und der Stufenleiter. Es fängt genau den Fall, den die drei anderen
