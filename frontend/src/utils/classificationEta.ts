@@ -2,7 +2,7 @@
  * Aus der gelieferten Restdauer in Sekunden wird die angezeigte Spanne.
  *
  * Die Stufenleiter lebt HIER und nicht im Backend: Der Server misst, das Frontend entscheidet über
- * die gezeigte Genauigkeit (ADR 0116 Punkt 4). Eine serverseitig gerechnete Ober- und Untergrenze
+ * die gezeigte Genauigkeit. Eine serverseitig gerechnete Ober- und Untergrenze
  * behauptete eine Genauigkeitsaussage, die die Messung nicht hergibt.
  *
  * Es wird nie eine Einzelzahl gezeigt - auch an den beiden Rändern nicht. "noch ca. 30 Sekunden"
@@ -25,7 +25,7 @@ export const ETA_UNKNOWN_TEXT = 'wird noch ermittelt'
  */
 export const ETA_EXPERIENCE_TEXT = 'erfahrungsgemäß kurz'
 
-/** Die sieben Stufentexte in aufsteigender Reihenfolge - der vollständige Textvorrat (AK2). */
+/** Die sieben Stufentexte in aufsteigender Reihenfolge - der vollständige Textvorrat. */
 export const ETA_STEP_TEXTS = [
   'nur noch wenige Sekunden',
   'noch ca. 1–2 Minuten',
@@ -56,7 +56,7 @@ function measuredText(seconds: number): string {
 /**
  * Der anzuzeigende Text zu einer Art und der gelieferten Sekundenzahl.
  *
- * `measured` ohne Wert fällt auf `ETA_UNKNOWN_TEXT` zurück statt auf ein leeres Feld - AK4
+ * `measured` ohne Wert fällt auf `ETA_UNKNOWN_TEXT` zurück statt auf ein leeres Feld - das
  * schließt sowohl das leere Feld als auch eine Zahl aus, und eine dritte Möglichkeit gibt es an
  * dieser Stelle nicht.
  */

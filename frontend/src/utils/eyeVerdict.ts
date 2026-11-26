@@ -1,7 +1,7 @@
 import type { EyeResultOut, FineLabelOut } from '../api/types'
 
 /**
- * Eyes Feinlabels in der Form, die `PhotoVerdict` liest (Spec 0609, Spec 0621 Punkt 7).
+ * Eyes Feinlabels in der Form, die PhotoVerdict liest.
  *
  * Die Albumstufe kommt seit 0621 aus `PhotoOut.album_suitability` - sie reist dort mit ihrer
  * Herkunft (`source`). Eye liefert hier nur noch die Feinlabels: rohe Eye-Tags ohne kanonischen

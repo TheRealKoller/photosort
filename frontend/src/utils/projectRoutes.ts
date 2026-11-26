@@ -26,7 +26,7 @@ export const PROJECT_ROUTE_PATHS = {
   stats: '/projects/:projectId/stats',
   album: '/projects/:projectId/album',
   persons: '/projects/:projectId/persons',
-  // Spec 0616: Liste und Fallansicht der Klassifizierungspruefung. Der deutsche Pfad gilt nur fuer
+  // Liste und Fallansicht der Klassifizierungspruefung. Der deutsche Pfad gilt nur fuer
   // die Oberflaeche - die API bleibt beim englischen Kebab-Pfad (`/classification-reviews`).
   classificationReviews: '/projects/:projectId/klassifizierung-pruefen',
   classificationReviewDetail: '/projects/:projectId/klassifizierung-pruefen/:reviewId',
@@ -42,7 +42,7 @@ export const PROJECT_CONTEXT_ROUTE_PATHS: readonly string[] = Object.values(PROJ
 /**
  * Der Pfad der Duplikat-Vergleichsansicht an einem Anker — die einzige Stelle, die ihn baut.
  *
- * SICHERHEIT (S11): `fromAusschuss` ist ein Bool, kein Rohwert. Der Rückweg-Parameter wird hier
+ * SICHERHEIT: `fromAusschuss` ist ein Bool, kein Rohwert. Der Rückweg-Parameter wird hier
  * als eigenes LITERAL geschrieben und nie aus einem empfangenen Wert weitergereicht: Ein
  * durchgeschleuster Wert machte die Ansicht zur offenen Weiterleitung auf eine vom Link bestimmte
  * Adresse.

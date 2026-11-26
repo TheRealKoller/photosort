@@ -52,7 +52,7 @@ export function participantStance(
  * Schreibt eine gerade getroffene gemeinsame Entscheidung in eine bereits geladene Endauswahl
  * fort - rein, ohne Cache und ohne Netz.
  *
- * ALLE DREI FELDER GEMEINSAM, und alle drei aus der SERVERANTWORT (Auflage S5): Nach einer
+ * ALLE DREI FELDER GEMEINSAM, und alle drei aus der SERVERANTWORT: Nach einer
  * Entscheidung sind die beiden abgeleiteten Werte trivial bestimmt - `contested` ist `false`, und
  * `in_final_selection` ist die Entscheidung selbst. Der lokal beabsichtigte Wert wird nirgends
  * gelesen; nach einem verlorenen Wettlauf zeigte er dauerhaft eine Zugehörigkeit an, die so nicht

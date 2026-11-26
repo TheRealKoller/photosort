@@ -31,7 +31,7 @@ export type MotifFillStep = 'strong' | 'medium' | 'weak' | 'none'
  *
  * `assessable === false` (lokale Grundlage, Motiv ohne Cloud-Aussage) ergibt `none` VOR jeder
  * Stufung: In der Reihe traegt dieser Fall dieselbe leere Fuellung wie "gar nicht vertreten",
- * unterschieden wird er in der aufgeklappten Zeile (AK7).
+ * unterschieden wird er in der aufgeklappten Zeile.
  */
 export function motifFillStep(
   strength: number,

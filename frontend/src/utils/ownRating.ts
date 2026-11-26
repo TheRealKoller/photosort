@@ -30,7 +30,7 @@ export function ownRatingStatus(
 /**
  * Das EIGENE Favoriten-Kennzeichen.
  *
- * SICHERHEIT (Auflage S6): ausschließlich über `findOwnRating` (Abgleich über den
+ * SICHERHEIT: ausschließlich über `findOwnRating` (Abgleich über den
  * `username`-Claim). Eine Zweitableitung wie `ratings.some(r => r.favorite)` oder "erster
  * Eintrag in `ratings[]`" stellte die Auszeichnung der anderen Person als die eigene dar - das
  * neue Feld lädt dazu ein, weil es für sich allein aussagekräftig aussieht.

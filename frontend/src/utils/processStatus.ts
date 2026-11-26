@@ -1,5 +1,5 @@
 /**
- * `queued` (Spec 0641) und `cancelled` tragen bewusst KEINE Statusfarbe und keinen Puls: sie
+ * `queued` und `cancelled` tragen bewusst KEINE Statusfarbe und keinen Puls: sie
  * zeigen weder Erfolg noch Fehler an. Der Punkt faellt auf dieselbe neutrale Flaeche wie „kein
  * Status" zurueck - die Farbe behauptet hier nichts.
  */

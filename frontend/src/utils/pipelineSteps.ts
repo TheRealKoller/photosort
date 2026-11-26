@@ -125,7 +125,7 @@ export type ProjectStand =
   | { kind: 'hinweis'; label: string }
   | {
       kind: 'lauf'
-      // `queued`/`cancelled` (Spec 0641) tragen den neutralen Ton; nur das Wort unterscheidet sie
+      // `queued`/`cancelled` tragen den neutralen Ton; nur das Wort unterscheidet sie
       // von „läuft…"/„fehlgeschlagen".
       status: 'running' | 'queued' | 'failed' | 'cancelled'
       label: string
@@ -227,7 +227,7 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
       return { kind: 'lauf', status: 'queued', label: `${stepLabel} wartet` }
     case 'failed':
       return { kind: 'lauf', status: 'failed', label: `${stepLabel} fehlgeschlagen` }
-    // Ohne Ergebnis beendet (Spec 0641): kein Fehlschlag, kein „bereit" - der Schritt ist weder
+    // Ohne Ergebnis beendet: kein Fehlschlag, kein „bereit" - der Schritt ist weder
     // erledigt noch gescheitert und die Zeile nennt genau das.
     case 'cancelled':
       return { kind: 'lauf', status: 'cancelled', label: `${stepLabel} abgebrochen` }
@@ -255,7 +255,7 @@ export interface WorkflowOverviewEntry {
    * Schrittleiste. An den Stationen immer `false`. */
   isDone: boolean
   /** Der Lauf dieses Schritts, unabhängig vom Zustand - `running`, `queued`, `failed` und
-   * `cancelled` werden gezeigt (Spec 0641). */
+   * `cancelled` werden gezeigt. */
   run: 'running' | 'queued' | 'failed' | 'cancelled' | null
   /** Wortgleich mit dem Sperrgrund der Schrittleiste, nur bei `gesperrt`/`abgeschaltet`. */
   blockedReason: string | null

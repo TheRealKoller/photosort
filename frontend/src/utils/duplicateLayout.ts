@@ -3,8 +3,8 @@ import { GRID_GAP_PX, justifiedRows, naturalTiles } from './justifiedRows'
 import type { JustifiedRow } from './justifiedRows'
 
 /**
- * Das Raster der Vergleichsansicht einer Duplikat-Gruppe (Spec 0638) als justierte Reihen nach
- * ADR 0110: jede Aufnahme im eigenen Seitenverhaeltnis und unbeschnitten, alle Bildflaechen einer
+ * Das Raster der Vergleichsansicht einer Duplikat-Gruppe als justierte Reihen: jede Aufnahme im
+ * eigenen Seitenverhaeltnis und unbeschnitten, alle Bildflaechen einer
  * Reihe gleich hoch, jede volle Reihe buendig mit der Liste.
  *
  * Anders als in der Kuratierung traegt jede Kachel einen waagerechten Rand um die Bildflaeche.

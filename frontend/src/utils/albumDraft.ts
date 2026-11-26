@@ -21,7 +21,7 @@ export type DraftMembership = 'album' | 'struck' | 'out'
  * zeigte die Seite nach einem Handgriff etwas anderes als nach dem Neuladen. Gegen dieselbe
  * Falltabelle geprüft wie der Server (`backend/tests/data/album_draft_membership.json`).
  *
- * `ownStatus` kommt ausschließlich über `ownRating.ts::ownRatingStatus` (S10), „vorgeschlagen"
+ * `ownStatus` kommt ausschließlich über `ownRating.ts::ownRatingStatus`, „vorgeschlagen"
  * ausschließlich über `ranking.proposed`.
  */
 export function draftMembership(photo: PhotoOut, ownStatus: RatingStatus | null): DraftMembership {

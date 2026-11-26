@@ -69,7 +69,7 @@ export function formatUsd(amountUsd: number): string {
 }
 
 /**
- * Preis JE BILD für die Modellwahl (Spec 0383): mindestens vier, höchstens sechs
+ * Preis JE BILD für die Modellwahl: mindestens vier, höchstens sechs
  * Nachkommastellen („0,0052 USD je Bild"), damit Modelle mit Preisen unter einem Cent
  * unterscheidbar bleiben.
  *

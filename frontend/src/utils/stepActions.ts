@@ -13,7 +13,7 @@ import {
 export type StepAction =
   | { kind: 'start'; label: string }
   | { kind: 'running'; label: string }
-  // Angenommen, aber noch nicht begonnen (Spec 0641): gesperrt, ohne Ladezeichen.
+  // Angenommen, aber noch nicht begonnen: gesperrt, ohne Ladezeichen.
   | { kind: 'queued'; label: string }
   | { kind: 'retry'; label: string }
   | { kind: 'confirm'; label: string; openCount: number | null }
@@ -45,7 +45,7 @@ export function ausschussConfirmLabel(openCount: number | null): string {
 }
 
 /**
- * Die Hauptaktion je Schritt und Zustand (Tabelle der Spec 0568).
+ * Die Hauptaktion je Schritt und Zustand.
  *
  * KENNT KEINE EIGENE ERREICHBARKEITSREGEL: Ob es weitergeht, sagt `isReachable` des Folgeschritts
  * aus `computeStepStates`. Bei einem Fehlschlag gibt es kein „Erneut …", auch wenn ein früherer
@@ -76,7 +76,7 @@ export function deriveStepAction(
   if (status === 'failed') {
     return { action: { kind: 'retry', label: texts.start }, rerun: null }
   }
-  // Abgebrochen heisst „ohne Ergebnis" (Spec 0641): derselbe Startknopf wie beim ersten Mal, kein
+  // Abgebrochen heisst „ohne Ergebnis": derselbe Startknopf wie beim ersten Mal, kein
   // „Erneut …" - und der Folgeschritt bleibt gesperrt, weil `computeStepStates` nur `success` als
   // erledigt wertet.
   if (status === 'cancelled') {

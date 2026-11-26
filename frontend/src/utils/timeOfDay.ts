@@ -33,8 +33,8 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
  * Tag und fertige Ueberschrift EINES Events - eine reine Funktion ueber der `events`-Zeile.
  *
  * SIE SETZT SELBST NICHTS ZUSAMMEN UND ZERLEGT NICHTS: Den Namen holt sie aus `eventPlaceName` -
- * der einen Stelle, an der Sehenswuerdigkeitsname und Ortsname zusammenkommen (Spec 0514,
- * ADR 0120) -, und haengt hier nur die Zeitspanne an. Vier Textformen entstehen so:
+ * der einen Stelle, an der Sehenswuerdigkeitsname und Ortsname zusammenkommen -, und haengt hier
+ * nur die Zeitspanne an. Vier Textformen entstehen so:
  * `Eiffelturm, Paris, Gros-Caillou (10:30–11:45 Uhr)`, `Eiffelturm (…)`, `Paris (…)` und
  * `Position 3 (…)`, wenn keine Ortsangabe aufloest.
  *
@@ -43,7 +43,7 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
  *
  * Eine Koordinate erscheint ausdruecklich NICHT als Name - sie bleibt in `place`.
  *
- * Die Form "Ort, Viertel" kommt FERTIG vom Server (ADR 0102 Punkt 4): Sie ist eine Aussage ueber
+ * Die Form "Ort, Viertel" kommt FERTIG vom Server: Sie ist eine Aussage ueber
  * alle Events eines Laufs, die das Frontend gar nicht treffen koennte.
  *
  * Anders als die frueher hier stehende Cluster-Ueberschrift haengt nichts davon ab, welche Fotos
@@ -62,7 +62,7 @@ export function formatEventHeading(event: EventOut): { dayKey: string; heading: 
  * Der Ort EINES Events als Ueberschriftsname - ohne die Zeitspanne und ohne den Rückfall auf die
  * Nummer. `null` heißt "keine Ortsangabe".
  *
- * SEIT SPEC 0514 (ADR 0120) STEHEN DIE BEIDEN TEILE NEBENEINANDER, der Name zuerst:
+ * DIE BEIDEN TEILE STEHEN NEBENEINANDER, der Name zuerst:
  * `Eiffelturm, Paris, Gros-Caillou`. Der Sehenswürdigkeitsname (`place.landmark_name`,
  * Modellantwort) verdrängt den aufgelösten Ortsnamen (`place_name`, Ortsdatensatz Dritter) nicht
  * mehr; er tritt daneben. Vier Ausgänge: beide → `"<Name>, <Ort>"`, nur Name → `"<Name>"`, nur Ort
@@ -80,7 +80,7 @@ export function formatEventHeading(event: EventOut): { dayKey: string; heading: 
  * Zusammensetzung ein zweites Mal, liefe sie mit dieser auseinander. Der strukturelle Wächter
  * `photoDetail.structure.test.ts` bindet das fest.
  *
- * S1/S2 — KEIN INTERPRETIEREN: Beide Teile sind fremderzeugter Text und treffen hier in EINEM Wert
+ * KEIN INTERPRETIEREN: Beide Teile sind fremderzeugter Text und treffen hier in EINEM Wert
  * zusammen. Sie werden ausschließlich zu einer Zeichenkette verbunden und nirgends ausgewertet -
  * das Escaping leistet React an der Renderstelle, und der Nachweis dafür gehört dorthin, nicht in
  * den Test dieser Funktion.

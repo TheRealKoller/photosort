@@ -14,7 +14,7 @@ export const RATING_STATUS_LABELS: Record<RatingStatus, string> = {
  * Die drei Einträge der Bewertungsleiste: die zweiwertige Albumentscheidung und der Favorit
  * daneben.
  *
- * Der Favorit ist seit ADR 0098 KEIN Bewertungsstatus mehr, trägt in der Oberfläche aber
+ * Der Favorit ist KEIN Bewertungsstatus, trägt in der Oberfläche aber
  * dieselbe Form wie einer - eigenes Wort, eigenes Symbol, eigene Tonfarbe. Er ist unabhängig
  * schaltbar und kann gleichzeitig mit einer Albumentscheidung gesetzt sein.
  */

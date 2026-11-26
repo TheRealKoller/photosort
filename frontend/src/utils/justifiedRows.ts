@@ -1,7 +1,7 @@
 /**
  * Das justierte Zeilenraster der Fotouebersicht als REINE Funktion: Seitenverhaeltnisse plus
  * Containerbreite hinein, Zeilen mit je Bild einer ganzen Pixelbreite und einer gemeinsamen
- * Zeilenhoehe heraus. Kein DOM, keine Messung, keine Bibliothek (ADR 0110 Punkt 4).
+ * Zeilenhoehe heraus. Kein DOM, keine Messung, keine Bibliothek.
  *
  * VIER ZUSAGEN, die diese Datei allein traegt:
  *
