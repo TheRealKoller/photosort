@@ -146,6 +146,26 @@
       "klasse": "B"
     },
     {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befundlesung-einmal-je-pfad",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befundbefehle-verengt",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befund-kein-schreibweg",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "berichtblock-einmal",
+      "klasse": "B"
+    },
+    {
       "modul": "scripts/tests/test_frontend_typen.py",
       "invariante": "keine-interface-deklaration",
       "klasse": "B"

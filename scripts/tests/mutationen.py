@@ -55,6 +55,8 @@ CI_GATE_BEFEHL = (
 DOCKERIGNORE = "backend/.dockerignore"
 DOCKERFILE = "backend/Dockerfile"
 DEVELOPER = ".claude/agents/developer.md"
+SHIP_FEATURE = ".claude/skills/ship-feature/SKILL.md"
+SHIP_ENTWURF = ".claude/skills/ship-entwurf/SKILL.md"
 
 TYPES_TS = "frontend/src/api/types.ts"
 SCHEMA_DTS = "frontend/src/api/generated/schema.d.ts"
@@ -480,6 +482,137 @@ MUTATIONEN: tuple[Mutation, ...] = (
         invariante="anker-protokoll",
     ),
     Mutation(
+        name="zweiter-wartepunkt",
+        waechter="warten",
+        datei=PR_PRUEFSTAND_LESEN,
+        alt="gh pr checks <MMM> --repo TheRealKoller/photosort --json bucket,name,state,workflow",
+        neu=(
+            "gh pr checks <MMM> --repo TheRealKoller/photosort --json bucket,name,state,workflow\n"
+            "timeout 60 gh pr checks <MMM> --repo TheRealKoller/photosort --watch --fail-fast"
+        ),
+        invariante="pruefstand-blockierend",
+    ),
+    Mutation(
+        name="ergebniswert-fuenftiger",
+        waechter="warten",
+        datei=PR_PRUEFSTAND_ABWARTEN,
+        alt="| `unbestimmt` | alles andere | der Ablauf hält an und meldet |",
+        neu=(
+            "| `unbestimmt` | alles andere | der Ablauf hält an und meldet |\n"
+            "| `teilweise` | irgendetwas | nichts |"
+        ),
+        invariante="pruefstand-blockierend",
+    ),
+    Mutation(
+        name="befundlesung-in-der-runde",
+        waechter="warten",
+        datei=SHIP_FEATURE,
+        alt="Liegt er vor: per `SendMessage`",
+        neu="Liegt er vor: erst `pr-reviewbefunde-lesen`, dann per `SendMessage`",
+        invariante="befundlesung-einmal-je-pfad",
+    ),
+    Mutation(
+        name="befundlesung-fehlt-im-entwurf",
+        waechter="warten",
+        datei=SHIP_ENTWURF,
+        alt=(
+            "**Befunde am Pull Request lesen — einmal, nach dem Endstand.** Steht das Ergebnis "
+            "dieses Schritts\n"
+            "fest — `gruen` wie ein Halt (`unbestimmt`, erschöpfte Nachbesserungsrunden) —, führ "
+            "genau einmal\n"
+            "`pr-reviewbefunde-lesen` und `pr-scanbefunde-lesen` aus, beide mit der Nummer des in "
+            "Schritt 6"
+        ),
+        neu=(
+            "**Befunde am Pull Request lesen — einmal, nach dem Endstand.** Steht das Ergebnis "
+            "dieses Schritts\n"
+            "fest — `gruen` wie ein Halt (`unbestimmt`, erschöpfte Nachbesserungsrunden) —, führ "
+            "genau einmal\n"
+            "die beiden Befundlesungen aus, beide mit der Nummer des in Schritt 6"
+        ),
+        invariante="befundlesung-einmal-je-pfad",
+    ),
+    Mutation(
+        name="befund-jq-entfernt",
+        waechter="warten",
+        datei=PR_SCANBEFUNDE,
+        alt="--paginate --jq '",
+        neu="--paginate '",
+        invariante="befundbefehle-verengt",
+    ),
+    Mutation(
+        name="befund-herkunft-gefiltert",
+        waechter="warten",
+        datei=PR_SCANBEFUNDE,
+        alt='| select(.state == "open")',
+        neu='| select(.state == "open")\n  | select(.tool.name != "CodeQL")',
+        invariante="befundbefehle-verengt",
+    ),
+    Mutation(
+        name="befund-exit-maskiert",
+        waechter="warten",
+        datei=PR_SCANBEFUNDE,
+        alt="  printf 'nicht festgestellt\\n'",
+        neu="  printf 'nicht festgestellt\\n' || true",
+        invariante="befundbefehle-verengt",
+    ),
+    Mutation(
+        name="befund-mengenbegrenzt",
+        waechter="warten",
+        datei=PR_REVIEWBEFUNDE,
+        alt="     | .[0:200]) as $t",
+        neu="     | .[0:200]) as $t | [0:3]",
+        invariante="befundbefehle-verengt",
+    ),
+    Mutation(
+        name="scanbefund-state-all",
+        waechter="warten",
+        datei=PR_SCANBEFUNDE,
+        alt="alerts?pr=<MMM>&state=open",
+        neu="alerts?pr=<MMM>&state=all",
+        invariante="befundbefehle-verengt",
+    ),
+    Mutation(
+        name="befund-schreibt-datei",
+        waechter="warten",
+        datei=PR_REVIEWBEFUNDE,
+        alt="  printf '%s\\n' \"$out\"",
+        neu="  printf '%s\\n' \"$out\" > /tmp/befunde.json",
+        invariante="befund-kein-schreibweg",
+    ),
+    Mutation(
+        name="befund-methode-gesetzt",
+        waechter="warten",
+        datei=PR_SCANBEFUNDE,
+        alt="--paginate --jq '",
+        neu="-X PATCH --paginate --jq '",
+        invariante="befund-kein-schreibweg",
+    ),
+    Mutation(
+        name="befundblock-zweite-definition",
+        waechter="warten",
+        datei=SHIP_FEATURE,
+        alt="## Recovery: `SendMessage` schlägt fehl",
+        neu=(
+            "## Recovery: `SendMessage` schlägt fehl\n"
+            "\n"
+            "```markdown\n"
+            "## Befunde am Pull Request\n"
+            "\n"
+            "**Befundstand:** <keine offen | offen | nicht festgestellt>\n"
+            "```"
+        ),
+        invariante="berichtblock-einmal",
+    ),
+    Mutation(
+        name="befundstand-als-gruen",
+        waechter="warten",
+        datei=KATALOG_UEBERSICHT,
+        alt="**Befundstand:** <keine offen | offen | nicht festgestellt>",
+        neu="**Befundstand:** <gruen>",
+        invariante="berichtblock-einmal",
+    ),
+    Mutation(
         name="grenze-nicht-leer",
         waechter="katalog",
         datei=PR_PRUEFSTAND_ABWARTEN,
@@ -724,6 +857,41 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
                 PACKAGE_JSON,
                 '"typecheck": "npm run api:check && tsc -b --noEmit",',
                 '"typecheck": "npm run api:check  &&  tsc -b --noEmit",',
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="befundlesung-andere-satzstellung",
+        waechter="warten",
+        aenderungen=(
+            (
+                SHIP_FEATURE,
+                "In den Nachbesserungsrunden wird **nicht** gelesen; das ist keine zweite "
+                "Wartestelle — kein Fenster, keine Schonfrist, keine Wiederholung.",
+                "Gelesen wird in keiner Nachbesserungsrunde; es gibt kein Fenster, keine "
+                "Schonfrist und keine Wiederholung.",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="befundbefehle-andere-einrueckung",
+        waechter="warten",
+        aenderungen=(
+            (
+                PR_SCANBEFUNDE,
+                "      regel: .rule.description,\n      stufe: .rule.security_severity_level,",
+                "      regel: .rule.description, stufe: .rule.security_severity_level,",
+            ),
+        ),
+    ),
+    Umformulierung(
+        name="befundstand-andere-reihenfolge",
+        waechter="warten",
+        aenderungen=(
+            (
+                KATALOG_UEBERSICHT,
+                "**Befundstand:** <keine offen | offen | nicht festgestellt>",
+                "**Befundstand:** <offen | keine offen | nicht festgestellt>",
             ),
         ),
     ),
