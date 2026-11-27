@@ -467,8 +467,10 @@ wäre eine Heuristik über fremden Text, und der Thread verschwindet nicht mit d
 **Der Befundstand ist ein geschlossener Dreiklang und trägt keinen Wert aus dem CI-Ergebnis.**
 `nicht festgestellt` hat Vorrang: Steht eine Quelle aus, ist der Befundstand nie `keine offen`,
 und die Befunde der anderen Quellen werden trotzdem gelistet. Entstanden ist `nicht festgestellt`
-am Exit-Code der Lesung oder an einem `totalCount` über der gelesenen Menge — **nie** daran, dass
-keine Einträge kamen.
+am Exit-Code der Lesung oder daran, dass eine Verbindung **weniger Knoten** geliefert hat als ihr
+`totalCount` — gelesen heißt: die Knoten der Verbindung, nicht die Zahl der offenen Befunde. Ein
+aufgelöster Thread oder ein `APPROVED`-Review hält den `totalCount` hoch und ist trotzdem
+vollständig gelesen. **Nie** entsteht `nicht festgestellt` daran, dass keine Einträge kamen.
 
 **Ein Befund löst nichts aus.** Kein Anhalten, kein Nachbesserungsauftrag, kein Push; das
 Check-Ergebnis bleibt unberührt, ein `gruen` bleibt `gruen`. Der Block steht nur im Chat-Bericht —

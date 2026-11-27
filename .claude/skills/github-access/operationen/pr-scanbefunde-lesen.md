@@ -24,16 +24,17 @@ if out=$(gh api "repos/TheRealKoller/photosort/code-scanning/alerts?pr=<MMM>&sta
      | ltrimstr(" ") | rtrimstr(" ")
      | .[0:200]) as $t
     | if ($t | length) == 0 then "Befund ohne darstellbaren Text" else $t end;
+  def bezeichner:
+    if . == null then null else (tostring | gsub("[\\p{Cc}\\p{Cf}]"; "")) end;
   .[]
   | select(.state == "open")
   | { number: .number,
       state: .state,
-      tool: .tool.name,
-      regel: .rule.description,
+      tool: (.tool.name | bezeichner),
       stufe: .rule.security_severity_level,
       text: ((.most_recent_instance.message.text // .message.text // .rule.description // "")
              | kurztext),
-      pfad: .most_recent_instance.location.path,
+      pfad: (.most_recent_instance.location.path | bezeichner),
       zeile: .most_recent_instance.location.start_line,
       url: .html_url }
   | tojson
@@ -57,6 +58,17 @@ Stufe aus `rule.security_severity_level`.
 **Der Kurztext hat eine Fallback-Kette**: `most_recent_instance.message.text`, dann
 `message.text`, dann `rule.description`, zuletzt der feste Ersatztext. Dieselbe Verengung wie bei
 den Review-Threads greift auf jede dieser Quellen — die Meldung ist fremdbeschreibbar.
+
+**`rule.description` ist Quelle, nicht Ausgabefeld.** Der Regeltext ist fremdbeschreibbar — wer
+`security-events: write` hat, lädt SARIF mit beliebigem Text hoch — und erscheint deshalb
+ausschließlich als letzte Stufe der Fallback-Kette, also gekürzt und entschärft in `text`. Ein
+eigener Ausgabeschlüssel daneben gäbe denselben Text ein zweites Mal und diesmal ungefiltert in den
+Kontext; er bleibt deshalb in der Auswertungsgrenze als gelesenes Feld, nicht in der Ausgabe.
+
+**`pfad` und `tool` werden bereinigt, nicht gekürzt.** Beides sind kurze Bezeichner und müssen zum
+Auffinden unverändert bleiben; entfernt werden ihnen nur `Cc`- und `Cf`-Zeichen — unsichtbare
+Steuerzeichen, die sonst als Anzeigetext mitliefen. Eine Kürzung unterbleibt, weil ein verkürzter
+Pfad die Fundstelle unauffindbar machte.
 
 **Die Feldbezeichner sind flach, keine Objekte.** Ein Objektname in der Auswertungsgrenze
 verdeckte, welche Textfelder tatsächlich in den Kontext kommen; `message.text` und

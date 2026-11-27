@@ -66,8 +66,10 @@ if out=$(gh api graphql -f query='
     ]) as $befunde
   | ($befunde[] | tojson),
     ({ threads: ([$befunde[] | select(.art == "thread")] | length),
+       threadsGelesen: ($pr.reviewThreads.nodes | length),
        threadsGesamt: $pr.reviewThreads.totalCount,
        reviews: ([$befunde[] | select(.art == "review")] | length),
+       reviewsGelesen: ($pr.latestOpinionatedReviews.nodes | length),
        reviewsGesamt: $pr.latestOpinionatedReviews.totalCount } | tojson)
 ' 2>/dev/null); then
   printf '%s\n' "$out"
@@ -96,10 +98,14 @@ wäre eine Heuristik über fremden Text. Die Herkunft steht als Feld `herkunft` 
 und schließt nichts aus.
 
 **Die Vollständigkeit entscheidet der Ablauf, nicht das `--jq`.** Beide Verbindungen werden mit
-`first: 100` gelesen, und beide `totalCount` stehen in der Ausgabe. Meldet ein `totalCount` mehr
-Einträge, als gelesen wurden, ist diese Quelle **nicht festgestellt** — nicht nachblättern, nicht
-aufstocken. Die Zahl der Befunde wird nicht begrenzt: Gefiltert wird ausschließlich nach dem
-offenen Zustand.
+`first: 100` gelesen, und beide `totalCount` stehen in der Ausgabe. **Gelesen heißt: die Knoten der
+Verbindung, nicht die Zahl der offenen Befunde** — `totalCount` zählt auch aufgelöste Threads und
+`APPROVED`-Reviews mit, die die Verengung zu Recht verwirft. Verglichen wird deshalb
+`threadsGelesen` mit `threadsGesamt` und `reviewsGelesen` mit `reviewsGesamt`; die Zahl der offenen
+Befunde (`threads`, `reviews`) ist die Anzeigezahl und sagt über die Vollständigkeit nichts. Ist
+eine gelesene Knotenzahl kleiner als ihr `totalCount`, ist diese Quelle **nicht festgestellt** —
+nicht nachblättern, nicht aufstocken. Die Zahl der Befunde wird nicht begrenzt: Gefiltert wird
+ausschließlich nach dem offenen Zustand.
 
 **Die Fangform trägt, nicht das `--jq` allein.** `gh api` schreibt bei HTTP ≥ 400 und bei einem
 GraphQL-`errors`-Feld den vollständigen Antwortkörper ungefiltert auf stdout und wendet `--jq`

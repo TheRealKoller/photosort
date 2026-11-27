@@ -879,8 +879,8 @@ UMFORMIERUNGEN: tuple[Umformulierung, ...] = (
         aenderungen=(
             (
                 PR_SCANBEFUNDE,
-                "      regel: .rule.description,\n      stufe: .rule.security_severity_level,",
-                "      regel: .rule.description, stufe: .rule.security_severity_level,",
+                "      state: .state,\n      tool: (.tool.name | bezeichner),",
+                "      state: .state, tool: (.tool.name | bezeichner),",
             ),
         ),
     ),

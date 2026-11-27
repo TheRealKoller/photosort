@@ -1372,7 +1372,7 @@ Befundzeile.
   angezeigt, nie abgerufen.
 - **B4 „Nicht festgestellt" darf kein Freispruch werden** — sonst wiederholt sich der Ausgangsfehler
   dieser Story eine Ebene tiefer. Getragen von der Regel, dass `nicht festgestellt` am Exit-Code
-  oder an einem `totalCount` über der gelesenen Menge entsteht, **nie** am Ausbleiben von
+  oder an einem `totalCount` über der **gelesenen Knotenzahl** entsteht, **nie** am Ausbleiben von
   Einträgen, je Quelle getrennt berichtet wird und den Lauf nicht anhält.
 - **B5 Der Verlust der Aussage „einzige Ausnahme"** in Katalog, Katalogtest und diesem Dokument.
   Getragen davon, dass die Ausnahmen als **benannte Menge** geführt werden (zwei Kommentarleser,

@@ -959,7 +959,14 @@ def test_nur_offene_befunde_erscheinen() -> None:
     ]
     veraltet = [befund for befund in befunde if befund["veraltet"]]
     assert [befund["herkunft"] for befund in veraltet] == ["github-advanced-security[bot]"]
-    assert summe == {"threads": 2, "threadsGesamt": 3, "reviews": 2, "reviewsGesamt": 4}
+    assert summe == {
+        "threads": 2,
+        "threadsGelesen": 3,
+        "threadsGesamt": 3,
+        "reviews": 2,
+        "reviewsGelesen": 4,
+        "reviewsGesamt": 4,
+    }
 
 
 def test_eine_fehlende_zeilennummer_bleibt_ein_befund() -> None:
@@ -979,7 +986,30 @@ def test_hundert_knoten_bei_totalcount_101_erscheinen_vollstaendig() -> None:
     befunde, summe = _review_ausgabe(dokument)
 
     assert len(befunde) == 100
-    assert summe == {"threads": 100, "threadsGesamt": 101, "reviews": 0, "reviewsGesamt": 0}
+    assert summe == {
+        "threads": 100,
+        "threadsGelesen": 100,
+        "threadsGesamt": 101,
+        "reviews": 0,
+        "reviewsGelesen": 0,
+        "reviewsGesamt": 0,
+    }
+
+
+def test_ein_aufgeloester_thread_haelt_den_totalcount_hoch_und_bleibt_vollstaendig() -> None:
+    """Der Ausgangsfall: `totalCount` zaehlt auch, was die Verengung zu Recht verwirft."""
+    befunde, summe = _review_ausgabe(
+        _review(
+            [_thread(text="offen"), _thread(aufgeloest=True, text="erledigt")],
+            [_reviewstand(zustand="APPROVED")],
+        )
+    )
+
+    assert [befund["text"] for befund in befunde] == ["offen"]
+    assert summe["threads"] == 1
+    assert summe["threadsGelesen"] == summe["threadsGesamt"] == 2
+    assert summe["reviews"] == 0
+    assert summe["reviewsGelesen"] == summe["reviewsGesamt"] == 1
 
 
 def test_scanbefunde_offen_stufe_und_fallbackkette() -> None:
@@ -1007,6 +1037,22 @@ def test_scanbefunde_mit_unterdrueckter_meldung_bleiben_sichtbar() -> None:
     assert len(befunde) == 1
     assert befunde[0]["text"] == "Befund ohne darstellbaren Text"
     assert befunde[0]["pfad"] is None
+
+
+def test_scanbefund_regeltext_erscheint_nur_gekuerzt_als_text() -> None:
+    """`rule.description` ist Quelle, kein Ausgabefeld; `pfad`/`tool` tragen keine Steuerzeichen."""
+    regel = "R" * 150 + "\u0007\u200e" + "R" * 150
+    alert = _alert(meldung=None, regel=regel, werkzeug="Code\u200eQL", pfad="backend/\u200ex.py")
+
+    befunde = _scan_ausgabe([alert])
+
+    assert len(befunde) == 1
+    eintrag = befunde[0]
+    assert "regel" not in eintrag
+    assert eintrag["text"] == "R" * 150 + " " + "R" * 49
+    assert len(str(eintrag["text"])) == 200
+    assert eintrag["tool"] == "CodeQL"
+    assert eintrag["pfad"] == "backend/x.py"
 
 
 def test_die_verengung_wird_je_seite_angewandt() -> None:
