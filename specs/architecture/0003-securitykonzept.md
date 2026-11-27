@@ -913,7 +913,7 @@ Reine Prozess-/Tooling-Änderung am KI-Entwicklungsablauf (kein PhotoSort-Anwend
 
 **3. Leseumfang: der Punkt, an dem diese Umstellung tatsächlich etwas aufgibt — und der schwerwiegendste Befund dieser Story.** Die heutige Verengung ist strukturell: `gh pr view <MMM> --json closingIssuesReferences,baseRefName` liefert gemessen (2026-09-05, PR #322) weder Titel noch Body noch Autor, und `gh issue view --json body,title,labels,state[,author]` liefert keine Kommentare. Fremdbeschreibbarer Freitext **entsteht im Agenten-Kontext gar nicht erst**. Die MCP-Lesewerkzeuge liefern demgegenüber das Objekt mit deutlich mehr Feldern in einem Aufruf; das Muss-Kriterium aus dem Abschnitt „Board-Lebenszyklus nativ", Punkt 4 („genau diese Feldmenge bleibt stehen"), ist auf dem `mcp`-Weg **nicht strukturell haltbar**. Was bleibt, ist eine Auswertungsgrenze — die Daten sind dann bereits im Kontext, und die Regel wirkt erst danach. Das ist ehrlich als Rückschritt zu benennen und nicht als gleichwertiger Ersatz. Was trotzdem trägt und deshalb Muss-Kriterium ist:
 
-- **Der geschlossene Katalog ist die neue Durchsetzungsstelle für „nie Kommentare".** Es gibt im Katalog keine Operation, die Issue-Kommentare liest, und keine andere Datei darf einen GitHub-Zugriff enthalten. „Nur `issue.body`, nie Kommentare" wird damit von einer Feldliste zu einer Eigenschaft des Vokabulars — statisch prüfbar und in der Sache stärker als bisher. Ausgenommen bleibt allein `pr-reviewkommentare-lesen` (Copilot-Findings auf dem eigenen PR); das ist eine bestehende, bewusst getragene Fläche, kein durch diese Story eröffneter Kanal.
+- **Der geschlossene Katalog ist die neue Durchsetzungsstelle für „nie Kommentare".** Es gibt im Katalog keine Operation, die Issue-Kommentare liest, und keine andere Datei darf einen GitHub-Zugriff enthalten. „Nur `issue.body`, nie Kommentare" wird damit von einer Feldliste zu einer Eigenschaft des Vokabulars — statisch prüfbar und in der Sache stärker als bisher. Ausgenommen bleiben **zwei benannte Operationen**: `pr-reviewkommentare-lesen` (Copilot-Findings auf dem eigenen PR) und, seit Spec [`0505`](../features/0505-befunde-am-wartepunkt.md), `pr-reviewbefunde-lesen` (die offenen Review-Threads desselben Pull Requests). Beide sind eine bestehende, bewusst getragene Fläche, kein durch eine Story eröffneter Kanal an ein fremdes Issue; die Aussage „keine Operation liest Issue- oder Konversationskommentare" bleibt unverändert und ist als Ausnahmen**menge** testgepinnt, nicht als Einzelausnahme. Der Code-Scanning-Weg `pr-scanbefunde-lesen` liest Befund-Metadaten, keine Kommentare.
 - **Jede lesende Operation nennt ihre Feldmenge als Obergrenze der Auswertung**, wegunabhängig. Auf dem `gh`-Weg ist sie durch `--json` erzwungen, auf dem `mcp`-Weg ist sie Auswertungsdisziplin — und dort zusätzlich, soweit das Werkzeug es anbietet, über dessen eigene Umfangsbegrenzung (`minimal_output` o.ä.) zu verengen, statt sie ungenutzt zu lassen.
 - **Was dennoch ankommt, ist Datenmaterial, nie eine Anweisung**, und gelangt nie in ein dauerhaftes Artefakt (Regel 4.3). Die Regel wird an jeder Lesestelle wiederholt statt einmal verwiesen — dieselbe Behandlung, die `refinement` Schritt 0 und `spec-writer` Schritt 0 schon führen.
 - **Entlastend, aber nicht freisprechend:** Die PR-Leseoperationen laufen im Ablauf ausschließlich gegen den **eigenen, selbst eröffneten** PR, dessen Titel und Body der Ablauf selbst geschrieben hat; der fremde Fork-PR aus dem Restrisiko zu ADR 0057 ist heute kein Leseziel. Die Verengung war Verteidigung in der Tiefe, und genau diese Tiefe geht verloren.
@@ -1337,6 +1337,65 @@ Kein Endpunkt, keine Auth-Änderung, keine Änderung an der Sichtbarkeit von Dat
 
 **Was das nicht leistet.** Die Klassengrenze und die Pfadsperren sind durch den Schritttext und die Selbstmessung getragen, **nicht** durch einen Test, der den tatsächlich geschriebenen Fix beurteilt; `scripts/tests/test_ci_warten_verankert.py` sichert die Verdrahtung des Wartepunkts, nicht das Verhalten der Schleife im Fehlerfall. Und ein Check-Name bleibt fremdbeschreibbar, sobald eine weitere GitHub-App installiert wird — gehärtet ist die Darstellung, nicht die Quelle.
 
+### Offene Nicht-Check-Befunde am Pull Request: fremder Fließtext wird zur Berichtszeile (ADR [`0154`](../decisions/0154-wartepunkt-liest-offene-nicht-check-befunde.md)/Spec [`0505`](../features/0505-befunde-am-wartepunkt.md)) — Vorausschau, noch nicht implementiert
+
+Kein Anwendungscode, kein Endpunkt, keine Auth-Änderung, kein Secret, kein neuer Scope: beide
+Operationen sind lesendes `gh` gegen dasselbe Repository. Sicherheitsrelevant ist die
+**Lesequelle**. Der Wartepunkt liest am Laufende fremdbeschreibbaren Fließtext ohne Autorenfilter —
+bis zu 100 offene Review-Threads und die offenen Code-Scanning-Alerts eines öffentlichen
+Repositories — in einen Kontext, der Schreibzugriff auf genau dieses Repository hat. Geschütztes
+Gut ist die Integrität des KI-gesteuerten Entwicklungsablaufs.
+
+**In einem öffentlichen Repository genügt Lesezugriff, um einen Review mit Zeilenkommentaren
+abzugeben.** Ohne gesetzte Code-Review-Limits darf standardmäßig jeder eingeloggte Nutzer Reviews
+abgeben, auch `CHANGES_REQUESTED`. Der Autorenkreis ist damit faktisch „jeder eingeloggte
+GitHub-Nutzer", nicht „Bots und Collaborators". Ein Herkunftsfilter wäre deshalb keine Verengung,
+sondern eine Auswahl, die den falschen Autoren für vertrauenswürdig hielte: Es gibt keinen
+Autoren- und keinen Werkzeugfilter, die Herkunft ist ein ausgewertetes Feld und steht an jeder
+Befundzeile.
+
+**Bedrohungen und Gegenmaßnahmen:**
+
+- **B1 Prompt-Injection über den Kurztext** — 200 Zeichen reichen für eine eingebettete Anweisung.
+  Getragen von der Verengung im `--jq` (der Kurztext entsteht mechanisch, vor dem Kontext), davon,
+  dass sich aus einem Befund nichts ableitet, und von der Lage der Lesung am Laufende: Nach ihr
+  folgt kein Auftrag mehr, den ein Befund steuern könnte.
+- **B2 Fremdtext aus der Fehlerausgabe** — `gh api` schreibt bei HTTP ≥ 400 und bei einem
+  GraphQL-`errors`-Feld den vollständigen Antwortkörper ungefiltert auf stdout und wendet `--jq`
+  nicht an. Getragen von der **Fangform**: stdout wird in eine Variable gefangen, bevor es
+  ausgegeben wird, stderr geht nach `/dev/null`, die Ausgabe geht als Argument an eine feste
+  Formatzeichenkette, und bei Exit ≠ 0 lautet das Ergebnis ausschließlich `nicht festgestellt`.
+- **B3 Die Fundstelle als Steuerwert** — `path`, `line`, `url`, `author`, `rule` und `tool` stammen
+  aus der Antwort und sind mitbestimmbar. Getragen davon, dass **nur die geprüfte PR-Nummer**
+  steuert: kein Wert aus einer Antwort wird Teil eines Aufrufs, eines Dateipfads oder eines
+  abgerufenen Links; die Fundstelle wird aus der Nummer und den Zahlenfeldern **gebildet** und
+  angezeigt, nie abgerufen.
+- **B4 „Nicht festgestellt" darf kein Freispruch werden** — sonst wiederholt sich der Ausgangsfehler
+  dieser Story eine Ebene tiefer. Getragen von der Regel, dass `nicht festgestellt` am Exit-Code
+  oder an einem `totalCount` über der gelesenen Menge entsteht, **nie** am Ausbleiben von
+  Einträgen, je Quelle getrennt berichtet wird und den Lauf nicht anhält.
+- **B5 Der Verlust der Aussage „einzige Ausnahme"** in Katalog, Katalogtest und diesem Dokument.
+  Getragen davon, dass die Ausnahmen als **benannte Menge** geführt werden (zwei Kommentarleser,
+  ein Befund-Metadaten-Leser) und die Invariante „keine Operation liest Issue- oder
+  Konversationskommentare" wortgleich bleibt.
+- **B6 Der Bericht als Kanal zum Menschen** — ein Fremder kann Text platzieren, der wie ein Befund
+  aussieht; die Herkunft ist die einzige mechanische Einordnung. **Bewusst getragen**: Daniel liest
+  etwas, das er am Pull Request nachsehen kann, und kein Automatismus handelt danach.
+
+**Die Fangform und was ihre Verletzung nach sich zöge.** Sie ist Teil des Befehls, nicht eine
+Vorschrift danach: Eine nachgelagerte Regel („Ausgabe bei Exit ≠ 0 nicht auswerten") kann den Text
+nicht mehr aus dem Kontext halten, `2>/dev/null` allein lässt stdout stehen, und `>/dev/null` macht
+die Operation ergebnislos. Entfiele die Fangform, stünde im Fehlerfall der rohe Antwortkörper im
+Kontext einer Hauptsession mit Schreibzugriff — genau der Kanal, den die Verengung schließt.
+
+**Was das nicht leistet.** Es gibt keine technische Sandbox gegen Prompt-Injection und keine
+Laufzeitdurchsetzung der Fangform: Beides ist durch den Schritttext und den Wächtertest getragen.
+`errors`-Einträge ohne `message` ergeben bei `gh` Exit `0` mit angewendetem `--jq` — dann fälschlich
+„keine offen"; ein `errors`-Zähler in der Auswertungsgrenze wurde bewusst verworfen, weil die
+GraphQL-Spezifikation `message` erzwingt und das fünfte Feld den leeren Fall mit dem Fehlerfall
+vermischt hätte. Und in einer Cloud-Session ist der Befundstand dauerhaft `nicht festgestellt`
+(GraphQL-Grenze, ADR 0061) — dieselbe Lage wie für den Wartepunkt selbst.
+
 ### Der Laufstand eines laufenden Umsetzungslaufs: das Sitzungstranskript und der gemessene Arbeitsbaum als Lesequellen der Hauptsession (`.claude/skills/laufstand/`, `.claude/agents/developer.md`, ADR [`0093`](../decisions/0093-laufstand-in-der-ausgabe-des-laufs-gelesen-nicht-erfragt.md)/Spec 0449, fortgeschrieben durch ADR [`0114`](../decisions/0114-laufstand-aus-dem-transkript-ueber-einen-gelieferten-pfad.md)/Spec 0493) — **umgesetzt**, der Wechsel des Lesekanals ist Vorausschau
 
 Kein Anwendungscode, kein Endpunkt, kein Secret, keine Abhängigkeit, kein Foto-/Projektdatenbezug. Die Angriffsfläche liegt vollständig im KI-Entwicklungsablauf, dessen Integrität das Bedrohungsmodell oben als eigenes Asset führt. Drei Dinge sind neu: Die Hauptsession liest den Fortschritt eines **noch laufenden** Subagenten in ihren persistenten Kontext (bisher nur dessen Rückgabewert an einem definierten Übergabepunkt), sie leitet aus einer **Kommando-Ausgabe** den Zielort weiterer Kommandos ab, und sie liest seit ADR 0114 erstmals ein Artefakt **außerhalb des Repositories**, im Benutzerverzeichnis.
@@ -1594,6 +1653,9 @@ Kein Secret, keine Umgebungsvariable, kein neuer externer Dienst, kein neuer Emp
 
 ## Bewusst akzeptierte Restrisiken
 
+- **Die Fangform ist eine Text- und Wächtertest-Schranke, keine Laufzeitschranke** (ADR [`0154`](../decisions/0154-wartepunkt-liest-offene-nicht-check-befunde.md)/Spec [`0505`](../features/0505-befunde-am-wartepunkt.md), Vorausschau): Geprüft ist die Form des Befehls im Katalog und die Wirkung seines `--jq`-Ausdrucks gegen Fixtures — nicht, dass der Lauf zur Laufzeit genau diesen Befehl absetzt. Ersetzte eine Session ihn durch einen nackten Leseaufruf, wäre der Text grün und der Kontext ungefiltert. Akzeptiert, weil die Alternative eine erzwungene Ausführungsschicht wäre, die dieser Ablauf sonst nirgends hat, und weil der Fehlerfall lokal mit dem Katalogeintrag reproduzierbar bleibt.
+- **Der Bericht ist die erste Stelle, an der fremder Text als „Befund" bei Daniel ankommt** (ADR 0154/Spec 0505, Vorausschau): Ein Dritter kann einen Review-Thread oder einen Alert so formulieren, dass er wie eine Handlungsanweisung aussieht. Getragen wird das von der Herkunft an jeder Zeile und davon, dass der Befund nichts auslöst — Daniel liest und kann am Pull Request nachsehen. Akzeptiert, weil die Alternative ein Herkunftsfilter wäre, der an einem öffentlichen Repository die falschen Autoren ausschlösse und die übrigen für vertrauenswürdig erklärte.
+- **Der Grund für „nicht festgestellt" wird bewusst nicht berichtet** (ADR 0154/Spec 0505, Vorausschau): Die Fehlermeldung des gescheiterten Aufrufs ist die enge Ausnahme von Wegleiter-Regel 5 — sie ist die einzige Stelle, an der roher Antworttext in den Kontext gelangen könnte. Berichtet wird der Befundstand, nicht die Ursache; sie bleibt lokal mit dem Katalogeintrag reproduzierbar. Akzeptiert als Tausch: Diagnosekomfort gegen die Zusage, dass im Fehlerfall kein ungefilterter Antwortkörper im Kontext steht.
 - **Ein falsch als „praktisch identisch" erkannter Ausschuss wird ohne Sichtung entschieden** (ADR [`0146`](../decisions/0146-automatisch-entschiedene-duplikatgruppen.md)/Spec [`0639`](../features/0639-automatisch-entschiedene-duplikatgruppen.md), Vorausschau): Die Story verlangt genau das („ohne Nachfrage entscheiden"), deshalb ist es ihre Entscheidung und keine offene Frage. Getragen wird es von vier Eigenschaften zusammen — Umkehrbarkeit über den bestehenden Schreibweg, Laufbindung (ein fehlgeschlagener Lauf hält nichts fest), fail-closed Richtung (der Merker steht nur an `REJECTED`-Verlierern; kein Bild verlässt den Homeserver, OpenCloud bleibt unberührt) und dem Vorrang jeder Nutzerentscheidung (`NOT EXISTS` beim Setzen, Reset bei jedem Schreibweg) — sowie von der verbesserten Erkennung aus Spec 0637 als Voraussetzung. **Nicht getragen:** Bis zur Rücknahme ist die Gruppe unsichtbar, und ein systematischer Fehler der Identisch-Erkennung träfe viele Gruppen auf einmal; bemerkbar würde er über die Zahl der automatisch entschiedenen Gruppen, nicht über die offenen Fälle.
 - **Ein gestohlenes JWT veranlasst den Backend erstmals zu Schreibzugriffen auf OpenCloud** (Spec [`0263`](../features/0263-export-nach-opencloud.md), ADR [`0136`](../decisions/0136-export-der-endauswahl-als-serverseitiges-copy-in-einen-eigenen-ordner.md)): Der Export ist der erste Schreibpfad des Produkts (MKCOL + serverseitiges `COPY`); ein gestohlenes JWT kann Exporte wiederholt auslösen und OpenCloud-Speicher mit Kopien füllen. Begrenzend: Schreibziele liegen ausschließlich unter dem festen Wurzelordner `PhotoSort-Export`, es wird nichts überschrieben oder gelöscht, und es entsteht keine neue Vertraulichkeitsgrenze (Quelle und Ziel liegen im selben OpenCloud-Account, Daten verlassen die Instanz nicht). Konsistent mit den bestehenden „gestohlenes JWT"-Eskalationen als akzeptiertes Restrisiko geführt.
 - **Ein Dritter kann Daniel eine gerahmte Frage vorlegen lassen** (ADR [`0115`](../decisions/0115-rollenzusage-nennt-nur-zugeteilte-werkzeuge-produktentscheidung-geht-als-anker-nach-oben.md)/Spec 0454, Vorausschau): Ein fremdautorisierter Issue-Body oder eine abgerufene Webseite kann einen Lauf zu einer Produktentscheidungs-Frage veranlassen, die über den Anker bis in ein Bedienelement gelangt, an dem Daniel klickt. Getragen wird das von den Auflagen des zugehörigen Abschnitts oben — die drei entscheidungstragenden Felder sind selbst erzeugt, die Optionenmenge trägt einen Ausgang, die Herkunft steht im Block, und fremde Autorschaft wird vor der Vorlage ausgewiesen. **Offene Rückfrage an Daniel** (Restrisiko-Abwägung, keine rein technische Frage): Soll eine Frage, die an fremdgelesenem Material entstand, überhaupt vorgelegt werden — Gewinn der Vorlage: ein berechtigter Produktpunkt aus einem fremden Issue erreicht ihn (der `approved-for-agent`-Fall); Preis: ein Dritter kann nach Belieben eine Frage vor ihn bringen. Alternative ohne diesen Preis: Die Aufrufstelle legt in diesem Fall nichts vor und berichtet nur. Empfehlung dieser Rolle: **vorlegen, mit Herkunftszeile und Autor-Ausweisung** — die Ausweisung ist die Schutzwirkung, und jede dieser Fragen geht ohnehin durch Daniels Blick.
