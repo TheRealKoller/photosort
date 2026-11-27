@@ -12,8 +12,10 @@ Werkzeugname nicht notiert.
 gh api repos/TheRealKoller/photosort/pulls/<MMM>/comments --paginate
 ```
 
-**Das ist die einzige Operation des Katalogs, die fremdbeschreibbaren Freitext aus Kommentaren
-liest**, und sie ist bewusst auf den **eigenen**, selbst eröffneten Pull Request begrenzt. Jeder
+**Das ist eine von zwei Operationen des Katalogs, die fremdbeschreibbaren Freitext aus Kommentaren
+liest** — die andere ist `pr-reviewbefunde-lesen` mit den offenen Review-Threads desselben
+Pull Requests. Beide sind bewusst auf den **eigenen**, selbst eröffneten Pull Request
+begrenzt. Jeder
 Fund wird am tatsächlichen Code geprüft, nie geglaubt. Es gibt **keine** Operation, die
 Issue-Kommentare liest: Kommentare sind der einzige Kanal, über den ein Dritter Text an ein
 bestehendes Issue anhängen kann, ohne dessen Autor zu sein. Was es als Operation nicht gibt, kann

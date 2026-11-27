@@ -24,9 +24,10 @@ SUCHRAUM = (".claude", "docs", "CLAUDE.md")
 # nennt `gh`-Befehle legitim.
 ANWEISUNGSRAUM = (".claude", "CLAUDE.md")
 
-# Die 21 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
-# `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085 sowie zwei Prüfstand-Operationen aus
-# ADR 0092. Die Menge selbst *ist* die Zusage ("keine heute vorhandene Operation geht verloren").
+# Die 23 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
+# `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085, zwei Prüfstand-Operationen aus
+# ADR 0092 sowie die beiden Befundlesungen aus ADR 0154. Die Menge selbst *ist* die Zusage ("keine
+# heute vorhandene Operation geht verloren").
 ERWARTETE_OPERATIONEN = frozenset(
     {
         "issue-anlegen",
@@ -46,6 +47,8 @@ ERWARTETE_OPERATIONEN = frozenset(
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",
         "pr-reviewkommentar-beantworten",
+        "pr-reviewbefunde-lesen",
+        "pr-scanbefunde-lesen",
         "board-aufnahme",
         "board-status-setzen",
         "board-prioritaet-setzen",
@@ -75,6 +78,8 @@ LESENDE_OPERATIONEN = frozenset(
         "pr-pruefstand-lesen",
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",
+        "pr-reviewbefunde-lesen",
+        "pr-scanbefunde-lesen",
         "board-status-und-prioritaet-lesen",
     }
 )
@@ -82,11 +87,35 @@ LESENDE_OPERATIONEN = frozenset(
 # Die exakte Feldmenge bleibt nur dort, wo sie die Sicherheitszusage selbst ist. `issue-liste-lesen`:
 # `title` entfällt, weil es das einzige fremdbeschreibbare Feld ist; `author` muss da sein, weil die
 # Markierung fremder Autorschaft vor dem Stapelschreiben daran hängt. `pr-pruefstand-lesen`: `bucket`
-# und `state` steuern, `name` und `workflow` sind fremdbeschreibbar und nur Anzeigewerte.
+# und `state` steuern, `name` und `workflow` sind fremdbeschreibbar und nur Anzeigewerte. Die beiden
+# Befundlesungen tragen ihre Verengung selbst: Jedes Feld ihrer Grenze ist eines, das in den Bericht
+# geht — fiele eines weg, fehlte die Fundstelle oder die Herkunft. Verglichen wird deshalb als
+# Menge, nicht als Folge: Die Reihenfolge ist Form, die Menge ist die Aussage.
 ERWARTETE_AUSWERTUNGSGRENZE: dict[str, tuple[str, ...]] = {
     "issue-liste-lesen": ("number", "labels", "state", "author"),
     "pr-pruefstand-abwarten": (),
     "pr-pruefstand-lesen": ("bucket", "name", "state", "workflow"),
+    "pr-reviewbefunde-lesen": (
+        "isResolved",
+        "isOutdated",
+        "path",
+        "line",
+        "url",
+        "author",
+        "bodyText",
+        "totalCount",
+    ),
+    "pr-scanbefunde-lesen": (
+        "number",
+        "state",
+        "tool",
+        "rule.description",
+        "rule.security_severity_level",
+        "message.text",
+        "location.path",
+        "location.start_line",
+        "url",
+    ),
 }
 
 # Schwacher Wächter gegen die Rückkehr der Vorabmessung - bewusst enumeriert, kein freier Wortscan.
@@ -146,7 +175,9 @@ FELDTRENNER = "—"
 # `ship-feature` oder `body-file` sind keine Operationen.
 ID_VERWENDUNG = re.compile(r"`((?:issue|board|pr|copilot)-[a-z][a-z-]*)`")
 
-GH_ZEILE = re.compile(r"^(?:timeout \d+ )?gh [a-z][a-z-]*\b")
+# Auch die Fangform belegt ihren `gh`-Weg: Sie faengt stdout in einer Zuweisung, damit bei Exit
+# ungleich 0 keine halbe Antwort in den Kontext laeuft - der Aufruf steht dann hinter `if out=$(`.
+GH_ZEILE = re.compile(r"^(?:if out=\$\()?(?:timeout \d+ )?gh [a-z][a-z-]*\b")
 GH_IRGENDWO = re.compile(r"\bgh (?P<unterbefehl>[a-z][a-z-]*)")
 MCP_NAME = re.compile(r"mcp__github__[a-z_]*")
 
@@ -168,18 +199,28 @@ UEBERSICHTSZEILE = re.compile(
     re.MULTILINE,
 )
 
-# Die benannte Ausnahme: die einzige Operation, die Fremdtext aus Kommentaren liest.
-KOMMENTAR_AUSNAHME = "pr-reviewkommentare-lesen"
+# Die benannten Ausnahmen: die zwei Operationen, die Fremdtext aus Kommentaren lesen - die
+# Inline-Findings des eigenen Pull Requests und die offenen Review-Threads an ihm. Die Aussage
+# „keine Operation liest Issue- oder Konversationskommentare" bleibt als Menge gefuehrt, nicht als
+# Aufzaehlung von Verbotenem: Eine Menge benennt, was gilt; eine Verbotsliste erlaubt, was sie nicht
+# kennt.
+KOMMENTAR_LESER = frozenset({"pr-reviewkommentare-lesen", "pr-reviewbefunde-lesen"})
 # Der Antwort-Endpunkt fuehrt bauartbedingt durch `/comments` - er schreibt in einen bestehenden
 # Thread und holt keinen Fremdtext herein. Er ist die einzige Form, die von der Pfadpruefung
 # ausgenommen ist; jede andere `/comments`-Stelle bleibt ein Befund.
 KOMMENTAR_ANTWORT = re.compile(r"/comments/<KOMMENTAR-ID>/replies\b")
 KOMMENTAR_PFAD = re.compile(r"/comments\b")
 
+# Derselbe Ausdruck in GraphQL statt im REST-Pfad: `comments(` holt den Fliesstext eines
+# Review-Threads. Er steht genau im Block der benannten Ausnahme - die Verengung, die ihn
+# unschaedlich macht, ist Teil desselben Aufrufs.
+GRAPHQL_KOMMENTAR = re.compile(r"comments\s*\(")
+GRAPHQL_KOMMENTAR_AUSNAHMEN = frozenset({"pr-reviewbefunde-lesen"})
+
 INVARIANTEN = (
     Invariante(
         "katalog-geschlossen",
-        "Die definierten IDs sind genau die erwarteten 21 - keine fehlt, keine kommt dazu, keine "
+        "Die definierten IDs sind genau die erwarteten 23 - keine fehlt, keine kommt dazu, keine "
         "doppelt.",
     ),
     Invariante(
@@ -201,8 +242,9 @@ INVARIANTEN = (
     Invariante("ziel-literal", "Jeder Block nennt `TheRealKoller` und `photosort` als Literal."),
     Invariante(
         "lesende-grenze",
-        "Jede lesende Operation nennt ihre ausgewerteten Felder; die exakte Feldmenge gilt für "
-        "die beiden Sicherheitszusagen, für `pr-pruefstand-abwarten` ist sie leer.",
+        "Jede lesende Operation nennt ihre ausgewerteten Felder; die exakte Feldmenge gilt für die "
+        "vier Sicherheitszusagen, für `pr-pruefstand-abwarten` ist sie leer. Verglichen wird die "
+        "Menge, nicht ihre Reihenfolge.",
     ),
     Invariante(
         "verweis-abschnitt",
@@ -225,7 +267,13 @@ INVARIANTEN = (
         "Keine Operation liest Issue-Kommentare außer der benannten PR-Ausnahme; keine "
         "Auswertungsgrenze nennt ein Kommentarfeld und keine Aufrufzeile einen "
         "`/comments`-Pfad außerhalb dieser Ausnahme und des Antwort-Endpunkts "
-        "`/comments/<KOMMENTAR-ID>/replies`, der in einen bestehenden Thread schreibt.",
+        "`/comments/<KOMMENTAR-ID>/replies`, der in einen bestehenden Thread schreibt. Als "
+        "Ausnahme gilt die benannte Menge der Kommentarleser, nicht eine einzelne Operation.",
+    ),
+    Invariante(
+        "graphql-kommentarabruf",
+        "`comments(` steht auf dem `gh`-Weg nur im Block der benannten GraphQL-Ausnahme; jede "
+        "andere Fundstelle - auch eine ausserhalb jeder Operation - ist ein Befund.",
     ),
 )
 
@@ -383,6 +431,7 @@ def pruefe(bestand: Bestand) -> list[Befund]:
     befunde.extend(_messbegriffe(bestand))
     befunde.extend(_erlaubnisstufen(bestand))
     befunde.extend(_kommentar_pfad(stellen))
+    befunde.extend(_graphql_kommentarabruf(bestand, stellen))
     return befunde
 
 
@@ -602,13 +651,13 @@ def _lesende_grenze(stellen: list[Eintrag]) -> list[Befund]:
             )
             continue
         erwartet = ERWARTETE_AUSWERTUNGSGRENZE.get(eintrag.id)
-        if erwartet is not None and felder != erwartet:
+        if erwartet is not None and sorted(felder) != sorted(erwartet):
             befunde.append(
                 befund(
                     eintrag.datei,
                     nummer,
                     "lesende-grenze",
-                    f"{eintrag.id}: Feldmenge {felder}, erwartet exakt {erwartet}.",
+                    f"{eintrag.id}: Feldmenge {sorted(felder)}, erwartet exakt {sorted(erwartet)}.",
                 )
             )
         if erwartet is None and not felder:
@@ -774,16 +823,16 @@ def _erlaubnisstufen(bestand: Bestand) -> list[Befund]:
 def _kommentar_pfad(stellen: list[Eintrag]) -> list[Befund]:
     befunde: list[Befund] = []
     for eintrag in stellen:
-        if eintrag.id != KOMMENTAR_AUSNAHME and re.search(r"kommentar[a-z-]*lesen", eintrag.id):
+        if eintrag.id not in KOMMENTAR_LESER and re.search(r"kommentar[a-z-]*lesen", eintrag.id):
             befunde.append(
                 befund(
                     eintrag.datei,
                     eintrag.zeile,
                     "kommentar-pfad",
-                    f"`{eintrag.id}` liest Kommentare - nur `{KOMMENTAR_AUSNAHME}` darf das.",
+                    f"`{eintrag.id}` liest Kommentare - nur {sorted(KOMMENTAR_LESER)} dürfen das.",
                 )
             )
-        if eintrag.id == KOMMENTAR_AUSNAHME:
+        if eintrag.id in KOMMENTAR_LESER:
             continue
         grenze = grenzzeile(eintrag)
         if grenze is not None:
@@ -808,6 +857,49 @@ def _kommentar_pfad(stellen: list[Eintrag]) -> list[Befund]:
                         f"{eintrag.id}: Kommentarpfad in einer deklarierten Aufrufzeile.",
                     )
                 )
+    return befunde
+
+
+def _graphql_kommentarabruf(bestand: Bestand, stellen: list[Eintrag]) -> list[Befund]:
+    """`comments(` nur im Block der benannten Ausnahme - dateiweit, nicht je Operation.
+
+    Dieselbe Bauform wie der `/comments`-Pfad, eine Ebene hoeher: Geprueft wird der ganze Katalog,
+    nicht nur die Operationsbloecke. Eine Fundstelle ausserhalb jeder Operation - etwa in
+    `SKILL.md` - ist derselbe Befund wie eine in einer fremden Operationsdatei; eine Pruefung nur
+    ueber die Bloecke liesse die Uebersichtsdatei als Schlupfloch stehen.
+    """
+    befunde: list[Befund] = []
+    erlaubt: set[tuple[str, int]] = set()
+    for eintrag in stellen:
+        if eintrag.id not in GRAPHQL_KOMMENTAR_AUSNAHMEN:
+            continue
+        for nummer, zeile in eintrag.block:
+            if GRAPHQL_KOMMENTAR.search(zeile):
+                erlaubt.add((eintrag.datei, nummer))
+    for datei in sorted(bestand):
+        if not _ist_im_katalog(datei):
+            continue
+        for nummer, zeile in enumerate(bestand[datei].split("\n"), start=1):
+            if not GRAPHQL_KOMMENTAR.search(zeile) or (datei, nummer) in erlaubt:
+                continue
+            befunde.append(
+                befund(
+                    datei,
+                    nummer,
+                    "graphql-kommentarabruf",
+                    f"`comments(` ausserhalb der benannten GraphQL-Ausnahme: {zeile.strip()!r}.",
+                )
+            )
+    if not erlaubt:
+        befunde.append(
+            befund(
+                KATALOG_UEBERSICHT,
+                1,
+                "graphql-kommentarabruf",
+                "keine Operation der benannten Ausnahme traegt einen GraphQL-Kommentarabruf - "
+                "der Scan lief leer.",
+            )
+        )
     return befunde
 
 

@@ -66,6 +66,11 @@
       "klasse": "A"
     },
     {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "graphql-kommentarabruf",
+      "klasse": "B"
+    },
+    {
       "modul": "scripts/tests/test_ci_wirkung.py",
       "invariante": "qualitaet-laeuft",
       "klasse": "A"

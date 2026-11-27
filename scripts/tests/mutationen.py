@@ -29,6 +29,8 @@ ISSUE_KOMMENTIEREN = f"{OPERATIONEN}/issue-kommentieren.md"
 ISSUE_VERWERFEN = f"{OPERATIONEN}/issue-verwerfen.md"
 PR_PRUEFSTAND_ABWARTEN = f"{OPERATIONEN}/pr-pruefstand-abwarten.md"
 PR_PRUEFSTAND_LESEN = f"{OPERATIONEN}/pr-pruefstand-lesen.md"
+PR_REVIEWBEFUNDE = f"{OPERATIONEN}/pr-reviewbefunde-lesen.md"
+PR_SCANBEFUNDE = f"{OPERATIONEN}/pr-scanbefunde-lesen.md"
 BOARD_AUFNAHME = f"{OPERATIONEN}/board-aufnahme.md"
 BOARD_STATUS_SETZEN = f"{OPERATIONEN}/board-status-setzen.md"
 KATALOG_UEBERSICHT = ".claude/skills/github-access/SKILL.md"
@@ -210,6 +212,50 @@ MUTATIONEN: tuple[Mutation, ...] = (
             "und nichts sonst."
         ),
         invariante="kommentar-pfad",
+    ),
+    Mutation(
+        name="reviewbefund-ohne-kurztext",
+        waechter="katalog",
+        datei=PR_REVIEWBEFUNDE,
+        alt="`url`, `author`, `bodyText`,",
+        neu="`url`, `author`,",
+        invariante="lesende-grenze",
+    ),
+    Mutation(
+        name="scanbefund-ohne-herkunft",
+        waechter="katalog",
+        datei=PR_SCANBEFUNDE,
+        alt="`state`, `tool`, `rule.description`,",
+        neu="`state`, `rule.description`,",
+        invariante="lesende-grenze",
+    ),
+    Mutation(
+        name="scanbefund-liest-kommentarpfad",
+        waechter="katalog",
+        datei=PR_SCANBEFUNDE,
+        alt="**Diese Operation trägt keine Nachhol-Zeile**",
+        neu=(
+            "**Diese Operation trägt keine Nachhol-Zeile**\n"
+            "\n"
+            "Nachzulesen wäre das über `repos/TheRealKoller/photosort/pulls/<MMM>/comments`."
+        ),
+        invariante="kommentar-pfad",
+    ),
+    Mutation(
+        name="graphql-kommentar-im-issue-lesen",
+        waechter="katalog",
+        datei=ISSUE_LESEN,
+        alt=(
+            "**Auswertungsgrenze:** `body`, `title`, `labels`, `state`, `author` — und nichts "
+            "sonst."
+        ),
+        neu=(
+            "**Auswertungsgrenze:** `body`, `title`, `labels`, `state`, `author` — und nichts "
+            "sonst.\n"
+            "\n"
+            "Geholt wird zusätzlich der Knoten `comments(first: 100)` am Issue."
+        ),
+        invariante="graphql-kommentarabruf",
     ),
     Mutation(
         name="coverage-schwelle-gesenkt",

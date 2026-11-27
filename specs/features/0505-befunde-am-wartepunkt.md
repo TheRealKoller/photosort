@@ -247,7 +247,7 @@ GitHub-Nutzer", nicht „Bots und Collaborators".
   Verengung ist Teil des Aufrufs". Ein MCP-Werkzeug lieferte die Antwort vor jeder Verengung.
 - **S2** — Der Kurztext entsteht mechanisch im `--jq` (200 Codepoints, `Cc`/`Cf`, Leerraumsfaltung,
   Ersatztext); der volle Text erreicht den Kontext auf keinem Schritt und wird nirgends abgelegt.
-- **S3** — Both Befehle stehen in der Fangform; kein nackter Leseaufruf mit `--jq`; bei Exit ≠ 0
+- **S3** — Beide Befehle stehen in der Fangform; kein nackter Leseaufruf mit `--jq`; bei Exit ≠ 0
   ausschließlich `nicht festgestellt`. Auch eine halbe `--paginate`-Folge wird verworfen.
 - **S4** — Nur die geprüfte PR-Nummer steuert; nichts aus einer Antwort wird Teil eines Aufrufs,
   Dateipfads oder abgerufenen Links. `totalCount` größer als die gelesene Menge ergibt
