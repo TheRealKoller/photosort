@@ -21,6 +21,7 @@ if out=$(gh api graphql -f query='
       pullRequest(number: $number) {
         reviewThreads(first: 100) {
           totalCount
+          pageInfo { hasNextPage }
           nodes {
             isResolved
             isOutdated
@@ -85,7 +86,9 @@ Zustand, ließen sich also nie wieder schließen und verletzten die Zusage, dass
 Befund im nächsten Lauf nicht mehr erscheint.
 
 `state` wird ausschließlich als Auswahlkriterium innerhalb des `--jq`-Ausdrucks ausgewertet; es
-steht in keiner Ausgabezeile und ist deshalb nicht Teil der Auswertungsgrenze.
+steht in keiner Ausgabezeile und ist deshalb nicht Teil der Auswertungsgrenze. Dasselbe gilt für
+`pageInfo`: Es wird mitgelesen, damit die Verbindung ihre Form trägt, und von der Verengung
+verworfen — ausgewertet wird `totalCount`.
 
 **Herkunftsoffen.** Es gibt keinen Autor- und keinen Werkzeugfilter: Der Autorenkreis an einem
 öffentlichen Repository ist „jeder eingeloggte GitHub-Nutzer", und eine Vorauswahl nach Herkunft
