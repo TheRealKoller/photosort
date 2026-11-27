@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.56.0](https://github.com/TheRealKoller/photosort/compare/v0.55.0...v0.56.0) (2026-11-27)
+
+
+### Features
+
+* **api:** Oberflächentypen aus der Schnittstellenbeschreibung (Spec 0654) ([#672](https://github.com/TheRealKoller/photosort/issues/672)) ([f0e3464](https://github.com/TheRealKoller/photosort/commit/f0e346479d0fc9fc45a3da27abb6101846dfcf16))
+* **duplikate:** Duplikatsansicht im Originalformat ohne Beschnitt (Spec 0638) ([#644](https://github.com/TheRealKoller/photosort/issues/644)) ([f53c3b4](https://github.com/TheRealKoller/photosort/commit/f53c3b461df5515f23747061ac2f1f1665eab248))
+* **ship:** Wartepunkt meldet offene Befunde am Pull Request (Spec 0505) ([#673](https://github.com/TheRealKoller/photosort/issues/673)) ([b0c5887](https://github.com/TheRealKoller/photosort/commit/b0c5887b66415c680b51265394318963b6d674c7))
+
+
+### Bug Fixes
+
+* **e2e:** Bildflächen erst im geladenen Zustand messen ([#646](https://github.com/TheRealKoller/photosort/issues/646)) ([34170dc](https://github.com/TheRealKoller/photosort/commit/34170dc6d787c1adee540b4c26af2594264d44ad))
+
 ## [0.55.0](https://github.com/TheRealKoller/photosort/compare/v0.54.0...v0.55.0) (2026-11-14)
 
 
