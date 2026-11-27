@@ -1,6 +1,6 @@
 # 0505 - Wartepunkt meldet offene Nicht-Check-Befunde am Pull Request
 
-**Status:** Accepted
+**Status:** Implemented ([PR #673](https://github.com/TheRealKoller/photosort/pull/673))
 **Erstellt:** 2026-11-27
 **Bezug:** [Issue #505](https://github.com/TheRealKoller/photosort/issues/505)
 
