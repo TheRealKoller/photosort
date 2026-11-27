@@ -66,6 +66,11 @@
       "klasse": "A"
     },
     {
+      "modul": "scripts/tests/test_github_zugriff_an_einer_stelle.py",
+      "invariante": "graphql-kommentarabruf",
+      "klasse": "B"
+    },
+    {
       "modul": "scripts/tests/test_ci_wirkung.py",
       "invariante": "qualitaet-laeuft",
       "klasse": "A"
@@ -138,6 +143,26 @@
     {
       "modul": "scripts/tests/test_ci_warten_verankert.py",
       "invariante": "anker-protokoll",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befundlesung-einmal-je-pfad",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befundbefehle-verengt",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "befund-kein-schreibweg",
+      "klasse": "B"
+    },
+    {
+      "modul": "scripts/tests/test_ci_warten_verankert.py",
+      "invariante": "berichtblock-einmal",
       "klasse": "B"
     },
     {

@@ -258,6 +258,8 @@ ERWARTETE_OPERATIONEN = frozenset(
         "pr-erstellen",
         "pr-pruefstand-abwarten",
         "pr-pruefstand-lesen",
+        "pr-reviewbefunde-lesen",
+        "pr-scanbefunde-lesen",
         "board-status-und-prioritaet-lesen",
         "board-status-setzen",
     }
@@ -775,7 +777,8 @@ def test_der_auslieferpfad_nennt_genau_die_erwarteten_operationen() -> None:
     [
         (
             "Ruf `pr-erstellen` auf, warte mit `pr-pruefstand-abwarten`, hol den Beleg mit "
-            "`pr-pruefstand-lesen`, lies mit `board-status-und-prioritaet-lesen` zurueck und "
+            "`pr-pruefstand-lesen`, lies die Befunde mit `pr-reviewbefunde-lesen` und "
+            "`pr-scanbefunde-lesen`, lies mit `board-status-und-prioritaet-lesen` zurueck und "
             "nimm `board-status-setzen` in den Bericht.",
             ERWARTETE_OPERATIONEN,
         ),
