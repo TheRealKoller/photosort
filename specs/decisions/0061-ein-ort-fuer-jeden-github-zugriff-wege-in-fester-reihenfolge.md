@@ -6,6 +6,7 @@
 
 **Teilweise abgelöst:** Abschnitt 8 (Prüfform des Katalogs) — die Prüfungen des Katalogs sind seit [ADR 0148](./0148-der-rote-waechtertest-traegt-eine-aussage-oder-eine-form.md) reine Funktionen `Bestand → Befunde` mit deklarierten Invarianten; Satz- und Markerwortlaute entfallen, die Aussagen bleiben.
 **Teilweise abgelöst:** Abschnitt 1, Satz „Ein Ablauf-Skill lädt `github-access` **einmal** … und arbeitet danach für den Rest seines Laufs mit dem geladenen Katalog." — seit [ADR 0152](./0152-operationskatalog-uebersicht-und-eine-datei-je-operation.md) wird nur noch `SKILL.md` einmal geladen; die Einzelheiten einer Operation liest der Lauf erst, wenn er sie ausführt. Der Ort bleibt derselbe Skill.
+**Teilweise abgelöst:** Abschnitt 2, Satz „**Die eine Ausnahme:** `pr-reviewkommentare-lesen` holt die Copilot-Findings am **eigenen** Pull Request" und Abschnitt 4.5, Satz „Die eine begründete Ausnahme bleibt bestehen — `gh api graphql` für `board-status-und-prioritaet-lesen`" — seit [ADR 0154](./0154-wartepunkt-liest-offene-nicht-check-befunde.md) tragen **zwei** Operationen je eine benannte Ausnahme (`pr-reviewbefunde-lesen` für den Review-Thread-Zustand, `pr-scanbefunde-lesen` für die Code-Scanning-Alerts). Die Regel selbst bleibt: keine Operation liest Issue-Kommentare, und die Query steht als Literal mit typisierter Nummer.
 
 **Löst ab (jeweils benannt, nicht stillschweigend übergangen):**
 
